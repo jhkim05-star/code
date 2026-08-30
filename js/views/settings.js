@@ -9,7 +9,7 @@ import {
 } from '../store.js';
 import {
   speakCount, koreanVoices, listVoices, reselectVoice, unlockAudio, hasClips, cue,
-  CUSTOM_VOICE_ID, customVoiceName,
+  CUSTOM_VOICE_ID, customVoiceName, diagnose,
 } from '../voice.js';
 import { MODELS, testApiKey } from '../ai.js';
 import { GROUPS } from '../exercises.js';
@@ -89,13 +89,49 @@ function voiceCard(root, s) {
       h('option', { value: 'sino', selected: s.countStyle === 'sino' }, '일 · 이 · 삼 (한자어)'),
     ), usingCustom ? `녹음된 "${customVoiceName()}"은 순우리말로 녹음돼 있어 이 설정과 무관하게 그대로 재생됩니다. 내장 음성으로 전환했을 때만 적용됩니다.` : null),
 
-    h('button.btn-block', { onclick: preview }, '🔊 들어보기'),
+    h('.btn-row', null,
+      h('button', { onclick: preview }, '🔊 들어보기'),
+      h('button', { onclick: runDiagnose }, '🔍 소리 안 남 진단'),
+    ),
 
     !hasClips()
       ? h('.hint', { style: { marginTop: '10px' } },
           '마음에 드는 목소리로 녹음한 파일을 audio/ 폴더에 넣고 manifest.json 에 등록하면 그 목소리로 바뀝니다.')
       : null,
   );
+}
+
+const DIAG_LABELS = {
+  unlocked: '오디오 잠금 해제됨',
+  voiceEnabled: '음성 켜짐',
+  volume: '음량 설정',
+  hasSpeechSynthesis: '기기 음성 지원',
+  voiceCount: '기기 음성 개수',
+  hasClips: '녹음 파일 등록됨',
+  clipKeys: '등록된 클립 수',
+  customVoice: '녹음 목소리 이름',
+  selectedVoiceURI: '선택된 목소리',
+  audioContext: '오디오 컨텍스트 상태',
+  fetchClip: '파일 내려받기(count.1)',
+  playClip: '재생 시도(count.1)',
+  ttsResult: '기기 음성(TTS) 응답',
+};
+
+async function runDiagnose() {
+  unlockAudio();
+  const report = await diagnose();
+  modal(() => h('div', null,
+    h('h3', null, '진단 결과'),
+    h('.hint', { style: { marginTop: '-8px', marginBottom: '14px' } },
+      '이 화면을 캡처해서 보내주시면 원인을 바로 찾을 수 있습니다.'),
+    h('div', { style: { fontFamily: 'var(--mono)', fontSize: '12.5px', lineHeight: '1.9' } },
+      ...Object.entries(report).map(([k, v]) =>
+        h('div', { style: { display: 'flex', gap: '8px', borderBottom: '1px solid var(--rule)', padding: '4px 0' } },
+          h('span', { style: { flex: '0 0 130px', color: 'var(--ink-3)' } }, DIAG_LABELS[k] || k),
+          h('span', { style: { flex: 1, wordBreak: 'break-all' } }, String(v)),
+        )),
+    ),
+  ));
 }
 
 function slider(value, min, max, step, format, onchange) {

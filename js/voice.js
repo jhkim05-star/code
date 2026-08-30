@@ -286,3 +286,76 @@ export async function initVoice() {
     setTimeout(refreshVoices, 1500);
   }
 }
+
+// ── 진단 ─────────────────────────────────────────────────────
+/**
+ * 소리가 안 날 때 무엇이 막혔는지 화면에서 바로 확인하기 위한 도구.
+ * 반드시 탭 핸들러 안에서 호출해야 실제 기기 상태를 반영합니다.
+ */
+export async function diagnose() {
+  const report = {
+    unlocked,
+    voiceEnabled: settings().voiceEnabled,
+    volume: settings().voiceVolume,
+    hasSpeechSynthesis: !!synth,
+    voiceCount: voices.length,
+    hasClips: hasClips(),
+    clipKeys: clipManifest ? Object.keys(clipManifest).length : 0,
+    customVoice: customVoiceName(),
+    selectedVoiceURI: settings().voiceURI || '(자동)',
+  };
+
+  // WebAudio 컨텍스트 상태
+  try {
+    const ctx = audioCtx();
+    report.audioContext = ctx ? ctx.state : '지원 안 함';
+  } catch (e) {
+    report.audioContext = `오류: ${e.message}`;
+  }
+
+  // 클립 파일이 실제로 받아와지는지 (네트워크·경로 문제 확인)
+  try {
+    const url = clipManifest?.['count.1'];
+    if (url) {
+      const res = await fetch(url, { cache: 'no-cache' });
+      report.fetchClip = `${res.status} ${res.ok ? 'OK' : ''} (${res.headers.get('content-type') || '?'})`;
+    } else {
+      report.fetchClip = '등록된 count.1 클립 없음';
+    }
+  } catch (e) {
+    report.fetchClip = `실패: ${e.message}`;
+  }
+
+  // 실제로 재생을 시도해서 진짜 소리가 나는지 확인
+  try {
+    const a = clipFor('count.1');
+    if (!a) {
+      report.playClip = '클립 객체 생성 실패';
+    } else {
+      a.currentTime = 0;
+      a.volume = 1;
+      await a.play();
+      report.playClip = `성공 (readyState=${a.readyState}, duration=${a.duration?.toFixed(2)}s, paused=${a.paused})`;
+      setTimeout(() => a.pause(), 400);
+    }
+  } catch (e) {
+    report.playClip = `실패: ${e.name} — ${e.message}`;
+  }
+
+  // 기기 음성(TTS) 자체가 살아있는지
+  report.ttsResult = await new Promise((resolve) => {
+    if (!synth) return resolve('speechSynthesis 없음');
+    try {
+      const u = new SpeechSynthesisUtterance('테스트');
+      u.volume = 1;
+      const timer = setTimeout(() => resolve('응답 없음(시간초과)'), 2000);
+      u.onstart = () => { clearTimeout(timer); resolve('시작됨(정상)'); };
+      u.onerror = (e) => { clearTimeout(timer); resolve(`오류: ${e.error}`); };
+      synth.speak(u);
+    } catch (e) {
+      resolve(`예외: ${e.message}`);
+    }
+  });
+
+  return report;
+}
