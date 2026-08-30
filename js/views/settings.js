@@ -7,7 +7,10 @@ import {
   settings, setSetting, exportAll, importAll, wipeAll,
   customExercises, addCustomExercise, removeCustomExercise, sessions, plans,
 } from '../store.js';
-import { speakCount, koreanVoices, listVoices, reselectVoice, unlockAudio, hasClips, cue } from '../voice.js';
+import {
+  speakCount, koreanVoices, listVoices, reselectVoice, unlockAudio, hasClips, cue,
+  CUSTOM_VOICE_ID, customVoiceName,
+} from '../voice.js';
 import { MODELS, testApiKey } from '../ai.js';
 import { GROUPS } from '../exercises.js';
 import { DOW_KO, mmss, download, pickFile, uid } from '../util.js';
@@ -37,10 +40,13 @@ function voiceCard(root, s) {
   const voices = koreanVoices();
   const all = listVoices();
 
+  const usingCustom = s.voiceURI === '' || s.voiceURI === CUSTOM_VOICE_ID;
   const select = h('select', {
     onchange: (e) => { setSetting('voiceURI', e.target.value); reselectVoice(); },
   },
-    h('option', { value: '' }, '자동 (한국어 여성 우선)'),
+    hasClips()
+      ? h('option', { value: CUSTOM_VOICE_ID, selected: usingCustom }, `🎙 ${customVoiceName()} (추천)`)
+      : h('option', { value: '', selected: s.voiceURI === '' }, '자동 (한국어 여성 우선)'),
     ...(voices.length ? voices : all).map(v =>
       h('option', { value: v.voiceURI, selected: v.voiceURI === s.voiceURI }, `${v.name} (${v.lang})`)),
   );
@@ -64,13 +70,16 @@ function voiceCard(root, s) {
 
     h('hr.rule'),
     field('목소리', select,
-      voices.length
-        ? '기기에 설치된 한국어 음성입니다. 아이폰은 유나(Yuna)가 기본이고, 설정 › 손쉬운 사용 › 음성 콘텐츠에서 다른 한국어 음성을 더 내려받을 수 있습니다.'
-        : '한국어 음성이 아직 준비되지 않았습니다. 잠시 후 이 화면을 다시 열어 보세요.'),
+      hasClips()
+        ? `직접 등록한 "${customVoiceName()}"이 기본으로 재생됩니다. 목록의 다른 항목을 고르면 그 대신 기기 내장 음성을 씁니다.`
+        : (voices.length
+            ? '기기에 설치된 한국어 음성입니다. 아이폰은 유나(Yuna)가 기본이고, 설정 › 손쉬운 사용 › 음성 콘텐츠에서 다른 한국어 음성을 더 내려받을 수 있습니다.'
+            : '한국어 음성이 아직 준비되지 않았습니다. 잠시 후 이 화면을 다시 열어 보세요.')),
 
     field('음 높이 (밝기)', slider(s.voicePitch, 0.6, 1.8, 0.05, v => `${v.toFixed(2)}`, v => setSetting('voicePitch', v)),
-      '높일수록 밝고 경쾌한 톤이 됩니다. 기본값 1.25.'),
-    field('말하기 속도', slider(s.voiceRate, 0.6, 1.8, 0.05, v => `${v.toFixed(2)}`, v => setSetting('voiceRate', v))),
+      (usingCustom ? '내장 음성으로 전환했을 때만 적용됩니다. ' : '') + '높일수록 밝고 경쾌한 톤이 됩니다. 기본값 1.25.'),
+    field('말하기 속도', slider(s.voiceRate, 0.6, 1.8, 0.05, v => `${v.toFixed(2)}`, v => setSetting('voiceRate', v)),
+      usingCustom ? '내장 음성으로 전환했을 때만 적용됩니다.' : null),
     field('음량', slider(s.voiceVolume, 0, 1, 0.05, v => `${Math.round(v * 100)}%`, v => setSetting('voiceVolume', v))),
 
     field('숫자 읽는 방식', h('select', {
@@ -78,14 +87,14 @@ function voiceCard(root, s) {
     },
       h('option', { value: 'native', selected: s.countStyle === 'native' }, '하나 · 둘 · 셋 (순우리말)'),
       h('option', { value: 'sino', selected: s.countStyle === 'sino' }, '일 · 이 · 삼 (한자어)'),
-    )),
+    ), usingCustom ? `녹음된 "${customVoiceName()}"은 순우리말로 녹음돼 있어 이 설정과 무관하게 그대로 재생됩니다. 내장 음성으로 전환했을 때만 적용됩니다.` : null),
 
     h('button.btn-block', { onclick: preview }, '🔊 들어보기'),
 
-    hasClips()
-      ? h('.hint', { style: { marginTop: '10px' } }, '녹음된 음성 파일이 등록돼 있어 그 파일을 우선 사용합니다.')
-      : h('.hint', { style: { marginTop: '10px' } },
-          '지금은 기기 내장 음성을 씁니다. 마음에 드는 목소리로 녹음한 파일을 audio/ 폴더에 넣고 manifest.json 에 등록하면 그 목소리로 바뀝니다.'),
+    !hasClips()
+      ? h('.hint', { style: { marginTop: '10px' } },
+          '마음에 드는 목소리로 녹음한 파일을 audio/ 폴더에 넣고 manifest.json 에 등록하면 그 목소리로 바뀝니다.')
+      : null,
   );
 }
 

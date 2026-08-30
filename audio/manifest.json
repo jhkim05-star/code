@@ -1,6 +1,6 @@
 {
   "_comment": "여기에 오디오 파일을 등록하면 기기 내장 음성 대신 그 파일이 재생됩니다. 자세한 규칙은 같은 폴더의 README.md 를 보세요.",
-  "voice": "직접 녹음 (1~30)",
+  "voice": "내사랑",
   "clips": {
     "count.1": "./audio/ko-user/count-1.mp3",
     "count.2": "./audio/ko-user/count-2.mp3",

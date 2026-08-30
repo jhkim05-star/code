@@ -40,7 +40,10 @@ export function countWord(n) {
 
 // ── 오디오 클립 ──────────────────────────────────────────────
 let clipManifest = null;         // { "count.1": "audio/ko-f/count-1.mp3", ... }
+let clipVoiceName = '';          // manifest.json 의 "voice" 이름표 (예: "내사랑")
 const clipCache = new Map();
+
+export const CUSTOM_VOICE_ID = '__custom__';
 
 export async function loadClipManifest() {
   try {
@@ -48,13 +51,16 @@ export async function loadClipManifest() {
     if (!res.ok) throw new Error('no manifest');
     const json = await res.json();
     clipManifest = json && typeof json.clips === 'object' ? json.clips : {};
+    clipVoiceName = (json && json.voice) || '';
   } catch {
     clipManifest = {};   // 파일이 없으면 그냥 전부 TTS 로 갑니다
+    clipVoiceName = '';
   }
   return clipManifest;
 }
 
 export const hasClips = () => !!clipManifest && Object.keys(clipManifest).length > 0;
+export const customVoiceName = () => clipVoiceName || '내가 등록한 목소리';
 
 function clipFor(key) {
   if (!clipManifest || !key) return null;
@@ -69,15 +75,27 @@ function clipFor(key) {
   return a;
 }
 
+/**
+ * key 에 해당하는 클립이 없으면 null. 있으면 실제 재생을 시도하고 그 결과(Promise)를
+ * 돌려줍니다 — 호출부가 재생 성공 여부를 보고 TTS 로 넘어갈지 판단해야 하기 때문에,
+ * 클립이 "있다"는 사실과 "재생에 성공했다"는 사실을 절대 섞으면 안 됩니다.
+ * (섞으면 재생이 막혔을 때 아무 소리도 안 나고 조용히 실패합니다.)
+ */
 function playClip(key) {
   const a = clipFor(key);
-  if (!a) return false;
+  if (!a) return null;
   try {
     a.currentTime = 0;
     a.volume = settings().voiceVolume;
-    a.play().catch(() => {});
-    return true;
-  } catch { return false; }
+    return a.play();
+  } catch (e) { return Promise.reject(e); }
+}
+
+/** 지금 설정 기준으로 클립을 써야 하는지 (자동이거나 명시적으로 고른 경우) */
+function shouldUseClips() {
+  if (!hasClips()) return false;
+  const want = settings().voiceURI;
+  return want === '' || want === CUSTOM_VOICE_ID;
 }
 
 // ── Web Speech ───────────────────────────────────────────────
@@ -187,8 +205,10 @@ export function unlockAudio() {
       synth.speak(u);
     } catch { /* 무시 */ }
   }
-  // 클립도 한 번 건드려 둬야 나중에 자동 재생이 막히지 않습니다
-  for (const key of ['count.1', 'cue.start']) {
+  // 등록된 클립을 전부 한 번씩 건드려 둡니다. iOS 는 오디오 엘리먼트마다
+  // 따로 "허용" 상태를 매기기 때문에, 나중에(타이머 안에서) 처음 재생을
+  // 시도하는 클립은 이 사용자 동작 없이는 조용히 막힐 수 있습니다.
+  for (const key of Object.keys(clipManifest || {})) {
     const a = clipFor(key);
     if (a) { a.volume = 0; a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {}); }
   }
@@ -206,7 +226,20 @@ export const isUnlocked = () => unlocked;
 export function speak(text, opt = {}) {
   const s = settings();
   if (!s.voiceEnabled) return;
-  if (opt.key && playClip(opt.key)) return;      // 등록된 클립이 있으면 그걸로
+
+  if (opt.key && shouldUseClips()) {
+    const p = playClip(opt.key);
+    if (p) {
+      // 재생이 실제로 실패했을 때만(막힘·디코드 오류 등) 기기 음성으로 넘어갑니다.
+      p.catch(() => speakWithTTS(text, opt, s));
+      return;
+    }
+    // 이 키에 해당하는 클립이 없으면 바로 기기 음성으로
+  }
+  speakWithTTS(text, opt, s);
+}
+
+function speakWithTTS(text, opt, s) {
   if (!synth || !text) return;
   try {
     if (opt.interrupt) synth.cancel();
