@@ -1,5 +1,36 @@
 {
   "_comment": "여기에 오디오 파일을 등록하면 기기 내장 음성 대신 그 파일이 재생됩니다. 자세한 규칙은 같은 폴더의 README.md 를 보세요.",
-  "voice": "기기 내장 음성",
-  "clips": {}
+  "voice": "직접 녹음 (1~30)",
+  "clips": {
+    "count.1": "./audio/ko-user/count-1.mp3",
+    "count.2": "./audio/ko-user/count-2.mp3",
+    "count.3": "./audio/ko-user/count-3.mp3",
+    "count.4": "./audio/ko-user/count-4.mp3",
+    "count.5": "./audio/ko-user/count-5.mp3",
+    "count.6": "./audio/ko-user/count-6.mp3",
+    "count.7": "./audio/ko-user/count-7.mp3",
+    "count.8": "./audio/ko-user/count-8.mp3",
+    "count.9": "./audio/ko-user/count-9.mp3",
+    "count.10": "./audio/ko-user/count-10.mp3",
+    "count.11": "./audio/ko-user/count-11.mp3",
+    "count.12": "./audio/ko-user/count-12.mp3",
+    "count.13": "./audio/ko-user/count-13.mp3",
+    "count.14": "./audio/ko-user/count-14.mp3",
+    "count.15": "./audio/ko-user/count-15.mp3",
+    "count.16": "./audio/ko-user/count-16.mp3",
+    "count.17": "./audio/ko-user/count-17.mp3",
+    "count.18": "./audio/ko-user/count-18.mp3",
+    "count.19": "./audio/ko-user/count-19.mp3",
+    "count.20": "./audio/ko-user/count-20.mp3",
+    "count.21": "./audio/ko-user/count-21.mp3",
+    "count.22": "./audio/ko-user/count-22.mp3",
+    "count.23": "./audio/ko-user/count-23.mp3",
+    "count.24": "./audio/ko-user/count-24.mp3",
+    "count.25": "./audio/ko-user/count-25.mp3",
+    "count.26": "./audio/ko-user/count-26.mp3",
+    "count.27": "./audio/ko-user/count-27.mp3",
+    "count.28": "./audio/ko-user/count-28.mp3",
+    "count.29": "./audio/ko-user/count-29.mp3",
+    "count.30": "./audio/ko-user/count-30.mp3"
+  }
 }
