@@ -477,11 +477,21 @@ export class Runner {
     this.emit('tick', this);
   }
 
-  /** peekNext() 가 가리키는 다음 세트의 무게·목표 횟수를 고칩니다 (휴식 중에 씁니다) */
+  /**
+   * peekNext() 가 가리키는 다음 세트의 무게·목표 횟수를 고칩니다 (휴식 중에 씁니다).
+   * setWeight() 와 마찬가지로, 그 뒤에 아직 무게를 안 정한 세트가 있으면 거기까지
+   * 이어서 채웁니다 — 이미 값이 있는 세트는 건드리지 않습니다.
+   */
   setNextWeight(kg) {
     const next = this.peekNext();
     if (!next?.rec) return;
     next.rec.weight = kg;
+    const entry = this.session.entries[next.exIndex];
+    for (let i = next.setIndex + 1; i < entry.sets.length; i++) {
+      const later = entry.sets[i];
+      if (later.weight != null || later.done) break;
+      later.weight = kg;
+    }
     this.emit('tick', this);
   }
 
