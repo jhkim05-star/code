@@ -138,9 +138,8 @@ export function reselectVoice() {
 
 export const currentVoice = () => chosenVoice;
 
-// ── WebAudio (짧은 신호음 + iOS 오디오 세션 유지) ─────────────
+// ── WebAudio (짧은 신호음) ─────────────────────────────────────
 let ac = null;
-let keepAliveNode = null;
 
 function audioCtx() {
   if (!ac) {
@@ -166,29 +165,6 @@ export function beep(freq = 880, ms = 110, gain = 0.14) {
   osc.connect(g).connect(ctx.destination);
   osc.start();
   osc.stop(ctx.currentTime + ms / 1000 + 0.02);
-}
-
-/**
- * iOS 는 소리가 한동안 안 나면 오디오 세션을 재워버려서 다음 음성이
- * 잘리거나 늦게 나옵니다. 들리지 않는 아주 작은 소리를 계속 흘려보내
- * 세션을 깨어 있게 유지합니다. 운동 화면에서만 켭니다.
- */
-export function startAudioKeepAlive() {
-  const ctx = audioCtx();
-  if (!ctx || keepAliveNode) return;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  osc.frequency.value = 60;
-  g.gain.value = 0.0001;          // 사실상 무음
-  osc.connect(g).connect(ctx.destination);
-  osc.start();
-  keepAliveNode = { osc, g };
-}
-
-export function stopAudioKeepAlive() {
-  if (!keepAliveNode) return;
-  try { keepAliveNode.osc.stop(); } catch { /* 이미 멈춤 */ }
-  keepAliveNode = null;
 }
 
 /**

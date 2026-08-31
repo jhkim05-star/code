@@ -9,7 +9,7 @@
  * 다시 돌아왔을 때 실제 경과 시간에 맞게 따라잡습니다.
  */
 
-import { speakCount, cue, beep, startAudioKeepAlive, stopAudioKeepAlive, stopSpeaking } from './voice.js';
+import { speakCount, cue, beep, stopSpeaking } from './voice.js';
 import { settings } from './store.js';
 import { uid, todayYmd, clamp } from './util.js';
 
@@ -107,7 +107,6 @@ export class Runner {
   // ── 구동 ──────────────────────────────────────────────────
   start() {
     if (this.timer) return;
-    startAudioKeepAlive();
     this.requestWakeLock();
     this.timer = setInterval(() => this.tick(), TICK_MS);
     document.addEventListener('visibilitychange', this.onVisible);
@@ -117,7 +116,6 @@ export class Runner {
     clearInterval(this.timer);
     this.timer = null;
     stopSpeaking();
-    stopAudioKeepAlive();
     this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.onVisible);
   }
