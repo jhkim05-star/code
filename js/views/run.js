@@ -94,8 +94,11 @@ function buildUi(root, runner) {
     exBox,
     counter,
     pips,
+    // 세트 목록과 하단 조작부 사이의 빈 공간을 채워서, 화면이 남을 때
+    // 전체 시간이 눈에 잘 띄는 자리에 오게 합니다
+    h('.run-mid', null, elapsed),
     // 다이얼과 버튼은 아래쪽에 몰아 둡니다 — 운동 중에 한 손으로 닿는 자리입니다
-    h('.run-bottom', null, elapsed, dials, actions),
+    h('.run-bottom', null, dials, actions),
   ));
 
   // ── 속도 · 휴식 다이얼 (언제나 실시간으로 조절 가능) ──────
@@ -158,6 +161,10 @@ function buildUi(root, runner) {
         `${runner.setIndex + 1} / ${runner.entry.sets.length} 세트`,
         rec?.weight ? ` · ${fmtWeight(rec.weight, s.unit)}` : '',
       ),
+      // 휴식 중엔 카운터 쪽에 이미 다음 세트 안내가 나오니 여기선 중복하지 않습니다
+      (runner.state !== 'resting' && nextWeightLabel(runner))
+        ? h('.meta.meta-next', null, nextWeightLabel(runner))
+        : null,
       b.note ? h('.hint', { style: { marginTop: '6px' } }, b.note) : null,
       (runner.state === 'ready' && b.overloadNote)
         ? h('.hint', { style: { marginTop: '6px', color: 'var(--good)' } }, `📈 ${b.overloadNote}`)
@@ -195,6 +202,16 @@ function nextLabel(runner) {
   const name = next.exIndex === runner.exIndex ? `${next.setIndex + 1}세트` : runner.day.blocks[next.exIndex]?.name;
   const w = next.rec.weight ? ` · ${fmtWeight(next.rec.weight, s.unit)}` : '';
   return `${name}${w}`;
+}
+
+/** 지금 세트 옆에 함께 보여줄 "다음 세트 무게" — 무게가 정해져 있을 때만 표시 */
+function nextWeightLabel(runner) {
+  const next = runner.peekNext();
+  if (!next?.rec?.weight) return '';
+  const s = settings();
+  const otherExercise = next.exIndex !== runner.exIndex;
+  const prefix = otherExercise ? `다음(${runner.day.blocks[next.exIndex]?.name})` : '다음';
+  return `${prefix} ${fmtWeight(next.rec.weight, s.unit)}`;
 }
 
 function actionsFor(runner) {

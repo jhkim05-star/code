@@ -292,6 +292,7 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
 .run-ex .grp { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); }
 .run-ex h2 { font-size: 27px; margin: 4px 0 2px; }
 .run-ex .meta { font-size: 13px; color: var(--ink-2); font-family: var(--mono); }
+.run-ex .meta-next { color: var(--ink-3); margin-top: 2px; }
 
 .counter {
   text-align: center; padding: 18px 0 6px;
@@ -326,13 +327,15 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
 .setpip.done { background: var(--good); border-color: var(--good); color: var(--paper-2); }
 .setpip.cur { border-color: var(--accent); border-width: 2px; color: var(--accent); font-weight: 700; }
 
-.run-bottom { margin-top: auto; padding-top: 20px; }
+/* 세트 목록과 하단 조작부 사이의 남는 공간 — 화면이 남을 때 전체 시간이 여기 뜹니다 */
+.run-mid { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 28px; }
 .run-elapsed {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 12px; color: var(--ink-3); padding-bottom: 10px;
-  border-bottom: 1px solid var(--rule); margin-bottom: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 11px; color: var(--ink-3); text-align: center;
 }
-.run-elapsed .num { font-size: 15px; font-weight: 700; color: var(--ink); }
+.run-elapsed .num { font-size: 22px; font-weight: 700; color: var(--ink-2); font-family: var(--mono); }
+
+.run-bottom { padding-top: 20px; }
 .run-actions { padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 
 /* ── stats ────────────────────────────────────────────────── */
