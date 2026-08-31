@@ -370,7 +370,11 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
   padding-bottom: 6px;
 }
 .cal-cell {
-  aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  /* aspect-ratio 대신 고정 높이를 씁니다 — 일부 기기의 웹뷰에서 그리드 안의
+     aspect-ratio 셀이 몇 주 이상 이어질 때 셀 높이는 맞게 그리면서도 정작
+     grid 컨테이너 자신의 전체 높이는 잘못 계산해서, 달력 카드 아래 내용이
+     그 위로 겹쳐 보이는 문제가 있었습니다. */
+  height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3px; border-radius: 4px; font-family: var(--mono); font-size: 13px; color: var(--ink-2);
 }
 .cal-cell.empty { visibility: hidden; }
