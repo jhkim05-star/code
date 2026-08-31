@@ -56,10 +56,10 @@ export class Runner {
         name: b.name,
         group: b.group,
         note: b.note || '',
-        sets: Array.from({ length: b.sets }, () => ({
-          targetReps: b.reps,
+        sets: (b.sets || []).map(st => ({
+          targetReps: st.reps,
           reps: null,
-          weight: b.weight ?? null,
+          weight: st.weight ?? null,
           rest: b.rest,
           tempo: b.tempo ?? s.tempo,
           done: false,
@@ -345,6 +345,35 @@ export class Runner {
     this.emit('tick', this);
   }
 
+  /**
+   * 운동 중에 종목을 하나 더 끼워 넣습니다 (자유운동 구성, 또는 즉흥 추가).
+   * 지금 하고 있는 위치 바로 다음에 넣습니다.
+   * @param {object} ex   exercises.js 의 종목 객체
+   * @param {{sets:number, reps:number}} opt
+   */
+  addExercise(ex, opt = {}) {
+    const s = settings();
+    const setCount = opt.sets ?? ex.sets ?? 3;
+    const reps = opt.reps ?? ex.reps ?? 10;
+    const block = {
+      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
+      rest: ex.rest ?? s.restDefault, tempo: ex.tempo ?? s.tempo,
+      sets: Array.from({ length: setCount }, () => ({ reps, weight: null })),
+    };
+    const entry = {
+      exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
+      sets: block.sets.map(st => ({
+        targetReps: st.reps, reps: null, weight: null,
+        rest: block.rest, tempo: block.tempo, done: false, at: null,
+      })),
+    };
+    const insertAt = this.day.blocks.length ? this.exIndex + 1 : 0;
+    this.day.blocks.splice(insertAt, 0, block);
+    this.session.entries.splice(insertAt, 0, entry);
+    this.emit('tick', this);
+    return insertAt;
+  }
+
   setTempo(sec) {
     this.tempo = clamp(sec, settings().tempoMin, settings().tempoMax);
     if (this.state === 'counting') {
@@ -354,14 +383,11 @@ export class Runner {
     this.emit('tick', this);
   }
 
+  /** 이 세트만의 무게를 바꿉니다. 세트마다 무게가 다를 수 있으므로 다른 세트에는 번지지 않습니다. */
   setWeight(kg) {
     const rec = this.setRec;
     if (!rec) return;
     rec.weight = kg;
-    // 같은 운동의 이후 세트에도 같은 무게를 미리 채워 둡니다
-    for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
-      if (!this.entry.sets[i].done) this.entry.sets[i].weight = kg;
-    }
     this.emit('tick', this);
   }
 

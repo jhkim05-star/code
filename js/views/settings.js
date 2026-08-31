@@ -12,8 +12,8 @@ import {
   CUSTOM_VOICE_ID, customVoiceName, diagnose,
 } from '../voice.js';
 import { MODELS, testApiKey } from '../ai.js';
-import { GROUPS } from '../exercises.js';
-import { DOW_KO, mmss, download, pickFile, uid } from '../util.js';
+import { GROUPS, EQUIPMENT } from '../exercises.js';
+import { mmss, download, pickFile, uid } from '../util.js';
 
 export async function renderSettings(root) {
   draw(root);
@@ -27,7 +27,6 @@ function draw(root) {
     voiceCard(root, s),
     countCard(s),
     restCard(s),
-    routineCard(root, s),
     aiCard(root, s),
     exercisesCard(root, s),
     dataCard(root, s),
@@ -192,61 +191,6 @@ function restCard(s) {
   );
 }
 
-// ── 루틴 ─────────────────────────────────────────────────────
-const TYPE_OPTIONS = [
-  { v: '', label: '휴식' },
-  { v: 'push', label: '가슴 · 어깨 전면 · 삼두' },
-  { v: 'pull', label: '등 · 어깨 측후면 · 이두' },
-  { v: 'legs', label: '하체' },
-];
-
-function routineCard(root, s) {
-  const r = s.routine;
-
-  return h('.card', null,
-    h('.card-head', null, h('h3', null, '루틴')),
-    h('.hint', { style: { marginTop: '-6px', marginBottom: '14px' } },
-      '자동 생성과 AI 생성 모두 이 배치를 기준으로 계획을 짭니다.'),
-
-    ...[1, 2, 3, 4, 5, 6, 0].map(dow => {
-      const slot = r.week[dow];
-      const typeSel = h('select', {
-        style: { flex: 1 },
-        onchange: (e) => {
-          const v = e.target.value;
-          setSetting(`routine.week.${dow}`, v ? { type: v, variant: slot?.variant || 'A' } : null);
-          draw(root);
-        },
-      }, ...TYPE_OPTIONS.map(o =>
-        h('option', { value: o.v, selected: (slot?.type || '') === o.v }, o.label)));
-
-      const varSel = h('select', {
-        style: { flex: '0 0 74px' },
-        disabled: !slot,
-        onchange: (e) => setSetting(`routine.week.${dow}`, { type: slot.type, variant: e.target.value }),
-      }, ...['A', 'B'].map(v =>
-        h('option', { value: v, selected: slot?.variant === v }, v)));
-
-      return h('div', {
-        style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' },
-      },
-        h('span', {
-          style: { flex: '0 0 22px', fontWeight: '700',
-                   color: dow === 0 ? 'var(--accent)' : 'var(--ink-2)' },
-        }, DOW_KO[dow]),
-        typeSel, varSel,
-      );
-    }),
-
-    h('.hint', { style: { marginTop: '4px' } },
-      'A와 B는 같은 부위를 서로 다른 종목 구성으로 하는 두 벌입니다. 한 부위를 주 2회 한다면 한 번은 A, 한 번은 B로 두세요.'),
-
-    h('hr.rule'),
-    switchRow('코어 운동 넣기', '하체 날과 등 날 끝에 붙입니다', r.includeCore,
-      v => setSetting('routine.includeCore', v)),
-  );
-}
-
 // ── AI ───────────────────────────────────────────────────────
 function aiCard(root, s) {
   const keyInput = h('input', {
@@ -312,6 +256,7 @@ function addExerciseSheet(root) {
   modal((close) => {
     const name = h('input', { type: 'text', placeholder: '예) 케이블 풀오버' });
     const group = h('select', null, ...GROUPS.map(g => h('option', { value: g.id }, g.name)));
+    const equip = h('select', null, ...EQUIPMENT.map(eq => h('option', { value: eq }, eq)));
     const tier = h('select', null,
       h('option', { value: '1' }, '메인 (복합관절)'),
       h('option', { value: '2', selected: true }, '보조'),
@@ -325,6 +270,7 @@ function addExerciseSheet(root) {
       h('h3', null, '종목 추가'),
       field('이름', name),
       field('부위', group),
+      field('기구', equip, '기구를 골라 두면 운동계획 탭에서 "가진 기구"로 걸렀을 때도 후보에 남습니다.'),
       field('종류', tier, '메인은 하루의 앞쪽에, 마무리는 뒤쪽에 배치됩니다.'),
       h('div', { style: { display: 'flex', gap: '8px' } },
         h('div', { style: { flex: 1 } }, field('세트', sets)),
@@ -343,7 +289,7 @@ function addExerciseSheet(root) {
             reps: Number(reps.value) || 12,
             rest: Number(rest.value) || 90,
             tempo: 3,
-            equip: '직접 추가',
+            equip: equip.value,
           });
           close();
           toast('추가했습니다');

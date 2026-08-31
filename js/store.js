@@ -38,23 +38,23 @@ export const DEFAULT_SETTINGS = {
   // AI
   apiKey: '',
   aiModel: 'claude-opus-5',
-  // 루틴 설정
-  routine: {
-    pattern: 'push_pull',       // 가슴(밀기) / 등(당기기) 2분할
-    variantsPerGroup: 2,        // 부위마다 2번에 걸쳐 종목을 바꿈
-    legDay: 0,                  // 0 = 일요일
-    // 요일별 슬롯: 0=일 … 6=월. null = 휴식
+  // 운동 계획 설정 (운동계획 탭에서 편집)
+  plan: {
+    equipment: [],               // 가진 기구. 빈 배열 = 전부 허용
+    variantsPerGroup: 2,         // 같은 부위 조합이 겹치는 날엔 종목을 서로 다르게
+    // 요일별로 그날 할 부위 목록. 0=일 … 6=토. 빈 배열/없음 = 휴식
     week: {
-      1: { type: 'push', variant: 'A' },   // 월 — 가슴 A
-      2: { type: 'pull', variant: 'A' },   // 화 — 등 A
-      3: null,                             // 수 — 휴식
-      4: { type: 'push', variant: 'B' },   // 목 — 가슴 B
-      5: { type: 'pull', variant: 'B' },   // 금 — 등 B
-      6: null,                             // 토 — 휴식
-      0: { type: 'legs', variant: 'A' },   // 일 — 하체
+      1: ['chest', 'delt_f', 'triceps'],   // 월 — 가슴 · 어깨 전면 · 삼두
+      2: ['back', 'delt_sr', 'biceps'],    // 화 — 등 · 어깨 측후면 · 이두
+      3: [],                               // 수 — 휴식
+      4: ['chest', 'delt_f', 'triceps'],   // 목
+      5: ['back', 'delt_sr', 'biceps'],    // 금
+      6: [],                               // 토 — 휴식
+      0: ['thighs', 'glutes', 'calves'],   // 일 — 하체
     },
-    includeCore: false,
   },
+  // 비추천(피하고 싶은) 종목 id 목록 — 계획 생성 때 후보에서 빠집니다
+  avoidExerciseIds: [],
 };
 
 const mem = {
@@ -234,6 +234,19 @@ export function addCustomExercise(ex) {
 export function removeCustomExercise(id) {
   mem.customExercises = mem.customExercises.filter(x => x.id !== id);
   scheduleFlush('customExercises');
+}
+
+// ── 비추천 종목 ──────────────────────────────────────────────
+export const avoidExerciseIds = () => mem.settings.avoidExerciseIds;
+export const isAvoided = (id) => mem.settings.avoidExerciseIds.includes(id);
+
+export function toggleAvoid(id) {
+  const list = mem.settings.avoidExerciseIds;
+  const i = list.indexOf(id);
+  if (i >= 0) list.splice(i, 1);
+  else list.push(id);
+  scheduleFlush('settings');
+  return list.includes(id);
 }
 
 // ── 종목 로테이션 상태 (부위마다 매주 다른 종목이 나오도록) ──

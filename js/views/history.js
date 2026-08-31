@@ -1,10 +1,14 @@
 /** 운동 기록 — 지난 세션 목록과 상세 */
 
-import { h, mount, pageHead, empty, confirmSheet, toast } from '../ui.js';
+import { h, mount, pageHead, empty, modal, confirmSheet, toast } from '../ui.js';
 import { sessions, getSession, deleteSession, settings } from '../store.js';
 import { sessionVolume, sessionSetCount } from '../runner.js';
-import { fmtDate, fmtDateShort, fmtWeight, comma, parseYmd, DOW_KO, groupBy } from '../util.js';
+import { fmtDate, fmtDateShort, fmtWeight, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy } from '../util.js';
 import { go } from '../app.js';
+
+const now = new Date();
+let calYear = now.getFullYear();
+let calMonth = now.getMonth();   // 0-based
 
 export async function renderHistory(root) {
   const all = [...sessions()].reverse();   // 최신이 위로
@@ -17,10 +21,15 @@ export async function renderHistory(root) {
     return;
   }
 
+  draw(root, all);
+}
+
+function draw(root, all) {
   const byMonth = groupBy(all, s => s.date.slice(0, 7));
 
   mount(root,
     pageHead('기록', `${all.length}회`),
+    calendarCard(root, all),
     ...[...byMonth.entries()].map(([month, list]) => {
       const [y, m] = month.split('-');
       return h('.card', null,
@@ -33,6 +42,66 @@ export async function renderHistory(root) {
       );
     }),
   );
+}
+
+// ── 달력 ─────────────────────────────────────────────────────
+function calendarCard(root, all) {
+  const byDate = groupBy(all, s => s.date);
+  const today = todayYmd();
+
+  const first = new Date(calYear, calMonth, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const grid = h('.cal-grid', null,
+    ...DOW_KO.map((w, i) => h('.cal-dow', { style: i === 0 ? { color: 'var(--accent)' } : null }, w)),
+    ...cells.map((d) => {
+      if (!d) return h('.cal-cell.empty');
+      const date = ymd(new Date(calYear, calMonth, d));
+      const list = byDate.get(date) || [];
+      const isToday = date === today;
+      const isSun = new Date(calYear, calMonth, d).getDay() === 0;
+      return h(`.cal-cell${list.length ? '.has' : ''}${isToday ? '.today' : ''}`, {
+        onclick: () => {
+          if (!list.length) return;
+          if (list.length === 1) go('/session/' + list[0].id);
+          else openDayPicker(date, list);
+        },
+      },
+        h('span', { style: isSun ? { color: 'var(--accent)' } : null }, String(d)),
+        list.length ? h('i.cal-dot') : null,
+      );
+    }),
+  );
+
+  return h('.card', null,
+    h('.card-head', null,
+      h('button.btn-sm', { onclick: () => { shiftMonth(-1); draw(root, all); } }, '‹'),
+      h('h3', null, `${calYear}년 ${calMonth + 1}월`),
+      h('button.btn-sm', { onclick: () => { shiftMonth(1); draw(root, all); } }, '›'),
+    ),
+    grid,
+  );
+}
+
+function shiftMonth(delta) {
+  calMonth += delta;
+  if (calMonth < 0) { calMonth = 11; calYear -= 1; }
+  if (calMonth > 11) { calMonth = 0; calYear += 1; }
+}
+
+function openDayPicker(date, list) {
+  modal(() => h('div', null,
+    h('h3', null, fmtDate(date)),
+    h('ul.picker', null, ...list.map(s => h('li', { onclick: () => go('/session/' + s.id) },
+      h('span', null, s.title || '운동'),
+      h('small', null, `${sessionSetCount(s)}세트`),
+    ))),
+  ));
 }
 
 function sessionRow(s) {

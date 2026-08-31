@@ -1,43 +1,70 @@
 /**
  * 규칙 기반 주간 계획 생성기.
  *
- * 기본 규칙 (설정 > 루틴에서 바꿀 수 있습니다):
- *   · 가슴/등 2분할.  가슴 날에는 어깨 전면 + 삼두, 등 날에는 어깨 측후면 + 이두를 붙입니다.
- *     (미는 동작끼리, 당기는 동작끼리 묶여 어깨·팔이 중복으로 지치지 않습니다)
- *   · 부위마다 A/B 두 벌의 종목 구성을 만들어 한 주에 두 번, 서로 다른 종목으로 돌립니다.
- *   · 하체는 주 1회, 일요일.
- *   · 주가 바뀌면 종목 풀이 한 칸씩 밀려서 매주 조금씩 다른 구성이 나옵니다.
+ * 운동계획 탭에서 요일마다 원하는 부위를 고르면, 그 조합을 바탕으로 종목을 뽑아
+ * 하루 계획을 만듭니다. 같은 부위 조합이 한 주에 여러 번 나오면(예: 가슴 날이 월·목)
+ * 두 날의 종목 구성이 겹치지 않도록 자동으로 다르게 뽑고, 주가 바뀌면 종목 풀이
+ * 한 칸씩 밀려서 매주 조금씩 다른 구성이 나옵니다.
+ *
+ * 가진 기구(설정 > 운동계획 > 기구)와 비추천으로 표시한 종목은 후보에서 제외됩니다.
  */
 
-import { byGroup, GROUP_NAME, findExercise } from './exercises.js';
-import { settings, rotation, customExercises } from './store.js';
+import { byGroup, GROUPS, GROUP_NAME, findExercise } from './exercises.js';
+import { settings, rotation, customExercises, avoidExerciseIds } from './store.js';
 import { weekStartOf, ymd, addDays, parseYmd, uid, rotate } from './util.js';
 
-/** 하루 구성: 어느 부위를 몇 종목 할지 */
-export const DAY_TEMPLATES = {
-  push: {
-    label: '가슴',
-    groups: [
-      { group: 'chest',   count: 3 },
-      { group: 'delt_f',  count: 2 },
-      { group: 'triceps', count: 2 },
-    ],
+/** 빠른 시작용 프리셋 — 운동계획 탭에서 "이걸로 시작" 버튼에 씁니다 */
+export const PRESETS = [
+  {
+    id: 'push_pull_legs1',
+    label: '2분할 + 하체 주1회',
+    week: {
+      1: ['chest', 'delt_f', 'triceps'],
+      2: ['back', 'delt_sr', 'biceps'],
+      3: [],
+      4: ['chest', 'delt_f', 'triceps'],
+      5: ['back', 'delt_sr', 'biceps'],
+      6: [],
+      0: ['thighs', 'glutes', 'calves'],
+    },
   },
-  pull: {
-    label: '등',
-    groups: [
-      { group: 'back',    count: 3 },
-      { group: 'delt_sr', count: 2 },
-      { group: 'biceps',  count: 2 },
-    ],
+  {
+    id: 'full_body3',
+    label: '무분할 주3회',
+    week: {
+      1: ['chest', 'back', 'thighs', 'delt_f'],
+      2: [],
+      3: ['back', 'chest', 'glutes', 'biceps'],
+      4: [],
+      5: ['thighs', 'delt_sr', 'triceps', 'core'],
+      6: [],
+      0: [],
+    },
   },
-  legs: {
-    label: '하체',
-    groups: [
-      { group: 'legs', count: 5 },
-    ],
+  {
+    id: 'ppl6',
+    label: '3분할(푸시·풀·다리) 주6회',
+    week: {
+      1: ['chest', 'delt_f', 'triceps'],
+      2: ['back', 'delt_sr', 'biceps'],
+      3: ['thighs', 'glutes', 'calves'],
+      4: ['chest', 'delt_f', 'triceps'],
+      5: ['back', 'delt_sr', 'biceps'],
+      6: ['thighs', 'glutes', 'calves'],
+      0: [],
+    },
   },
-};
+];
+
+/** 하루에 몇 부위를 고르느냐에 따라 부위별 종목 수를 정합니다 */
+function countsFor(groupIds) {
+  const n = groupIds.length;
+  if (n === 0) return [];
+  if (n === 1) return [{ group: groupIds[0], count: 6 }];
+  if (n === 2) return [{ group: groupIds[0], count: 4 }, { group: groupIds[1], count: 3 }];
+  if (n === 3) return groupIds.map((g, i) => ({ group: g, count: i === 0 ? 3 : 2 }));
+  return groupIds.map((g, i) => ({ group: g, count: i < 4 ? 2 : 1 }));
+}
 
 /** 종목 수에 따른 tier 배치 — 항상 복합관절로 시작해서 고립운동으로 끝납니다 */
 const SHAPES = {
@@ -53,11 +80,12 @@ const SHAPES = {
 /**
  * 한 부위에서 종목을 고릅니다.
  *
- * variantIdx  0 = A, 1 = B.  같은 주 안에서 A와 B가 겹치지 않도록 인덱스를 벌려 둡니다.
+ * variantIdx  이 조합이 이번 주에 몇 번째로 나오는지 (0, 1, 2 … = A, B, C …).
+ *             같은 주 안에서 겹치지 않도록 인덱스를 벌려 둡니다.
  * rot         주차 카운터. 주가 바뀔 때마다 풀이 밀려 다른 종목이 나옵니다.
  */
-function pickForGroup(group, count, variantIdx, variantCount, rot, custom, used) {
-  const pool = byGroup(group, custom);
+function pickForGroup(group, count, variantIdx, variantCount, rot, custom, used, equipment, avoid) {
+  const pool = byGroup(group, custom, equipment, avoid);
   if (!pool.length) return [];
 
   const tiers = { 1: [], 2: [], 3: [] };
@@ -83,7 +111,6 @@ function pickForGroup(group, count, variantIdx, variantCount, rot, custom, used)
     const occ = seen.get(t) || 0;
     seen.set(t, occ + 1);
 
-    // 이번 주 시작점 + A/B 간격 + 같은 tier 반복 오프셋
     const base = rot * variantCount + variantIdx + occ * variantCount;
     const ordered = rotate(bucket, base);
     const pickedEx = ordered.find(x => !used.has(x.id)) || ordered[0];
@@ -93,16 +120,16 @@ function pickForGroup(group, count, variantIdx, variantCount, rot, custom, used)
   return out;
 }
 
-function blockFrom(ex) {
+/** 종목 하나로 계획의 "블록"을 만듭니다. 세트마다 목표 무게·횟수를 따로 갖습니다. */
+function blockFrom(ex, lastWeight = null) {
   return {
     exerciseId: ex.id,
     name: ex.name,
     group: ex.group,
-    sets: ex.sets,
-    reps: ex.reps,
+    equip: ex.equip,
     rest: ex.rest,
     tempo: ex.tempo ?? 3,
-    weight: null,        // 지난 기록에서 채워 넣습니다
+    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: lastWeight })),
   };
 }
 
@@ -118,37 +145,33 @@ function lastWeightFor(exerciseId, sessions) {
   return null;
 }
 
-export function buildDay({ date, dow, type, variant, custom, rot, includeCore, sessions }) {
-  const tpl = DAY_TEMPLATES[type];
-  if (!tpl) return { date, dow, type: 'rest', title: '휴식', blocks: [] };
+/**
+ * 하루 계획을 만듭니다.
+ * @param {string[]} groupIds  그날 할 부위 목록. 빈 배열 = 휴식
+ * @param {number} variantIdx  이 부위 조합이 이번 주에 몇 번째로 나오는지 (0부터)
+ */
+export function buildDay({ date, dow, groupIds, variantIdx, variantCount, custom, rot, equipment, avoid, sessions }) {
+  if (!groupIds || !groupIds.length) {
+    return { id: uid('day'), date, dow, groupIds: [], title: '휴식', shortTitle: '휴식', blocks: [] };
+  }
 
-  const s = settings();
-  const variantCount = s.routine.variantsPerGroup || 2;
-  const variantIdx = Math.max(0, (variant || 'A').charCodeAt(0) - 65);
   const used = new Set();
-
-  const groups = [...tpl.groups];
-  if (includeCore && type === 'legs') groups.push({ group: 'core', count: 2 });
-  if (includeCore && type === 'pull') groups.push({ group: 'core', count: 1 });
-
   const blocks = [];
-  for (const g of groups) {
-    for (const ex of pickForGroup(g.group, g.count, variantIdx, variantCount, rot, custom, used)) {
-      const b = blockFrom(ex);
-      b.weight = lastWeightFor(ex.id, sessions);
-      blocks.push(b);
+  for (const g of countsFor(groupIds)) {
+    for (const ex of pickForGroup(g.group, g.count, variantIdx, variantCount, rot, custom, used, equipment, avoid)) {
+      blocks.push(blockFrom(ex, lastWeightFor(ex.id, sessions)));
     }
   }
 
-  const groupNames = [...new Set(blocks.map(b => b.group))].map(g => GROUP_NAME[g]);
+  const groupNames = groupIds.map(g => GROUP_NAME[g] || g);
+  const letter = String.fromCharCode(65 + variantIdx);
+  const suffix = variantCount > 1 ? ` (${letter})` : '';
   return {
     id: uid('day'),
-    date,
-    dow,
-    type,
-    variant: variant || 'A',
-    title: `${groupNames.join(' · ')} (${variant || 'A'})`,
-    shortTitle: `${tpl.label} ${variant || 'A'}`,
+    date, dow,
+    groupIds,
+    title: `${groupNames.join(' · ')}${suffix}`,
+    shortTitle: `${groupNames[0]}${suffix}`,
     blocks,
   };
 }
@@ -159,8 +182,9 @@ export function buildDay({ date, dow, type, variant, custom, rot, includeCore, s
  */
 export function generateWeek(anyDayOfWeek = new Date(), opts = {}) {
   const s = settings();
-  const routine = { ...s.routine, ...(opts.routine || {}) };
+  const plan = { ...s.plan, ...(opts.plan || {}) };
   const custom = customExercises();
+  const avoid = avoidExerciseIds();
   const sessions = opts.sessions || [];
 
   const start = weekStartOf(typeof anyDayOfWeek === 'string' ? parseYmd(anyDayOfWeek) : anyDayOfWeek);
@@ -173,24 +197,22 @@ export function generateWeek(anyDayOfWeek = new Date(), opts = {}) {
   const rotBase = rotation().global || 0;
   const rot = weekIndex + rotBase + (opts.reroll || 0);
 
+  // 같은 부위 조합이 이번 주에 몇 번째로 나오는지 세어 A/B/C 를 자동으로 매깁니다
+  const seenSignature = new Map();
+  const variantCount = plan.variantsPerGroup || 2;
+
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i);
     const dow = d.getDay();
-    const slot = routine.week[dow];
-    if (!slot) {
-      days.push({ id: uid('day'), date: ymd(d), dow, type: 'rest', title: '휴식', shortTitle: '휴식', blocks: [] });
-      continue;
-    }
+    const groupIds = plan.week[dow] || [];
+    const sig = [...groupIds].sort().join('+');
+    const variantIdx = groupIds.length ? (seenSignature.get(sig) || 0) : 0;
+    if (groupIds.length) seenSignature.set(sig, variantIdx + 1);
+
     days.push(buildDay({
-      date: ymd(d),
-      dow,
-      type: slot.type,
-      variant: slot.variant,
-      custom,
-      rot,
-      includeCore: routine.includeCore,
-      sessions,
+      date: ymd(d), dow, groupIds, variantIdx, variantCount,
+      custom, rot, equipment: plan.equipment, avoid, sessions,
     }));
   }
 
@@ -208,10 +230,8 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
   const custom = customExercises();
   const start = parseYmd(weekStart);
   const byName = new Map();
-  for (const x of [...byGroup('chest', custom), ...byGroup('back', custom), ...byGroup('delt_f', custom),
-                   ...byGroup('delt_sr', custom), ...byGroup('biceps', custom), ...byGroup('triceps', custom),
-                   ...byGroup('legs', custom), ...byGroup('core', custom)]) {
-    byName.set(x.name.replace(/\s/g, ''), x);
+  for (const g of GROUPS) {
+    for (const x of byGroup(g.id, custom)) byName.set(x.name.replace(/\s/g, ''), x);
   }
 
   const days = [];
@@ -222,7 +242,7 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
     const rawDay = (raw.days || []).find(x => x.date === date || x.dow === dow) || null;
 
     if (!rawDay || rawDay.type === 'rest' || !(rawDay.blocks || rawDay.exercises || []).length) {
-      days.push({ id: uid('day'), date, dow, type: 'rest', title: '휴식', shortTitle: '휴식', blocks: [] });
+      days.push({ id: uid('day'), date, dow, groupIds: [], title: '휴식', shortTitle: '휴식', blocks: [] });
       continue;
     }
 
@@ -233,25 +253,26 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
       const ex = known || {
         id: `ai_${key || uid('ex')}`,
         name: b.name || b.exercise || '이름 없는 운동',
-        group: b.group || 'core',
+        group: b.group || 'core', equip: '기타',
         tier: 2, sets: 3, reps: 10, rest: 90, tempo: 3,
       };
-      const block = blockFrom(ex);
-      if (Number.isFinite(+b.sets)) block.sets = Math.round(+b.sets);
-      if (Number.isFinite(+b.reps)) block.reps = Math.round(+b.reps);
-      if (Number.isFinite(+b.rest)) block.rest = Math.round(+b.rest);
-      if (Number.isFinite(+b.tempo)) block.tempo = +b.tempo;
-      if (b.note) block.note = String(b.note).slice(0, 120);
-      block.weight = lastWeightFor(block.exerciseId, sessions);
-      blocks.push(block);
+      const sets = Number.isFinite(+b.sets) ? Math.round(+b.sets) : ex.sets;
+      const reps = Number.isFinite(+b.reps) ? Math.round(+b.reps) : ex.reps;
+      const rest = Number.isFinite(+b.rest) ? Math.round(+b.rest) : ex.rest;
+      const lastW = lastWeightFor(ex.id, sessions);
+      blocks.push({
+        exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
+        rest, tempo: Number.isFinite(+b.tempo) ? +b.tempo : (ex.tempo ?? 3),
+        note: b.note ? String(b.note).slice(0, 120) : '',
+        sets: Array.from({ length: sets }, () => ({ reps, weight: lastW })),
+      });
     }
 
-    const groupNames = [...new Set(blocks.map(b => b.group))].map(g => GROUP_NAME[g] || g);
+    const groupIds = [...new Set(blocks.map(b => b.group))];
+    const groupNames = groupIds.map(g => GROUP_NAME[g] || g);
     days.push({
       id: uid('day'),
-      date, dow,
-      type: rawDay.type || 'custom',
-      variant: rawDay.variant || 'A',
+      date, dow, groupIds,
       title: rawDay.title || groupNames.join(' · '),
       shortTitle: rawDay.shortTitle || (rawDay.title || groupNames[0] || '운동').slice(0, 12),
       blocks,
@@ -264,5 +285,20 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
     source: 'ai',
     note: String(raw.note || raw.summary || '').slice(0, 500),
     days,
+  };
+}
+
+/** 오늘 바로 만드는 자유운동 하루 (계획 없이 그 자리에서 종목을 골라 채웁니다) */
+export function buildFreeDay(date) {
+  const d = parseYmd(date);
+  return {
+    id: uid('day'),
+    date,
+    dow: d.getDay(),
+    groupIds: [],
+    free: true,
+    title: '자유운동',
+    shortTitle: '자유운동',
+    blocks: [],
   };
 }

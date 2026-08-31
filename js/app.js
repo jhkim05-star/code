@@ -4,24 +4,27 @@ import { initStore } from './store.js';
 import { initVoice, unlockAudio } from './voice.js';
 import { h, mount, clear } from './ui.js';
 
-import { renderPlan } from './views/plan.js';
+import { renderPlanTab } from './views/planTab.js';
+import { renderExec } from './views/execTab.js';
 import { renderRun } from './views/run.js';
 import { renderHistory, renderSessionDetail } from './views/history.js';
 import { renderStats } from './views/stats.js';
 import { renderSettings } from './views/settings.js';
 
 const TABS = [
-  { path: '/plan',     label: '계획', icon: '📋' },
-  { path: '/history',  label: '기록', icon: '📖' },
-  { path: '/stats',    label: '통계', icon: '📈' },
-  { path: '/settings', label: '설정', icon: '⚙️' },
+  { path: '/plan',     label: '운동계획', icon: '🗂️' },
+  { path: '/exec',     label: '운동실행', icon: '🏋️' },
+  { path: '/history',  label: '기록',    icon: '📖' },
+  { path: '/stats',    label: '통계',    icon: '📈' },
+  { path: '/settings', label: '설정',    icon: '⚙️' },
 ];
 
 const ROUTES = [
-  { re: /^\/plan(?:\/(\d{4}-\d{2}-\d{2}))?$/, view: renderPlan },
+  { re: /^\/plan$/,                           view: renderPlanTab },
+  { re: /^\/exec(?:\/(\d{4}-\d{2}-\d{2}))?$/, view: renderExec },
   { re: /^\/run\/(\d{4}-\d{2}-\d{2})$/,       view: renderRun, fullscreen: true },
   { re: /^\/history$/,                        view: renderHistory },
-  { re: /^\/session\/([\w]+)$/,               view: renderSessionDetail },
+  { re: /^\/session\/([\w-]+)$/,               view: renderSessionDetail },
   { re: /^\/stats$/,                          view: renderStats },
   { re: /^\/settings$/,                       view: renderSettings },
 ];
@@ -38,7 +41,7 @@ export function go(path, { replace = false } = {}) {
 
 function currentPath() {
   const p = location.hash.replace(/^#/, '');
-  return p.startsWith('/') ? p : '/plan';
+  return p.startsWith('/') ? p : '/exec';
 }
 
 async function route() {
@@ -48,7 +51,7 @@ async function route() {
   cleanup = null;
 
   const match = ROUTES.map(r => ({ r, m: r.re.exec(path) })).find(x => x.m);
-  if (!match) return go('/plan', { replace: true });
+  if (!match) return go('/exec', { replace: true });
 
   document.body.classList.toggle('no-tabs', !!match.r.fullscreen);
   tabbar.hidden = !!match.r.fullscreen;

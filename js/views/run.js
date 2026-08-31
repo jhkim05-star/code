@@ -1,26 +1,52 @@
 /** 운동 실행 화면 — 오늘의 계획을 차례로 진행합니다 */
 
-import { h, mount, modal, dial, confirmSheet, field } from '../ui.js';
-import { getPlan, saveSession, settings } from '../store.js';
+import { h, mount, modal, toast, dial, confirmSheet, field } from '../ui.js';
+import { getPlan, savePlan, saveSession, settings } from '../store.js';
 import { Runner, sessionVolume, sessionSetCount } from '../runner.js';
 import { unlockAudio } from '../voice.js';
 import { GROUP_NAME } from '../exercises.js';
+import { buildFreeDay } from '../planner.js';
+import { pickExercise } from './exercisePicker.js';
 import { weekStartOf, parseYmd, ymd, mmss, fmtWeight, comma } from '../util.js';
 import { go } from '../app.js';
 
 export async function renderRun(root, [date]) {
   const weekStart = ymd(weekStartOf(parseYmd(date)));
   const plan = getPlan(weekStart);
-  const day = plan?.days.find(d => d.date === date);
+  let day = plan?.days.find(d => d.date === date);
 
-  if (!day || !day.blocks?.length) {
+  // 계획이 없는 날(휴식일 또는 계획 자체가 없음) → 자유운동으로 시작할 수 있게 합니다
+  if (!day) day = buildFreeDay(date);
+
+  if (!day.blocks?.length) {
     mount(root, h('.card', null,
-      h('h2', null, '그날의 계획이 없습니다'),
-      h('button.btn-block.btn-primary', { style: { marginTop: '14px' }, onclick: () => go('/plan') }, '계획으로 돌아가기'),
+      h('h2', null, day.free ? '자유운동' : '오늘은 쉬는 날이에요'),
+      h('p.hint', { style: { marginBottom: '16px' } },
+        '종목을 하나씩 추가해서 그 자리에서 운동을 만들 수 있습니다.'),
+      h('button.btn-block.btn-primary', {
+        onclick: () => pickExercise(null, (ex) => {
+          day.blocks.push(freeBlock(ex));
+          if (plan) savePlan(plan);
+          startRun(root, day, weekStart, plan);
+        }),
+      }, '＋ 첫 종목 고르기'),
+      h('button.btn-block.btn-ghost', { style: { marginTop: '8px' }, onclick: () => go('/exec') }, '‹ 뒤로'),
     ));
     return null;
   }
 
+  return startRun(root, day, weekStart, plan);
+}
+
+function freeBlock(ex) {
+  return {
+    exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
+    rest: ex.rest, tempo: ex.tempo ?? 3,
+    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: null })),
+  };
+}
+
+function startRun(root, day, weekStart, plan) {
   // iOS 는 사용자가 화면을 누른 뒤에야 소리를 낼 수 있습니다
   unlockAudio();
 
@@ -218,7 +244,7 @@ function openSetEditor(runner) {
       h('h3', null, runner.block.name),
       h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
         `${runner.setIndex + 1}세트`),
-      field(`무게 (${s.unit})`, w, '이 세트부터 남은 세트에 함께 적용됩니다.'),
+      field(`무게 (${s.unit})`, w, '이 세트에만 적용됩니다. 세트마다 무게를 다르게 둘 수 있습니다.'),
       field('목표 횟수', r),
       h('button.btn-block.btn-primary', {
         style: { marginTop: '6px' },
@@ -233,9 +259,9 @@ function openSetEditor(runner) {
   });
 }
 
-/** 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동 */
+/** 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동, 종목 즉흥 추가 */
 function openList(runner) {
-  modal((close) => h('div', null,
+  const close = modal(() => h('div', null,
     h('h3', null, '오늘의 운동'),
     h('ul.picker', null, ...runner.day.blocks.map((b, i) => {
       const entry = runner.session.entries[i];
@@ -248,6 +274,16 @@ function openList(runner) {
         h('small', null, `${done} / ${entry.sets.length}세트`),
       );
     })),
+    h('button.btn-block', {
+      style: { marginTop: '10px' },
+      onclick: () => {
+        close();
+        pickExercise(null, (ex) => {
+          runner.addExercise(ex);
+          toast(`${ex.name} 추가`);
+        });
+      },
+    }, '＋ 종목 추가'),
   ));
 }
 
@@ -264,7 +300,7 @@ async function quit(runner) {
     runner.abort();
   } else {
     runner.stop();
-    go('/plan');
+    go('/exec');
   }
 }
 
@@ -298,7 +334,7 @@ function summaryView(session) {
       ),
     ),
 
-    h('button.btn-block.btn-primary', { onclick: () => go('/plan') }, '계획으로'),
+    h('button.btn-block.btn-primary', { onclick: () => go('/exec') }, '운동실행으로'),
     h('button.btn-block.btn-ghost', { style: { marginTop: '8px' }, onclick: () => go('/history') }, '기록 보기'),
   );
 }

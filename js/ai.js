@@ -7,8 +7,8 @@
  * 빌드 도구 없이 도는 정적 앱이라 SDK 를 번들할 수 없어 fetch 로 직접 호출합니다.
  */
 
-import { GROUPS, byGroup } from './exercises.js';
-import { settings, customExercises } from './store.js';
+import { GROUPS, GROUP_NAME, byGroup } from './exercises.js';
+import { settings, customExercises, avoidExerciseIds } from './store.js';
 import { fmtWeekRange, parseYmd, addDays, ymd, DOW_KO } from './util.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
@@ -36,7 +36,7 @@ function planSchema() {
           type: 'object',
           properties: {
             date: { type: 'string', description: 'YYYY-MM-DD' },
-            type: { type: 'string', enum: ['push', 'pull', 'legs', 'custom', 'rest'] },
+            type: { type: 'string', description: '"rest" 면 휴식일. 그 외엔 아무 값이나(예: "workout").' },
             title: { type: 'string', description: '예: "가슴 · 어깨 전면 · 삼두 (A)"' },
             blocks: {
               type: 'array',
@@ -65,12 +65,15 @@ function planSchema() {
   };
 }
 
-/** 모델에게 보여줄 운동 목록 — 이름을 지어내지 않고 이 안에서 고르게 합니다 */
+/** 모델에게 보여줄 운동 목록 — 이름을 지어내지 않고 이 안에서 고르게 합니다.
+ * 가진 기구와 비추천 종목으로 미리 걸러서 애초에 못 쓰는 종목을 보여주지 않습니다. */
 function exerciseCatalog() {
   const custom = customExercises();
+  const equipment = settings().plan.equipment;
+  const avoid = avoidExerciseIds();
   return GROUPS.map(g => {
-    const names = byGroup(g.id, custom).map(x => x.name);
-    return `- ${g.id} (${g.name}): ${names.join(', ')}`;
+    const names = byGroup(g.id, custom, equipment, avoid).map(x => x.name);
+    return `- ${g.id} (${g.name}): ${names.join(', ') || '(가진 기구로는 후보 없음)'}`;
   }).join('\n');
 }
 
@@ -94,21 +97,20 @@ function historyDigest(sessions, weeks = 3) {
 }
 
 function systemPrompt() {
-  const r = settings().routine;
+  const p = settings().plan;
   const weekDesc = [1, 2, 3, 4, 5, 6, 0]
-    .map(d => `${DOW_KO[d]}: ${r.week[d] ? `${r.week[d].type} (${r.week[d].variant})` : '휴식'}`)
+    .map(d => `${DOW_KO[d]}: ${(p.week[d] || []).length ? p.week[d].map(g => GROUP_NAME[g] || g).join('+') : '휴식'}`)
     .join(', ');
+  const equipDesc = p.equipment?.length ? p.equipment.join(', ') : '전부 (기구 제한 없음)';
 
   return `당신은 혼자 웨이트 트레이닝을 하는 사람의 전담 코치입니다. 한국어로 답합니다.
 
-이 사람이 고정으로 지키는 루틴 규칙:
-- 가슴/등 2분할입니다. 가슴 날에는 어깨 전면과 삼두를, 등 날에는 어깨 측후면과 이두를 함께 합니다.
-  (미는 동작끼리, 당기는 동작끼리 묶어 어깨와 팔이 중복으로 지치지 않게 합니다)
-- 각 부위는 한 주에 두 번 하되, 두 번의 종목 구성을 서로 다르게 합니다. 제목 끝에 (A) (B) 로 표시합니다.
-- 하체는 주 1회, 일요일입니다.
-- 현재 설정된 요일 배치: ${weekDesc}
+이 사람이 운동계획 탭에서 정해 둔 요일별 부위 배치: ${weekDesc}
+가진 기구: ${equipDesc}
+같은 부위 조합이 한 주에 여러 번 나오면(예: 가슴 날이 두 번) 두 날의 종목 구성을 서로 다르게 하고, 제목 끝에 (A) (B) 로 표시합니다.
 
 계획을 짤 때 지킬 것:
+- 위 요일별 부위 배치를 기본으로 따르되, 사용자의 특별 요청이 있으면 그에 맞게 요일이나 부위를 바꿔도 됩니다.
 - 운동 이름은 아래 "사용 가능한 운동" 목록에 있는 것을 글자 그대로 씁니다. 목록에 없는 종목은 꼭 필요할 때만 쓰고, group 은 반드시 목록의 부위 코드 중 하나로 지정합니다.
 - 하루 운동은 5~8종목, 전체 60~80분 안에 끝나는 분량으로 합니다.
 - 복합관절 운동을 앞에, 고립 운동을 뒤에 배치합니다.
