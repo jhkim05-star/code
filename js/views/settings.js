@@ -187,6 +187,7 @@ function restCard(s) {
     })),
 
     switchRow('세트가 끝나면 휴식 자동 시작', null, s.autoStartRest, v => setSetting('autoStartRest', v)),
+    switchRow('휴식이 끝나면 다음 세트 자동 시작', '무게를 바꿀 시간이 필요하면 꺼 두세요', s.autoAdvance, v => setSetting('autoAdvance', v)),
     switchRow('화면 꺼짐 방지', '운동 중에는 화면을 켜 둡니다', s.keepAwake, v => setSetting('keepAwake', v)),
   );
 }

@@ -6,7 +6,7 @@
  * (AI 계획 생성만 인터넷이 필요합니다.)
  */
 
-const CACHE = 'workout-log-v9';
+const CACHE = 'workout-log-v10';
 
 const ASSETS = [
   './',

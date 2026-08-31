@@ -1,8 +1,8 @@
 /** 운동실행 탭 — 이번 주 계획을 일자별로 보고 그 자리에서 운동을 시작합니다 */
 
 import { h, mount, modal, toast, field, pageHead, confirmSheet, stepper } from '../ui.js';
-import { getPlan, savePlan, deletePlan, settings, sessionsOn } from '../store.js';
-import { buildFreeDay } from '../planner.js';
+import { getPlan, savePlan, deletePlan, settings, sessions, sessionsOn } from '../store.js';
+import { buildFreeDay, suggestWeight } from '../planner.js';
 import { pickExercise } from './exercisePicker.js';
 import { GROUP_NAME } from '../exercises.js';
 import {
@@ -184,8 +184,19 @@ function editBlock(root, weekStart, plan, day, index) {
           }),
           h('input', {
             type: 'number', inputmode: 'decimal', step: '0.5', value: st.weight ?? '',
-            placeholder: `${s.unit}`, style: { flex: 1 },
+            placeholder: '추천 없음', style: { flex: 1 },
             oninput: (e) => { st.weight = e.target.value === '' ? null : Number(e.target.value); },
+            onchange: () => {
+              if (st.weight == null) return;
+              // 입력을 마쳤을 때(포커스를 벗어날 때) 아직 정하지 않은 뒤 세트에 이어서 채웁니다
+              let changed = false;
+              for (let j = i + 1; j < b.sets.length; j++) {
+                if (b.sets[j].weight != null) break;
+                b.sets[j].weight = st.weight;
+                changed = true;
+              }
+              if (changed) paintSets();
+            },
           }),
         ),
         h('button.btn-sm.btn-ghost', {
@@ -199,6 +210,7 @@ function editBlock(root, weekStart, plan, day, index) {
     return h('div', null,
       h('h3', null, b.name),
       h('.hint', { style: { marginTop: '-10px', marginBottom: '16px' } }, `${GROUP_NAME[b.group] || ''} · ${b.equip || ''}`),
+      b.overloadNote ? h('.hint', { style: { color: 'var(--good)', marginTop: '-10px', marginBottom: '14px' } }, `📈 ${b.overloadNote}`) : null,
 
       h('.lbl', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: '8px' } },
         '세트별 목표 (횟수 · 무게)'),
@@ -245,10 +257,11 @@ function editBlock(root, weekStart, plan, day, index) {
 function swapBlock(root, weekStart, plan, day, index) {
   const cur = day.blocks[index];
   pickExercise(cur.group, (ex) => {
+    const suggestion = suggestWeight(ex.id, sessions());
     day.blocks[index] = {
       exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest, tempo: ex.tempo ?? 3,
-      sets: cur.sets.map(st => ({ reps: st.reps, weight: null })),
+      rest: ex.rest, tempo: ex.tempo ?? 3, overloadNote: suggestion?.note || '',
+      sets: cur.sets.map(st => ({ reps: st.reps, weight: suggestion?.weight ?? null })),
     };
     savePlan(plan);
     toast(`${ex.name}(으)로 바꿨습니다`);
@@ -259,10 +272,11 @@ function swapBlock(root, weekStart, plan, day, index) {
 function addBlock(root, weekStart, plan, day) {
   const preferred = day.blocks.at(-1)?.group || day.groupIds?.[0] || 'chest';
   pickExercise(preferred, (ex) => {
+    const suggestion = suggestWeight(ex.id, sessions());
     day.blocks.push({
       exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest, tempo: ex.tempo ?? 3,
-      sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: null })),
+      rest: ex.rest, tempo: ex.tempo ?? 3, overloadNote: suggestion?.note || '',
+      sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: suggestion?.weight ?? null })),
     });
     savePlan(plan);
     toast(`${ex.name} 추가`);

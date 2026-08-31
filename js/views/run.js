@@ -1,11 +1,11 @@
 /** 운동 실행 화면 — 오늘의 계획을 차례로 진행합니다 */
 
 import { h, mount, modal, toast, dial, confirmSheet, field } from '../ui.js';
-import { getPlan, savePlan, saveSession, settings } from '../store.js';
+import { getPlan, savePlan, saveSession, sessions, settings } from '../store.js';
 import { Runner, sessionVolume, sessionSetCount } from '../runner.js';
 import { unlockAudio } from '../voice.js';
 import { GROUP_NAME } from '../exercises.js';
-import { buildFreeDay } from '../planner.js';
+import { buildFreeDay, suggestWeight } from '../planner.js';
 import { pickExercise } from './exercisePicker.js';
 import { weekStartOf, parseYmd, ymd, mmss, fmtWeight, comma } from '../util.js';
 import { go } from '../app.js';
@@ -39,10 +39,11 @@ export async function renderRun(root, [date]) {
 }
 
 function freeBlock(ex) {
+  const suggestion = suggestWeight(ex.id, sessions());
   return {
     exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
     rest: ex.rest, tempo: ex.tempo ?? 3,
-    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: null })),
+    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: suggestion?.weight ?? null })),
   };
 }
 
@@ -77,6 +78,8 @@ function buildUi(root, runner) {
   const pips = h('.setgrid');
   const actions = h('.run-actions');
   const dials = h('div');
+  const elapsed = h('.run-elapsed', null,
+    h('span', null, '전체 시간'), h('span.num', null, elapsedText(runner)));
 
   const top = h('.run-top', null,
     h('button.btn-sm.btn-ghost', { onclick: () => quit(runner) }, '‹ 그만'),
@@ -92,7 +95,7 @@ function buildUi(root, runner) {
     counter,
     pips,
     // 다이얼과 버튼은 아래쪽에 몰아 둡니다 — 운동 중에 한 손으로 닿는 자리입니다
-    h('.run-bottom', null, dials, actions),
+    h('.run-bottom', null, elapsed, dials, actions),
   ));
 
   // ── 속도 · 휴식 다이얼 (언제나 실시간으로 조절 가능) ──────
@@ -114,6 +117,7 @@ function buildUi(root, runner) {
   /** 값만 갱신 — 매 100ms 호출되므로 DOM 을 다시 만들지 않습니다 */
   const sync = () => {
     bar.style.width = `${(runner.progress * 100).toFixed(1)}%`;
+    elapsed.lastChild.textContent = elapsedText(runner);
 
     if (runner.state === 'resting') {
       counter.className = 'counter resting';
@@ -155,6 +159,9 @@ function buildUi(root, runner) {
         rec?.weight ? ` · ${fmtWeight(rec.weight, s.unit)}` : '',
       ),
       b.note ? h('.hint', { style: { marginTop: '6px' } }, b.note) : null,
+      (runner.state === 'ready' && b.overloadNote)
+        ? h('.hint', { style: { marginTop: '6px', color: 'var(--good)' } }, `📈 ${b.overloadNote}`)
+        : null,
     );
 
     mount(pips, ...runner.entry.sets.map((st, i) =>
@@ -174,10 +181,20 @@ function buildUi(root, runner) {
   return { sync, rebuild, showSummary };
 }
 
+function elapsedText(runner) {
+  const sec = Math.round(runner.elapsedSec);
+  const h2 = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+  const mm = String(m).padStart(h2 ? 2 : 1, '0');
+  return h2 ? `${h2}:${mm}:${String(s2).padStart(2, '0')}` : `${mm}:${String(s2).padStart(2, '0')}`;
+}
+
 function nextLabel(runner) {
-  if (runner.setIndex + 1 < runner.entry.sets.length) return `${runner.setIndex + 2}세트`;
-  const nb = runner.day.blocks[runner.exIndex + 1];
-  return nb ? nb.name : '마무리';
+  const s = settings();
+  const next = runner.peekNext();
+  if (!next?.rec) return '마무리';
+  const name = next.exIndex === runner.exIndex ? `${next.setIndex + 1}세트` : runner.day.blocks[next.exIndex]?.name;
+  const w = next.rec.weight ? ` · ${fmtWeight(next.rec.weight, s.unit)}` : '';
+  return `${name}${w}`;
 }
 
 function actionsFor(runner) {
@@ -191,6 +208,7 @@ function actionsFor(runner) {
       ),
       h('.btn-row', null,
         h('button.btn-sm.btn-ghost', { onclick: () => runner.goBack() }, '‹ 앞 세트'),
+        h('button.btn-sm.btn-ghost', { onclick: () => openSwap(runner) }, '🔄 대체운동'),
         h('button.btn-sm.btn-ghost', { onclick: () => runner.skipExercise() }, '다음 운동 ›'),
       ),
     ];
@@ -221,36 +239,45 @@ function actionsFor(runner) {
         h('button', { onclick: () => runner.adjustRest(15) }, '＋ 15초'),
       ),
       h('button.btn-block.btn-primary.btn-lg', { onclick: () => runner.skipRest() }, '건너뛰고 시작'),
-      h('button.btn-block.btn-ghost', { onclick: () => openSetEditor(runner) }, '다음 세트 무게 바꾸기'),
+      h('button.btn-block.btn-ghost', { onclick: () => openSetEditor(runner, { next: true }) }, '다음 세트 무게 바꾸기'),
     ];
   }
 
   return [];
 }
 
-/** 무게와 목표 횟수를 그 자리에서 고칩니다 */
-function openSetEditor(runner) {
+/**
+ * 무게와 목표 횟수를 그 자리에서 고칩니다.
+ * @param {{next?: boolean}} opt  next:true 면 지금 세트가 아니라 "다음 세트"를 고칩니다
+ *   (휴식 화면에서 씁니다 — 그 시점엔 runner.setRec 이 아직 방금 끝낸 세트를 가리키고 있어서,
+ *   여기서 잘못 그걸 고치면 "다음 세트를 바꿨는데 이전 세트가 바뀌는" 것처럼 보입니다).
+ */
+function openSetEditor(runner, opt = {}) {
   const s = settings();
-  const rec = runner.setRec;
+  const target = opt.next ? runner.peekNext() : { exIndex: runner.exIndex, setIndex: runner.setIndex, rec: runner.setRec };
+  const rec = target?.rec;
   if (!rec) return;
+  const exName = opt.next ? (runner.day.blocks[target.exIndex]?.name || runner.block.name) : runner.block.name;
 
   modal((close) => {
     const w = h('input', {
       type: 'number', inputmode: 'decimal', step: '0.5',
-      value: rec.weight ?? '', placeholder: '0',
+      value: rec.weight ?? '', placeholder: '추천 없음',
     });
     const r = h('input', { type: 'number', inputmode: 'numeric', value: rec.targetReps });
     return h('div', null,
-      h('h3', null, runner.block.name),
+      h('h3', null, exName),
       h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
-        `${runner.setIndex + 1}세트`),
-      field(`무게 (${s.unit})`, w, '이 세트에만 적용됩니다. 세트마다 무게를 다르게 둘 수 있습니다.'),
+        `${opt.next ? '다음 · ' : ''}${target.setIndex + 1}세트`),
+      field(`무게 (${s.unit})`, w, '비워 두면 다음 세트들도 계속 비워 둡니다. 값을 넣으면 아직 안 정한 뒤 세트에 이어서 채웁니다.'),
       field('목표 횟수', r),
       h('button.btn-block.btn-primary', {
         style: { marginTop: '6px' },
         onclick: () => {
-          runner.setWeight(w.value === '' ? null : Number(w.value));
-          runner.setTargetReps(Number(r.value) || rec.targetReps);
+          const kg = w.value === '' ? null : Number(w.value);
+          const reps = Number(r.value) || rec.targetReps;
+          if (opt.next) { runner.setNextWeight(kg); runner.setNextTargetReps(reps); }
+          else { runner.setWeight(kg); runner.setTargetReps(reps); }
           close();
           runner.emit('state', runner.state);
         },
@@ -259,10 +286,16 @@ function openSetEditor(runner) {
   });
 }
 
-/** 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동, 종목 즉흥 추가 */
+/** 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동, 종목 즉흥 추가, 오늘 메모 */
 function openList(runner) {
   const close = modal(() => h('div', null,
     h('h3', null, '오늘의 운동'),
+    field('오늘 메모', h('textarea', {
+      value: runner.session.comment || '',
+      placeholder: '컨디션, 특이사항 등을 적어 두세요',
+      rows: 2,
+      oninput: (e) => { runner.session.comment = e.target.value; },
+    })),
     h('ul.picker', null, ...runner.day.blocks.map((b, i) => {
       const entry = runner.session.entries[i];
       const done = entry.sets.filter(x => x.done).length;
@@ -285,6 +318,14 @@ function openList(runner) {
       },
     }, '＋ 종목 추가'),
   ));
+}
+
+/** 지금 하는 운동을 다른 종목으로 바꿉니다 — 오늘만 적용되고 다음에 생성될 계획엔 영향 없음 */
+function openSwap(runner) {
+  pickExercise(runner.block?.group, (ex) => {
+    runner.substituteExercise(ex);
+    toast(`${ex.name}(으)로 대체 · 오늘만 적용됩니다`);
+  }, { equipmentOnly: true });
 }
 
 async function quit(runner) {
@@ -333,6 +374,13 @@ function summaryView(session) {
         ),
       ),
     ),
+
+    field('오늘 메모', h('textarea', {
+      value: session.comment || '',
+      placeholder: '컨디션, 특이사항 등을 적어 두세요',
+      rows: 2,
+      oninput: (e) => { session.comment = e.target.value; saveSession(session); },
+    })),
 
     h('button.btn-block.btn-primary', { onclick: () => go('/exec') }, '운동실행으로'),
     h('button.btn-block.btn-ghost', { style: { marginTop: '8px' }, onclick: () => go('/history') }, '기록 보기'),

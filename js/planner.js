@@ -121,7 +121,7 @@ function pickForGroup(group, count, variantIdx, variantCount, rot, custom, used,
 }
 
 /** 종목 하나로 계획의 "블록"을 만듭니다. 세트마다 목표 무게·횟수를 따로 갖습니다. */
-function blockFrom(ex, lastWeight = null) {
+function blockFrom(ex, suggestion = null) {
   return {
     exerciseId: ex.id,
     name: ex.name,
@@ -129,18 +129,33 @@ function blockFrom(ex, lastWeight = null) {
     equip: ex.equip,
     rest: ex.rest,
     tempo: ex.tempo ?? 3,
-    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: lastWeight })),
+    overloadNote: suggestion?.note || '',
+    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: suggestion?.weight ?? null })),
   };
 }
 
-/** 지난 기록에서 이 종목의 마지막 무게를 찾아 미리 채워 줍니다 */
-function lastWeightFor(exerciseId, sessions) {
+const OVERLOAD_STEP = 2.5;   // 흔한 원판 조합 기준 최소 증량 단위(kg)
+
+/**
+ * 지난 기록을 보고 이번엔 몇 kg 으로 할지 제안합니다 (점진적 과부하).
+ *   · 가장 최근에 이 종목을 한 날, 가장 무거웠던 세트 기준으로
+ *     — 목표 횟수를 전부(또는 그 이상) 채웠으면 → 살짝 올려서 제안
+ *     — 목표에 못 미쳤으면 → 같은 무게로 다시 (무리하게 올리지 않음)
+ *   · 기록이 아예 없으면 제안하지 않습니다(임의로 무게를 지어내지 않음)
+ */
+export function suggestWeight(exerciseId, sessions) {
   for (let i = sessions.length - 1; i >= 0; i--) {
-    for (const entry of sessions[i].entries || []) {
-      if (entry.exerciseId !== exerciseId) continue;
-      const done = (entry.sets || []).filter(s => s.done && s.weight != null);
-      if (done.length) return done.at(-1).weight;
-    }
+    const entry = (sessions[i].entries || []).find(e => e.exerciseId === exerciseId);
+    if (!entry) continue;
+    const done = (entry.sets || []).filter(s => s.done && s.weight != null);
+    if (!done.length) continue;
+
+    const top = done.reduce((a, b) => (b.weight > a.weight ? b : a));
+    const metTarget = (top.reps ?? 0) >= (top.targetReps ?? top.reps ?? 0);
+
+    return metTarget
+      ? { weight: Math.round((top.weight + OVERLOAD_STEP) * 2) / 2, note: `지난번(${top.weight}kg) 목표를 채워서 +${OVERLOAD_STEP}kg 제안` }
+      : { weight: top.weight, note: `지난번 목표에 못 미쳐 같은 무게(${top.weight}kg)로 다시` };
   }
   return null;
 }
@@ -159,7 +174,7 @@ export function buildDay({ date, dow, groupIds, variantIdx, variantCount, custom
   const blocks = [];
   for (const g of countsFor(groupIds)) {
     for (const ex of pickForGroup(g.group, g.count, variantIdx, variantCount, rot, custom, used, equipment, avoid)) {
-      blocks.push(blockFrom(ex, lastWeightFor(ex.id, sessions)));
+      blocks.push(blockFrom(ex, suggestWeight(ex.id, sessions)));
     }
   }
 
@@ -259,12 +274,13 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
       const sets = Number.isFinite(+b.sets) ? Math.round(+b.sets) : ex.sets;
       const reps = Number.isFinite(+b.reps) ? Math.round(+b.reps) : ex.reps;
       const rest = Number.isFinite(+b.rest) ? Math.round(+b.rest) : ex.rest;
-      const lastW = lastWeightFor(ex.id, sessions);
+      const suggestion = suggestWeight(ex.id, sessions);
       blocks.push({
         exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
         rest, tempo: Number.isFinite(+b.tempo) ? +b.tempo : (ex.tempo ?? 3),
         note: b.note ? String(b.note).slice(0, 120) : '',
-        sets: Array.from({ length: sets }, () => ({ reps, weight: lastW })),
+        overloadNote: suggestion?.note || '',
+        sets: Array.from({ length: sets }, () => ({ reps, weight: suggestion?.weight ?? null })),
       });
     }
 

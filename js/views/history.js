@@ -144,6 +144,11 @@ export async function renderSessionDetail(root, [id]) {
       h('.kpi', null, h('.v', null, comma(sessionVolume(s))), h('.k', null, `볼륨 ${unit}`)),
     ),
 
+    s.comment ? h('.card', null,
+      h('.eyebrow', null, '메모'),
+      h('p', { style: { marginTop: '8px', marginBottom: 0, fontSize: '14.5px', lineHeight: '1.6' } }, s.comment),
+    ) : null,
+
     ...s.entries.map(e => {
       const done = e.sets.filter(x => x.done);
       if (!done.length) return null;

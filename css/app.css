@@ -327,6 +327,12 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
 .setpip.cur { border-color: var(--accent); border-width: 2px; color: var(--accent); font-weight: 700; }
 
 .run-bottom { margin-top: auto; padding-top: 20px; }
+.run-elapsed {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; color: var(--ink-3); padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule); margin-bottom: 4px;
+}
+.run-elapsed .num { font-size: 15px; font-weight: 700; color: var(--ink); }
 .run-actions { padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 
 /* ── stats ────────────────────────────────────────────────── */

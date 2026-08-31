@@ -10,7 +10,8 @@
  */
 
 import { speakCount, cue, beep, stopSpeaking } from './voice.js';
-import { settings } from './store.js';
+import { settings, sessions } from './store.js';
+import { suggestWeight } from './planner.js';
 import { uid, todayYmd, clamp } from './util.js';
 
 const TICK_MS = 100;
@@ -51,6 +52,7 @@ export class Runner {
       title: day.title || '운동',
       startedAt: Date.now(),
       endedAt: null,
+      comment: '',
       entries: day.blocks.map(b => ({
         exerciseId: b.exerciseId,
         name: b.name,
@@ -87,6 +89,25 @@ export class Runner {
   get totalSets() { return this.session.entries.reduce((a, e) => a + e.sets.length, 0); }
   get doneSets()  { return this.session.entries.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0); }
   get targetReps() { return this.setRec?.targetReps ?? this.block?.reps ?? 10; }
+  get elapsedSec() { return Math.max(0, (Date.now() - this.session.startedAt) / 1000); }
+
+  /**
+   * 다음 세트의 위치를 미리 봅니다 (지금 위치는 안 바꿈).
+   * 휴식 중엔 setIndex/exIndex 가 아직 "방금 끝낸 세트"를 가리키고 있어서
+   * (advance() 는 휴식이 끝나야 실행됩니다), 휴식 화면에서 "다음 세트"를
+   * 고치려면 이 위치를 따로 계산해야 합니다.
+   */
+  peekNext() {
+    const entry = this.entry;
+    if (this.setIndex + 1 < (entry?.sets.length || 0)) {
+      return { exIndex: this.exIndex, setIndex: this.setIndex + 1, rec: entry.sets[this.setIndex + 1] };
+    }
+    if (this.exIndex + 1 < this.day.blocks.length) {
+      const nextEntry = this.session.entries[this.exIndex + 1];
+      return { exIndex: this.exIndex + 1, setIndex: 0, rec: nextEntry?.sets[0] || null };
+    }
+    return null;
+  }
 
   get progress() {
     const t = this.totalSets;
@@ -167,7 +188,13 @@ export class Runner {
           setTimeout(() => cue.lastRep(), this.tempo * 500);
         }
       }
-      if (this.rep >= this.targetReps) this.finishSet();
+      // 마지막 횟수를 다 채웠으면, 방금 부른 숫자가 끝까지 들리도록 1초 쉬었다가
+      // "세트 완료"로 넘어갑니다 — 바로 이어지면 마지막 숫자가 잘려 들립니다.
+      // (state 는 그대로 'counting' 에 두고, finishSet() 호출만 미룹니다)
+      if (this.rep >= this.targetReps && !this._finishing) {
+        this._finishing = true;
+        this._finishTimer = setTimeout(() => this.finishSet(), 1000);
+      }
 
     } else if (this.state === 'resting') {
       const left = this.restLeft;
@@ -211,6 +238,12 @@ export class Runner {
 
   /** 목표 횟수를 다 채웠거나 사용자가 직접 끝냈을 때 */
   finishSet(actualReps = null) {
+    // 대기 중인 "1초 뒤 자동 완료" 타이머가 있으면 정리합니다 — 버튼으로
+    // 먼저 끝냈는데 타이머가 나중에 또 실행돼 세트가 두 번 끝나는 걸 막습니다.
+    clearTimeout(this._finishTimer);
+    this._finishing = false;
+    if (this.state !== 'counting' && this.state !== 'countdown') return;
+
     const rec = this.setRec;
     if (rec) {
       rec.reps = actualReps ?? this.rep ?? rec.targetReps;
@@ -218,6 +251,11 @@ export class Runner {
       rec.at = Date.now();
       rec.tempo = this.tempo;
       rec.rest = Math.round(this.rest);
+      // 무게를 안 넣었으면 같은 종목의 직전(이미 끝난) 세트 무게를 이어받습니다.
+      if (rec.weight == null) {
+        const prevDone = [...this.entry.sets].slice(0, this.setIndex).reverse().find(s => s.weight != null);
+        if (prevDone) rec.weight = prevDone.weight;
+      }
     }
     this.state = 'setdone';
     cue.setDone();
@@ -274,11 +312,11 @@ export class Runner {
   finishRest() {
     cue.restDone();
     beep(1040, 160);
-    this.advance();
+    this.advance({ fromRest: true });
   }
 
   /** 다음 세트 / 다음 운동으로 */
-  advance() {
+  advance({ fromRest = false } = {}) {
     const entry = this.entry;
     if (this.setIndex + 1 < (entry?.sets.length || 0)) {
       this.setIndex += 1;
@@ -293,12 +331,14 @@ export class Runner {
       this.finishWorkout();
       return;
     }
-    // 휴식이 끝나도 다음 세트를 자동으로 시작하지는 않습니다.
-    // 무게를 바꾸거나 자리를 옮길 시간이 필요하기 때문에, 준비 상태로 두고 기다립니다.
     this.rep = 0;
     this.state = 'ready';
     this.emit('state', this.state);
     this.emit('tick', this);
+
+    // 휴식이 끝나서 넘어온 경우에만 자동으로 다음 세트를 시작합니다.
+    // (직접 건너뛰기 등으로 넘어온 경우엔 무게를 바꿀 시간을 주기 위해 기다립니다)
+    if (fromRest && settings().autoAdvance) this.beginSet();
   }
 
   /** 이 세트를 건너뜁니다 */
@@ -353,15 +393,16 @@ export class Runner {
     const s = settings();
     const setCount = opt.sets ?? ex.sets ?? 3;
     const reps = opt.reps ?? ex.reps ?? 10;
+    const suggestion = suggestWeight(ex.id, sessions());
     const block = {
       exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
       rest: ex.rest ?? s.restDefault, tempo: ex.tempo ?? s.tempo,
-      sets: Array.from({ length: setCount }, () => ({ reps, weight: null })),
+      sets: Array.from({ length: setCount }, () => ({ reps, weight: suggestion?.weight ?? null })),
     };
     const entry = {
       exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
       sets: block.sets.map(st => ({
-        targetReps: st.reps, reps: null, weight: null,
+        targetReps: st.reps, reps: null, weight: st.weight,
         rest: block.rest, tempo: block.tempo, done: false, at: null,
       })),
     };
@@ -370,6 +411,45 @@ export class Runner {
     this.session.entries.splice(insertAt, 0, entry);
     this.emit('tick', this);
     return insertAt;
+  }
+
+  /**
+   * 지금 하는 운동을 다른 종목으로 바꿉니다. 오늘 이 세션에만 적용되고
+   * (day.blocks 는 이 실행 화면이 끝나면 버려지는 사본이라) 계획 자체나
+   * 앞으로 생성될 다른 날에는 영향을 주지 않습니다.
+   */
+  substituteExercise(ex, exIndex = this.exIndex) {
+    const cur = this.day.blocks[exIndex];
+    if (!cur) return;
+    const s = settings();
+    const setCount = cur.sets.length;
+    const reps = ex.reps ?? cur.sets[0]?.reps ?? 10;
+    const suggestion = suggestWeight(ex.id, sessions());
+
+    const newBlock = {
+      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
+      rest: ex.rest ?? cur.rest, tempo: ex.tempo ?? cur.tempo,
+      sets: Array.from({ length: setCount }, () => ({ reps, weight: suggestion?.weight ?? null })),
+    };
+    this.day.blocks[exIndex] = newBlock;
+
+    const oldEntry = this.session.entries[exIndex];
+    this.session.entries[exIndex] = {
+      exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
+      sets: newBlock.sets.map((st, i) => ({
+        targetReps: st.reps, reps: null, weight: st.weight,
+        rest: newBlock.rest, tempo: newBlock.tempo,
+        // 이미 끝낸 세트가 있었다면(운동 중간에 바꾼 경우) 그 결과는 남겨 둡니다
+        done: oldEntry?.sets[i]?.done || false,
+        at: oldEntry?.sets[i]?.at || null,
+      })),
+    };
+
+    if (exIndex === this.exIndex) {
+      this.tempo = newBlock.tempo ?? s.tempo;
+      this.rest = newBlock.rest ?? s.restDefault;
+    }
+    this.emit('tick', this);
   }
 
   setTempo(sec) {
@@ -381,11 +461,34 @@ export class Runner {
     this.emit('tick', this);
   }
 
-  /** 이 세트만의 무게를 바꿉니다. 세트마다 무게가 다를 수 있으므로 다른 세트에는 번지지 않습니다. */
+  /**
+   * 이 세트의 무게를 바꿉니다. 뒤에 아직 무게를 안 정한(비어 있는) 세트가 있으면
+   * 거기까지는 이 값을 이어서 채워 줍니다 — 이미 값이 있는 세트는 건드리지 않습니다.
+   */
   setWeight(kg) {
     const rec = this.setRec;
     if (!rec) return;
     rec.weight = kg;
+    for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
+      const later = this.entry.sets[i];
+      if (later.weight != null || later.done) break;
+      later.weight = kg;
+    }
+    this.emit('tick', this);
+  }
+
+  /** peekNext() 가 가리키는 다음 세트의 무게·목표 횟수를 고칩니다 (휴식 중에 씁니다) */
+  setNextWeight(kg) {
+    const next = this.peekNext();
+    if (!next?.rec) return;
+    next.rec.weight = kg;
+    this.emit('tick', this);
+  }
+
+  setNextTargetReps(n) {
+    const next = this.peekNext();
+    if (!next?.rec) return;
+    next.rec.targetReps = clamp(Math.round(n), 1, 100);
     this.emit('tick', this);
   }
 
