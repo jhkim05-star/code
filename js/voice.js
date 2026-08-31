@@ -184,9 +184,12 @@ export function unlockAudio() {
   // 등록된 클립을 전부 한 번씩 건드려 둡니다. iOS 는 오디오 엘리먼트마다
   // 따로 "허용" 상태를 매기기 때문에, 나중에(타이머 안에서) 처음 재생을
   // 시도하는 클립은 이 사용자 동작 없이는 조용히 막힐 수 있습니다.
+  // 주의: iOS Safari 는 <audio>.volume 을 무시하므로 volume=0 으로는 안 들리게
+  // 할 수 없습니다 (실제로 30개 카운트 클립이 전부 들리게 재생되는 버그가 있었음).
+  // muted 속성은 iOS 도 존중하므로 이걸로 소리를 죽여야 합니다.
   for (const key of Object.keys(clipManifest || {})) {
     const a = clipFor(key);
-    if (a) { a.volume = 0; a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {}); }
+    if (a) { a.muted = true; a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; }); }
   }
   unlocked = true;
   return true;
