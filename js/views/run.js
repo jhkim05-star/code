@@ -286,7 +286,7 @@ function openSetEditor(runner, opt = {}) {
       h('h3', null, exName),
       h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
         `${opt.next ? '다음 · ' : ''}${target.setIndex + 1}세트`),
-      field(`무게 (${s.unit})`, w, '비워 두면 다음 세트들도 계속 비워 둡니다. 값을 넣으면 아직 안 정한 뒤 세트에 이어서 채웁니다.'),
+      field(`무게 (${s.unit})`, w, '이 종목의 아직 하지 않은 뒤 세트들에도 그대로 이어서 적용됩니다.'),
       field('목표 횟수', r),
       h('button.btn-block.btn-primary', {
         style: { marginTop: '6px' },

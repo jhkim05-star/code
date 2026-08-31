@@ -462,8 +462,11 @@ export class Runner {
   }
 
   /**
-   * 이 세트의 무게를 바꿉니다. 뒤에 아직 무게를 안 정한(비어 있는) 세트가 있으면
-   * 거기까지는 이 값을 이어서 채워 줍니다 — 이미 값이 있는 세트는 건드리지 않습니다.
+   * 이 세트의 무게를 바꿉니다. 아직 하지 않은(끝내지 않은) 뒤 세트들에도
+   * 이 값을 그대로 이어서 적용합니다 — 계획 생성 시 같은 종목의 모든 세트에
+   * 동일한 추천 무게가 미리 채워져 있어서(null 이 아님), "빈 세트에만 이어서
+   * 채운다"는 예전 방식으로는 사실상 한 세트만 바뀌고 그 뒤로는 전혀 안
+   * 이어졌습니다. 이미 끝낸(done) 세트는 기록이라 건드리지 않습니다.
    */
   setWeight(kg) {
     const rec = this.setRec;
@@ -471,7 +474,7 @@ export class Runner {
     rec.weight = kg;
     for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
       const later = this.entry.sets[i];
-      if (later.weight != null || later.done) break;
+      if (later.done) break;
       later.weight = kg;
     }
     this.emit('tick', this);
@@ -479,8 +482,7 @@ export class Runner {
 
   /**
    * peekNext() 가 가리키는 다음 세트의 무게·목표 횟수를 고칩니다 (휴식 중에 씁니다).
-   * setWeight() 와 마찬가지로, 그 뒤에 아직 무게를 안 정한 세트가 있으면 거기까지
-   * 이어서 채웁니다 — 이미 값이 있는 세트는 건드리지 않습니다.
+   * setWeight() 와 마찬가지로, 아직 끝내지 않은 그 뒤 세트들에도 이어서 적용합니다.
    */
   setNextWeight(kg) {
     const next = this.peekNext();
@@ -489,7 +491,7 @@ export class Runner {
     const entry = this.session.entries[next.exIndex];
     for (let i = next.setIndex + 1; i < entry.sets.length; i++) {
       const later = entry.sets[i];
-      if (later.weight != null || later.done) break;
+      if (later.done) break;
       later.weight = kg;
     }
     this.emit('tick', this);
