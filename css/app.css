@@ -285,6 +285,7 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--rule);
 }
+.run-title { text-align: center; padding: 8px 4px 0; }
 .run-progress { height: 3px; background: var(--rule); margin: 0 0 18px; }
 .run-progress i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
 

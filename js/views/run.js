@@ -91,15 +91,17 @@ function buildUi(root, runner) {
   const elapsed = h('.run-elapsed', null,
     h('span', null, '전체 시간'), h('span.num', null, elapsedText(runner)));
 
+  // 버튼 줄과 제목을 한 줄에 욱여넣으면 제목이 길 때 버튼과 뒤엉켜 보이므로,
+  // 제목은 버튼 아래 자기 줄에 따로 둡니다.
   const top = h('.run-top', null,
     h('button.btn-sm.btn-ghost', { onclick: () => quit(runner) }, '‹ 그만'),
-    h('div', { style: { textAlign: 'center', flex: 1, minWidth: 0 } },
-      h('.eyebrow', null, runner.day.title)),
     h('button.btn-sm.btn-ghost', { onclick: () => openList(runner) }, '목록'),
   );
+  const title = h('.run-title.eyebrow', null, runner.day.title);
 
   mount(root, h('.run', null,
     top,
+    title,
     h('.run-progress', null, bar),
     exBox,
     counter,

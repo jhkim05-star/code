@@ -1,9 +1,11 @@
 /** 운동 기록 — 지난 세션 목록과 상세 */
 
-import { h, mount, pageHead, empty, modal, confirmSheet, toast } from '../ui.js';
+import { h, mount, pageHead, empty, modal, confirmSheet, toast, field } from '../ui.js';
 import { sessions, getSession, saveSession, deleteSession, settings } from '../store.js';
 import { sessionVolume, sessionSetCount } from '../runner.js';
-import { fmtDate, fmtDateShort, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy } from '../util.js';
+import { recommendWeight } from '../planner.js';
+import { pickExercise } from './exercisePicker.js';
+import { fmtDate, fmtDateShort, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy, uid } from '../util.js';
 import { go } from '../app.js';
 
 const now = new Date();
@@ -17,6 +19,7 @@ export async function renderHistory(root) {
     mount(root,
       pageHead('기록', '아직 비어 있습니다'),
       empty('첫 운동을 마치면 여기에 쌓입니다.'),
+      h('button.btn-block.btn-primary', { onclick: () => addManualRecord() }, '＋ 지난 운동 기록 추가'),
     );
     return;
   }
@@ -28,7 +31,8 @@ function draw(root, all) {
   const byMonth = groupBy(all, s => s.date.slice(0, 7));
 
   mount(root,
-    pageHead('기록', `${all.length}회`),
+    pageHead('기록', `${all.length}회`,
+      h('button.btn-sm', { onclick: () => addManualRecord() }, '＋ 기록 추가')),
     calendarCard(root, all),
     ...[...byMonth.entries()].map(([month, list]) => {
       const [y, m] = month.split('-');
@@ -92,6 +96,80 @@ function shiftMonth(delta) {
   calMonth += delta;
   if (calMonth < 0) { calMonth = 11; calYear -= 1; }
   if (calMonth > 11) { calMonth = 0; calYear += 1; }
+}
+
+/**
+ * 앱으로 실행하지 않은 운동도 기록으로 남길 수 있게 합니다 — 헬스장에서 종이에
+ * 적었거나 나중에 생각난 지난 운동, 또는 계획/실행 없이 쉬는 날 갑자기 한
+ * 운동도 날짜만 골라서 그대로 넣을 수 있습니다. 저장 후엔 세트별 무게·횟수를
+ * 바로 다듬을 수 있도록 기록 상세(후편집) 화면으로 넘어갑니다.
+ */
+function addManualRecord() {
+  const chosen = [];   // { ex, sets, reps }
+  const dateInput = h('input', { type: 'date', value: todayYmd() });
+  const titleInput = h('input', { type: 'text', placeholder: '예: 가슴 · 삼두 (안 적으면 종목명으로)' });
+  const list = h('div');
+
+  const paintList = () => {
+    mount(list, chosen.length
+      ? chosen.map((c, i) => h('.switch', { style: { alignItems: 'center' } },
+          h('div', null,
+            h('.lbl', null, c.ex.name),
+            h('.sub', null, `${c.sets}세트 × ${c.reps}회`)),
+          h('button.btn-sm.btn-ghost', { onclick: () => { chosen.splice(i, 1); paintList(); } }, '✕'),
+        ))
+      : h('.hint', null, '아직 추가한 종목이 없습니다.'));
+  };
+  paintList();
+
+  modal((close) => h('div', null,
+    h('h3', null, '지난 운동 기록 추가'),
+    h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
+      '앱으로 실행하지 않은 운동도 날짜를 골라 그대로 기록해 둘 수 있습니다. 계획이 없던 날도 상관없습니다.'),
+    field('날짜', dateInput),
+    field('제목 (선택)', titleInput),
+    h('.lbl', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-3)', marginTop: '6px', marginBottom: '8px' } }, '종목'),
+    list,
+    h('button.btn-sm', {
+      style: { marginTop: '8px' },
+      onclick: () => pickExercise(null, (ex) => {
+        chosen.push({ ex, sets: ex.sets || 3, reps: ex.reps || 10 });
+        paintList();
+      }),
+    }, '＋ 종목 추가'),
+    h('button.btn-block.btn-primary', {
+      style: { marginTop: '16px' },
+      onclick: () => {
+        if (!dateInput.value) return toast('날짜를 골라 주세요');
+        if (!chosen.length) return toast('종목을 하나 이상 추가해 주세요');
+
+        const date = dateInput.value;
+        const startedAt = new Date(`${date}T12:00:00`).getTime();
+        const session = {
+          id: uid('ses'),
+          date,
+          title: titleInput.value.trim() || chosen.map(c => c.ex.name).slice(0, 2).join(' · '),
+          startedAt,
+          endedAt: startedAt + 60000,
+          comment: '',
+          entries: chosen.map((c) => {
+            const suggestion = recommendWeight(c.ex, { sessions: sessions() });
+            return {
+              exerciseId: c.ex.id, name: c.ex.name, group: c.ex.group, note: '',
+              sets: Array.from({ length: c.sets }, () => ({
+                targetReps: c.reps, reps: c.reps, weight: suggestion?.weight ?? null,
+                done: true, at: startedAt, tempo: c.ex.tempo ?? 3,
+              })),
+            };
+          }),
+        };
+        saveSession(session);
+        close();
+        toast('기록을 추가했습니다. 세트별 무게·횟수를 다듬어 보세요');
+        go('/session/' + session.id);
+      },
+    }, '기록 만들기'),
+  ));
 }
 
 function openDayPicker(date, list) {
