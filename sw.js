@@ -6,7 +6,7 @@
  * (AI 계획 생성만 인터넷이 필요합니다.)
  */
 
-const CACHE = 'workout-log-v10';
+const CACHE = 'workout-log-v11';
 
 const ASSETS = [
   './',
@@ -19,6 +19,7 @@ const ASSETS = [
   './js/store.js',
   './js/voice.js',
   './js/exercises.js',
+  './js/weights.js',
   './js/planner.js',
   './js/runner.js',
   './js/ai.js',

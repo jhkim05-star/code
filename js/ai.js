@@ -10,6 +10,7 @@
 import { GROUPS, GROUP_NAME, byGroup } from './exercises.js';
 import { settings, customExercises, avoidExerciseIds } from './store.js';
 import { fmtWeekRange, parseYmd, addDays, ymd, DOW_KO } from './util.js';
+import { recommendExerciseCount } from './planner.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -102,18 +103,23 @@ function systemPrompt() {
     .map(d => `${DOW_KO[d]}: ${(p.week[d] || []).length ? p.week[d].map(g => GROUP_NAME[g] || g).join('+') : '휴식'}`)
     .join(', ');
   const equipDesc = p.equipment?.length ? p.equipment.join(', ') : '전부 (기구 제한 없음)';
+  const minutes = p.sessionMinutes || 60;
+  const count = recommendExerciseCount(minutes);
 
   return `당신은 혼자 웨이트 트레이닝을 하는 사람의 전담 코치입니다. 한국어로 답합니다.
 
 이 사람이 운동계획 탭에서 정해 둔 요일별 부위 배치: ${weekDesc}
 가진 기구: ${equipDesc}
+하루에 쓸 수 있는 시간: ${minutes}분 (종목 ${count}개 안팎)
 같은 부위 조합이 한 주에 여러 번 나오면(예: 가슴 날이 두 번) 두 날의 종목 구성을 서로 다르게 하고, 제목 끝에 (A) (B) 로 표시합니다.
 
 계획을 짤 때 지킬 것:
 - 위 요일별 부위 배치를 기본으로 따르되, 사용자의 특별 요청이 있으면 그에 맞게 요일이나 부위를 바꿔도 됩니다.
 - 운동 이름은 아래 "사용 가능한 운동" 목록에 있는 것을 글자 그대로 씁니다. 목록에 없는 종목은 꼭 필요할 때만 쓰고, group 은 반드시 목록의 부위 코드 중 하나로 지정합니다.
-- 하루 운동은 5~8종목, 전체 60~80분 안에 끝나는 분량으로 합니다.
+- 하루 운동은 종목 ${count}개 안팎으로, 위에 적힌 ${minutes}분 안에 끝나는 분량으로 합니다.
 - 복합관절 운동을 앞에, 고립 운동을 뒤에 배치합니다.
+- 하루 안에서 같은 부위를 여러 종목 할 때는 동작 결이 다른 것끼리 묶습니다(가슴이면 프레스 다음 플라이, 등이면 수직 당기기 다음 수평 로우).
+- 다른 날에는 되도록 다른 종목을 씁니다. 한 주 안에서 같은 종목이 두 번 나오지 않게 합니다.
 - 세트 간 휴식(rest)은 종목 성격에 맞게 정합니다. 무거운 복합관절 120~180초, 중간 90초, 고립 45~75초.
 - 최근 기록에서 같은 무게가 3주 넘게 반복되면 자극 방식을 바꾸거나(종목 교체, 횟수 범위 변경) 한 단계 올릴 것을 note 에 적어 줍니다.
 - note 는 이번 주를 왜 이렇게 짰는지 2~3문장으로 씁니다. 인사말이나 서론 없이 바로 본론만 씁니다.

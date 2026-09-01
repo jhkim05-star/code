@@ -1,10 +1,11 @@
 /** 운동계획 탭 — 부위·기구를 고르고 한 주 스케줄을 만듭니다 */
 
-import { h, mount, pageHead, field, toast, modal, confirmSheet } from '../ui.js';
+import { h, mount, pageHead, field, toast, modal, confirmSheet, stepper, switchRow } from '../ui.js';
 import {
   settings, setSetting, sessions, savePlan, avoidExerciseIds, toggleAvoid,
 } from '../store.js';
-import { generateWeek, normalizeAiPlan, PRESETS } from '../planner.js';
+import { generateWeek, normalizeAiPlan, PRESETS, recommendExerciseCount, recommendWeight } from '../planner.js';
+import { BENCHMARKS, benchmarksFromHistory, resolveBenchmarks, WARMUP_PCTS } from '../weights.js';
 import { generatePlanWithAi, estimateCostKrw, MODELS, AiError } from '../ai.js';
 import { GROUPS, GROUP_NAME, EQUIPMENT, findExercise } from '../exercises.js';
 import { pickExercise } from './exercisePicker.js';
@@ -22,9 +23,96 @@ function draw(root) {
     pageHead('운동계획', '부위와 기구를 고르면 스케줄을 만들어 드립니다'),
     presetsCard(root),
     weekCard(root, s),
+    sessionCard(root, s),
+    benchmarkCard(root, s),
     equipmentCard(root, s),
     avoidCard(root),
     generateCard(root),
+  );
+}
+
+// ── 하루 운동 시간 · 웜업 ────────────────────────────────────
+function sessionCard(root, s) {
+  const hint = h('.hint');
+  const paintHint = (min) => {
+    hint.textContent = `${min}분이면 종목 ${recommendExerciseCount(min)}개 정도가 들어갑니다. 계획을 만들 때 이 개수에 맞춰 뽑습니다.`;
+  };
+  paintHint(s.plan.sessionMinutes || 60);
+
+  const pcts = WARMUP_PCTS.map(p => `${Math.round(p * 100)}%`).join(' · ');
+
+  return h('.card', null,
+    h('.card-head', null, h('h3', null, '하루 운동 시간')),
+    field('한 번 운동할 때 쓸 수 있는 시간', stepper({
+      value: s.plan.sessionMinutes || 60, min: 20, max: 150, step: 5,
+      format: v => `${v}분`,
+      onchange: (v) => { setSetting('plan.sessionMinutes', v); paintHint(v); },
+    })),
+    hint,
+
+    h('hr.rule'),
+    switchRow('웜업 세트 넣기', `메인 종목 앞에 ${WARMUP_PCTS.length}세트 — 본 운동 무게의 ${pcts}`,
+      !!s.plan.warmup, (v) => { setSetting('plan.warmup', v); }),
+    h('.hint', { style: { marginTop: '6px' } },
+      '복합관절(메인) 종목에만 붙습니다. 무게가 정해져 있어야 계산할 수 있으니 아래 기준 무게를 먼저 넣어 주세요.'),
+  );
+}
+
+// ── 기준 무게 ────────────────────────────────────────────────
+function benchmarkCard(root, s) {
+  const all = sessions();
+  const fromHistory = benchmarksFromHistory(all);
+  const entered = s.plan.benchmarks || {};
+  const preview = h('.hint', { style: { marginTop: '10px' } });
+
+  const paintPreview = () => {
+    const marks = resolveBenchmarks(settings().plan.benchmarks, all);
+    const samples = ['db_bench', 'lat_pulldown', 'leg_press', 'side_raise']
+      .map(id => recommendWeight(id, { sessions: [], marks }))
+      .filter(Boolean);
+    const names = ['덤벨 벤치프레스', '랫풀다운', '레그프레스', '사이드 레이즈'];
+    preview.textContent = samples.length
+      ? `이 값으로 계산하면 → ${samples.map((x, i) => `${names[i]} ${x.weight}kg`).join(' · ')}`
+      : '네 종목 중 하나라도 넣으면 나머지 종목 무게가 자동으로 채워집니다.';
+  };
+
+  const inputs = BENCHMARKS.map(b => {
+    const hist = fromHistory[b.id];
+    const input = h('input', {
+      type: 'number', inputmode: 'decimal', step: '2.5',
+      value: entered[b.id] ?? '',
+      placeholder: hist ? `기록 기준 ${hist}` : '예: 60',
+      onchange: (e) => {
+        const v = e.target.value === '' ? null : Number(e.target.value);
+        setSetting(`plan.benchmarks.${b.id}`, Number.isFinite(v) && v > 0 ? v : null);
+        paintPreview();
+      },
+    });
+    return field(`${b.name} (${s.unit})`, input, b.hint);
+  });
+
+  paintPreview();
+
+  return h('.card', null,
+    h('.card-head', null,
+      h('h3', null, '기준 무게'),
+      Object.values(fromHistory).some(Boolean)
+        ? h('button.btn-sm', {
+            onclick: () => {
+              for (const b of BENCHMARKS) {
+                if (fromHistory[b.id]) setSetting(`plan.benchmarks.${b.id}`, fromHistory[b.id]);
+              }
+              draw(root);
+              toast('지난 기록에서 불러왔습니다');
+            },
+          }, '기록에서 불러오기')
+        : null,
+    ),
+    h('.hint', { style: { marginTop: '-6px', marginBottom: '14px' } },
+      '이 네 종목의 무게만 넣어 두면 계획의 모든 종목 무게가 자동으로 채워집니다. '
+      + '한 번이라도 한 종목은 그 기록(점진적 과부하)이 먼저입니다.'),
+    ...inputs,
+    preview,
   );
 }
 

@@ -2,7 +2,8 @@
 
 import { h, mount, modal, toast, field, pageHead, confirmSheet, stepper } from '../ui.js';
 import { getPlan, savePlan, deletePlan, settings, sessions, sessionsOn } from '../store.js';
-import { buildFreeDay, suggestWeight } from '../planner.js';
+import { makeBlock } from '../planner.js';
+import { warmupSets } from '../weights.js';
 import { pickExercise } from './exercisePicker.js';
 import { GROUP_NAME } from '../exercises.js';
 import {
@@ -52,7 +53,8 @@ function emptyWeek(weekStart) {
 function planBody(root, weekStart, plan) {
   const today = todayYmd();
   const workDays = plan.days.filter(d => d.blocks.length);
-  const totalSets = sum(workDays, d => sum(d.blocks, b => b.sets.length));
+  const totalSets = sum(workDays, d => sum(d.blocks, b => workSets(b).length));
+  const totalWarm = sum(workDays, d => sum(d.blocks, b => warmSets(b).length));
 
   return h('div', null,
     plan.note ? h('.card', null,
@@ -66,7 +68,7 @@ function planBody(root, weekStart, plan) {
     },
       h('span', null, `운동 ${workDays.length}일`),
       h('span', null, `${sum(workDays, d => d.blocks.length)}종목`),
-      h('span', null, `${totalSets}세트`),
+      h('span', null, `${totalSets}세트${totalWarm ? ` (+웜업 ${totalWarm})` : ''}`),
     ),
 
     h('.daylist', null, ...plan.days.map(d => dayCard(root, weekStart, plan, d, today))),
@@ -110,7 +112,9 @@ function dayCard(root, weekStart, plan, day, today) {
     h('.day-title', null,
       h('.t', null, isRest ? '휴식' : day.title),
       isRest ? null : h('.m', null,
-        `${day.blocks.length}종목 · ${sum(day.blocks, b => b.sets.length)}세트 · 약 ${estimateMinutes(day)}분`),
+        `${day.blocks.length}종목 · ${sum(day.blocks, b => workSets(b).length)}세트`
+        + (sum(day.blocks, b => warmSets(b).length) ? ` (+웜업 ${sum(day.blocks, b => warmSets(b).length)})` : '')
+        + ` · 약 ${estimateMinutes(day)}분`),
     ),
     !isRest && (done || isToday)
       ? h(`.day-badge.${done ? 'done' : 'todo'}`, null, done ? '완료' : '오늘')
@@ -146,21 +150,30 @@ function dayCard(root, weekStart, plan, day, today) {
   return h(`.day${isToday ? '.today' : ''}`, null, head, body);
 }
 
+export const workSets = (b) => (b.sets || []).filter(s => !s.warmup);
+export const warmSets = (b) => (b.sets || []).filter(s => s.warmup);
+
 /** "10kg×12, 12kg×13" 처럼 세트별 무게·횟수를 요약합니다. 전부 같으면 "3×10" 으로 줄입니다. */
 function setSummary(b) {
   const unit = settings().unit;
-  const uniform = b.sets.every(s => s.reps === b.sets[0].reps && s.weight === b.sets[0].weight);
+  const work = workSets(b);
+  const warm = warmSets(b);
+  const prefix = warm.length ? `웜업 ${warm.length} · ` : '';
+  if (!work.length) return prefix.replace(/ · $/, '');
+
+  const uniform = work.every(s => s.reps === work[0].reps && s.weight === work[0].weight);
   if (uniform) {
-    const s0 = b.sets[0];
-    return `${b.sets.length}×${s0.reps}` + (s0.weight ? ` · ${fmtWeight(s0.weight, unit)}` : '') + ` · ${mmss(b.rest)}`;
+    const s0 = work[0];
+    return prefix + `${work.length}×${s0.reps}`
+      + (s0.weight ? ` · ${fmtWeight(s0.weight, unit)}` : '') + ` · ${mmss(b.rest)}`;
   }
-  return b.sets.map(s => `${s.weight ? fmtWeight(s.weight, unit) : '—'}×${s.reps}`).join(', ');
+  return prefix + work.map(s => `${s.weight ? fmtWeight(s.weight, unit) : '—'}×${s.reps}`).join(', ');
 }
 
 function estimateMinutes(day) {
   const avgTempo = day.tempo || 3;
   const sec = sum(day.blocks, b =>
-    sum(b.sets, s => s.reps * (b.tempo || avgTempo) + b.rest) + 60);
+    sum(b.sets, s => s.reps * (b.tempo || avgTempo) + (s.rest ?? b.rest)) + 60);
   return Math.round(sec / 60);
 }
 
@@ -173,9 +186,25 @@ function editBlock(root, weekStart, plan, day, index) {
     const save = () => { savePlan(plan); close(); draw(root, weekStart); };
     const setsBox = h('div');
 
+    /** 본 운동 무게가 바뀌면 웜업(40·60·80%)도 다시 계산합니다 */
+    const resyncWarmups = () => {
+      const warm = warmSets(b);
+      if (!warm.length) return false;
+      const first = workSets(b)[0];
+      if (!first?.weight) return false;
+      const next = warmupSets(first.weight, first.reps, b.equip);
+      warm.forEach((st, i) => { if (next[i]) st.weight = next[i].weight; });
+      return true;
+    };
+
     const paintSets = () => {
       mount(setsBox, ...b.sets.map((st, i) => h('.switch', { style: { alignItems: 'center' } },
-        h('span', { style: { flex: '0 0 40px', fontWeight: '700', color: 'var(--ink-3)' } }, `${i + 1}세트`),
+        h('span', {
+          style: { flex: '0 0 44px', fontWeight: '700', fontSize: '13px',
+                   color: st.warmup ? 'var(--warn)' : 'var(--ink-3)' },
+        }, st.warmup
+          ? `웜업 ${b.sets.slice(0, i).filter(x => x.warmup).length + 1}`
+          : `${b.sets.slice(0, i).filter(x => !x.warmup).length + 1}세트`),
         h('div', { style: { flex: 1, display: 'flex', gap: '8px' } },
           h('input', {
             type: 'number', inputmode: 'numeric', value: st.reps, placeholder: '횟수',
@@ -188,12 +217,15 @@ function editBlock(root, weekStart, plan, day, index) {
             oninput: (e) => { st.weight = e.target.value === '' ? null : Number(e.target.value); },
             onchange: () => {
               if (st.weight == null) return;
-              // 입력을 마쳤을 때(포커스를 벗어날 때) 아직 정하지 않은 뒤 세트에 이어서 채웁니다
+              // 입력을 마쳤을 때(포커스를 벗어날 때) 뒤에 남은 본 세트에 이어서 채웁니다
               let changed = false;
-              for (let j = i + 1; j < b.sets.length; j++) {
-                if (b.sets[j].weight != null) break;
-                b.sets[j].weight = st.weight;
-                changed = true;
+              if (!st.warmup) {
+                for (let j = i + 1; j < b.sets.length; j++) {
+                  if (b.sets[j].warmup) continue;
+                  b.sets[j].weight = st.weight;
+                  changed = true;
+                }
+                if (resyncWarmups()) changed = true;
               }
               if (changed) paintSets();
             },
@@ -257,11 +289,16 @@ function editBlock(root, weekStart, plan, day, index) {
 function swapBlock(root, weekStart, plan, day, index) {
   const cur = day.blocks[index];
   pickExercise(cur.group, (ex) => {
-    const suggestion = suggestWeight(ex.id, sessions());
+    // 무게는 새 종목 기준으로 다시 잡되(기록 → 기준 무게), 세트 수는 원래대로 둡니다
+    const fresh = makeBlock(ex, { sessions: sessions() });
+    const weight = fresh?.sets.find(s => !s.warmup)?.weight ?? null;
     day.blocks[index] = {
-      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest, tempo: ex.tempo ?? 3, overloadNote: suggestion?.note || '',
-      sets: cur.sets.map(st => ({ reps: st.reps, weight: suggestion?.weight ?? null })),
+      ...fresh,
+      rest: ex.rest, tempo: ex.tempo ?? 3,
+      sets: [
+        ...(fresh?.sets || []).filter(s => s.warmup),
+        ...workSets(cur).map(st => ({ reps: st.reps, weight })),
+      ],
     };
     savePlan(plan);
     toast(`${ex.name}(으)로 바꿨습니다`);
@@ -272,12 +309,9 @@ function swapBlock(root, weekStart, plan, day, index) {
 function addBlock(root, weekStart, plan, day) {
   const preferred = day.blocks.at(-1)?.group || day.groupIds?.[0] || 'chest';
   pickExercise(preferred, (ex) => {
-    const suggestion = suggestWeight(ex.id, sessions());
-    day.blocks.push({
-      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest, tempo: ex.tempo ?? 3, overloadNote: suggestion?.note || '',
-      sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: suggestion?.weight ?? null })),
-    });
+    const block = makeBlock(ex, { sessions: sessions() });
+    if (!block) return;
+    day.blocks.push(block);
     savePlan(plan);
     toast(`${ex.name} 추가`);
     draw(root, weekStart);

@@ -5,7 +5,7 @@ import { getPlan, savePlan, saveSession, sessions, settings } from '../store.js'
 import { Runner, sessionVolume, sessionSetCount } from '../runner.js';
 import { unlockAudio } from '../voice.js';
 import { GROUP_NAME } from '../exercises.js';
-import { buildFreeDay, suggestWeight } from '../planner.js';
+import { buildFreeDay, makeBlock } from '../planner.js';
 import { pickExercise } from './exercisePicker.js';
 import { weekStartOf, parseYmd, ymd, mmss, fmtWeight, comma } from '../util.js';
 import { go } from '../app.js';
@@ -18,6 +18,14 @@ export async function renderRun(root, [date]) {
   // 계획이 없는 날(휴식일 또는 계획 자체가 없음) → 자유운동으로 시작할 수 있게 합니다
   if (!day) day = buildFreeDay(date);
 
+  // 화면을 벗어날 때 러너를 반드시 세우기 위한 고리입니다.
+  // 자유운동은 종목을 고른 뒤에야 러너가 생기기 때문에, 라우터에는 이 함수를
+  // 넘겨 두고 안에서 현재 러너를 갈아 끼웁니다. (예전에는 자유운동으로 만든
+  // 러너가 정리되지 않아, 화면을 나가도 뒤에서 계속 돌면서 카운트를 세는
+  // — 다른 화면에서 갑자기 "하나 둘 셋" 소리가 나는 — 문제가 있었습니다.)
+  let stopRunner = null;
+  const cleanup = () => { const stop = stopRunner; stopRunner = null; stop?.(); };
+
   if (!day.blocks?.length) {
     mount(root, h('.card', null,
       h('h2', null, day.free ? '자유운동' : '오늘은 쉬는 날이에요'),
@@ -27,24 +35,26 @@ export async function renderRun(root, [date]) {
         onclick: () => pickExercise(null, (ex) => {
           day.blocks.push(freeBlock(ex));
           if (plan) savePlan(plan);
-          startRun(root, day, weekStart, plan);
+          cleanup();
+          stopRunner = startRun(root, day, weekStart, plan);
         }),
       }, '＋ 첫 종목 고르기'),
       h('button.btn-block.btn-ghost', { style: { marginTop: '8px' }, onclick: () => go('/exec') }, '‹ 뒤로'),
     ));
-    return null;
+    return cleanup;
   }
 
-  return startRun(root, day, weekStart, plan);
+  stopRunner = startRun(root, day, weekStart, plan);
+  return cleanup;
 }
 
 function freeBlock(ex) {
-  const suggestion = suggestWeight(ex.id, sessions());
-  return {
-    exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-    rest: ex.rest, tempo: ex.tempo ?? 3,
-    sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: suggestion?.weight ?? null })),
-  };
+  return makeBlock(ex, { sessions: sessions() })
+    || {
+      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
+      rest: ex.rest, tempo: ex.tempo ?? 3,
+      sets: Array.from({ length: ex.sets }, () => ({ reps: ex.reps, weight: null })),
+    };
 }
 
 function startRun(root, day, weekStart, plan) {
@@ -102,20 +112,24 @@ function buildUi(root, runner) {
   ));
 
   // ── 속도 · 휴식 다이얼 (언제나 실시간으로 조절 가능) ──────
-  mount(dials,
-    dial({
-      label: '카운트 속도', value: runner.tempo,
-      min: s.tempoMin, max: s.tempoMax, step: 0.1,
-      format: v => `${v.toFixed(1)}초`,
-      onchange: v => runner.setTempo(v),
-    }),
-    dial({
-      label: '휴식', value: runner.rest,
-      min: 15, max: 300, step: 5,
-      format: v => mmss(v),
-      onchange: v => runner.setRest(v),
-    }),
-  );
+  // 종목·세트가 바뀌면 기본값도 바뀌므로(웜업은 휴식이 짧습니다) 그때마다 다시 그립니다
+  const paintDials = () => {
+    mount(dials,
+      dial({
+        label: '카운트 속도', value: runner.tempo,
+        min: s.tempoMin, max: s.tempoMax, step: 0.1,
+        format: v => `${v.toFixed(1)}초`,
+        onchange: v => runner.setTempo(v),
+      }),
+      dial({
+        label: '휴식', value: Math.round(runner.rest),
+        min: 15, max: 300, step: 5,
+        format: v => mmss(v),
+        onchange: v => runner.setRest(v),
+      }),
+    );
+  };
+  paintDials();
 
   /** 값만 갱신 — 매 100ms 호출되므로 DOM 을 다시 만들지 않습니다 */
   const sync = () => {
@@ -158,7 +172,7 @@ function buildUi(root, runner) {
       h('.grp', null, GROUP_NAME[b.group] || ''),
       h('h2', null, b.name),
       h('.meta', null,
-        `${runner.setIndex + 1} / ${runner.entry.sets.length} 세트`,
+        setLabel(runner),
         rec?.weight ? ` · ${fmtWeight(rec.weight, s.unit)}` : '',
       ),
       // 휴식 중엔 카운터 쪽에 이미 다음 세트 안내가 나오니 여기선 중복하지 않습니다
@@ -172,12 +186,15 @@ function buildUi(root, runner) {
     );
 
     mount(pips, ...runner.entry.sets.map((st, i) =>
-      h(`.setpip${st.done ? '.done' : ''}${i === runner.setIndex ? '.cur' : ''}`, {
+      h(`.setpip${st.done ? '.done' : ''}${i === runner.setIndex ? '.cur' : ''}${st.warmup ? '.warm' : ''}`, {
         onclick: () => runner.jumpTo(runner.exIndex, i),
+        title: st.warmup ? '웜업 세트' : null,
       }, st.done ? (st.reps ?? '✓') : String(st.targetReps)),
     ));
 
     mount(actions, ...actionsFor(runner));
+    // 휴식 중에 다시 그리면 사용자가 조절하던 슬라이더가 튕기므로 그때는 두고 봅니다
+    if (runner.state !== 'resting') paintDials();
     sync();
   };
 
@@ -186,6 +203,24 @@ function buildUi(root, runner) {
   };
 
   return { sync, rebuild, showSummary };
+}
+
+/** 그 자리의 세트 이름 — "웜업 2" 또는 "3세트" (웜업은 본 세트 번호에 안 끼웁니다) */
+function setNameAt(entry, index) {
+  const sets = entry?.sets || [];
+  const before = sets.slice(0, index);
+  return sets[index]?.warmup
+    ? `웜업 ${before.filter(x => x.warmup).length + 1}`
+    : `${before.filter(x => !x.warmup).length + 1}세트`;
+}
+
+/** "웜업 2 / 3" 또는 "2 / 4 세트" */
+function setLabel(runner) {
+  const sets = runner.entry?.sets || [];
+  const warm = runner.setRec?.warmup;
+  const total = sets.filter(x => !!x.warmup === !!warm).length;
+  const name = setNameAt(runner.entry, runner.setIndex);
+  return warm ? `${name} / ${total}` : `${name.replace('세트', '')} / ${total} 세트`;
 }
 
 function elapsedText(runner) {
@@ -199,7 +234,9 @@ function nextLabel(runner) {
   const s = settings();
   const next = runner.peekNext();
   if (!next?.rec) return '마무리';
-  const name = next.exIndex === runner.exIndex ? `${next.setIndex + 1}세트` : runner.day.blocks[next.exIndex]?.name;
+  const name = next.exIndex === runner.exIndex
+    ? setNameAt(runner.entry, next.setIndex)
+    : runner.day.blocks[next.exIndex]?.name;
   const w = next.rec.weight ? ` · ${fmtWeight(next.rec.weight, s.unit)}` : '';
   return `${name}${w}`;
 }

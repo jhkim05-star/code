@@ -42,6 +42,11 @@ export const DEFAULT_SETTINGS = {
   plan: {
     equipment: [],               // 가진 기구. 빈 배열 = 전부 허용
     variantsPerGroup: 2,         // 같은 부위 조합이 겹치는 날엔 종목을 서로 다르게
+    sessionMinutes: 60,          // 하루에 쓸 수 있는 시간(분) — 종목 수를 여기 맞춥니다
+    warmup: false,               // 메인 종목 앞에 웜업 3세트(본 무게의 40·60·80%)를 넣을지
+    // 기준 무게(kg) — 이 네 종목만 넣어 두면 나머지 종목 무게를 자동으로 채웁니다.
+    // 비워 두면 지난 기록에서 역산합니다.
+    benchmarks: { bench: null, pulldown: null, squat: null, ohp: null },
     // 요일별로 그날 할 부위 목록. 0=일 … 6=토. 빈 배열/없음 = 휴식
     week: {
       1: ['chest', 'delt_f', 'triceps'],   // 월 — 가슴 · 어깨 전면 · 삼두

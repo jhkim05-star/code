@@ -39,6 +39,7 @@ export const EXERCISES = [
   e('db_bench',      '덤벨 벤치프레스',        'chest', 1, 4, 10, 120, '덤벨'),
   e('db_incline',    '인클라인 덤벨프레스',    'chest', 1, 4, 10, 120, '덤벨'),
   e('smith_bench',   '스미스머신 벤치프레스',  'chest', 1, 4, 10, 120, '스미스머신'),
+  e('smith_incline', '스미스머신 인클라인 프레스', 'chest', 1, 4, 10, 120, '스미스머신'),
   e('machine_press', '체스트프레스 머신',      'chest', 2, 3, 12, 90,  '머신'),
   e('dips_chest',    '딥스 (가슴)',            'chest', 1, 3, 10, 120, '맨몸'),
   e('db_fly',        '덤벨 플라이',            'chest', 3, 3, 12, 75,  '덤벨'),
@@ -52,6 +53,8 @@ export const EXERCISES = [
   e('bb_row',        '바벨 로우',              'back', 1, 4, 8,  150, '바벨'),
   e('pendlay',       '펜들레이 로우',          'back', 1, 4, 6,  150, '바벨'),
   e('tbar_row',      '티바 로우',              'back', 1, 4, 10, 120, '바벨'),
+  e('smith_row',     '스미스머신 바벨로우',    'back', 1, 4, 10, 120, '스미스머신'),
+  e('smith_deadlift','스미스머신 데드리프트',  'back', 1, 4, 8,  180, '스미스머신', 3.5),
   e('pullup',        '풀업',                   'back', 1, 4, 8,  150, '철봉', 3.5),
   e('chinup',        '친업',                   'back', 1, 4, 8,  150, '철봉', 3.5),
   e('lat_pulldown',  '랫풀다운',               'back', 2, 4, 12, 90,  '케이블'),
@@ -81,6 +84,7 @@ export const EXERCISES = [
   e('rear_pec_deck', '리어델트 펙덱',          'delt_sr', 3, 3, 15, 60, '머신', 2.5),
   e('face_pull',     '페이스풀',               'delt_sr', 3, 3, 15, 60, '케이블', 2.5),
   e('upright_row',   '업라이트 로우',          'delt_sr', 3, 3, 12, 75, '바벨'),
+  e('smith_upright', '스미스머신 업라이트 로우', 'delt_sr', 3, 3, 12, 75, '스미스머신'),
 
   // ── 이두 ────────────────────────────────────────────────
   e('bb_curl',       '바벨 컬',                'biceps', 2, 4, 10, 75, '바벨'),
@@ -91,11 +95,14 @@ export const EXERCISES = [
   e('preacher',      '프리처 컬',              'biceps', 3, 3, 12, 60, '머신'),
   e('cable_curl',    '케이블 컬',              'biceps', 3, 3, 15, 60, '케이블', 2.5),
   e('conc_curl',     '컨센트레이션 컬',        'biceps', 3, 3, 12, 60, '덤벨'),
+  e('smith_drag_curl','스미스머신 드래그 컬',  'biceps', 3, 3, 12, 60, '스미스머신'),
 
   // ── 삼두 ────────────────────────────────────────────────
   e('cg_bench',      '클로즈그립 벤치프레스',  'triceps', 1, 4, 10, 120, '바벨'),
+  e('smith_cg_bench','스미스머신 클로즈그립 벤치프레스', 'triceps', 1, 4, 10, 120, '스미스머신'),
   e('dips_tri',      '딥스 (삼두)',            'triceps', 1, 3, 10, 120, '맨몸'),
   e('skullcrusher',  '라잉 익스텐션 (스컬)',   'triceps', 2, 4, 12, 75,  '바벨'),
+  e('smith_skull',   '스미스머신 라잉 익스텐션', 'triceps', 2, 4, 12, 75, '스미스머신'),
   e('oh_ext',        '오버헤드 익스텐션',      'triceps', 2, 3, 12, 75,  '덤벨'),
   e('pushdown',      '케이블 푸시다운',        'triceps', 2, 4, 15, 60,  '케이블', 2.5),
   e('rope_pushdown', '로프 푸시다운',          'triceps', 2, 4, 15, 60,  '케이블', 2.5),
@@ -108,6 +115,8 @@ export const EXERCISES = [
   e('back_squat',    '백스쿼트',               'thighs', 1, 5, 6,  180, '바벨', 3.5),
   e('front_squat',   '프론트 스쿼트',          'thighs', 1, 4, 8,  180, '바벨', 3.5),
   e('smith_squat',   '스미스머신 스쿼트',      'thighs', 1, 4, 8,  180, '스미스머신', 3.5),
+  e('smith_front_squat', '스미스머신 프론트 스쿼트', 'thighs', 1, 4, 8, 150, '스미스머신', 3.5),
+  e('smith_rdl',     '스미스머신 루마니안 데드리프트', 'thighs', 1, 4, 10, 150, '스미스머신', 3.5),
   e('leg_press',     '레그프레스',             'thighs', 1, 4, 12, 120, '머신'),
   e('hack_squat',    '핵 스쿼트',              'thighs', 1, 4, 10, 150, '머신'),
   e('rdl',           '루마니안 데드리프트',    'thighs', 1, 4, 10, 150, '바벨', 3.5),
@@ -115,6 +124,7 @@ export const EXERCISES = [
   e('bulgarian',     '불가리안 스플릿 스쿼트', 'thighs', 2, 3, 12, 105, '덤벨'),
   e('lunge',         '워킹 런지',              'thighs', 2, 3, 12, 105, '덤벨'),
   e('smith_lunge',   '스미스머신 런지',        'thighs', 2, 3, 12, 105, '스미스머신'),
+  e('smith_split',   '스미스머신 불가리안 스플릿 스쿼트', 'thighs', 2, 3, 12, 105, '스미스머신'),
   e('leg_ext',       '레그 익스텐션',          'thighs', 3, 3, 15, 60,  '머신', 2.5),
   e('leg_curl',      '레그 컬',                'thighs', 2, 4, 12, 75,  '머신'),
   e('goblet_squat',  '고블릿 스쿼트',          'thighs', 2, 3, 12, 90,  '덤벨'),
@@ -126,6 +136,7 @@ export const EXERCISES = [
   e('cable_kickback','케이블 킥백',            'glutes', 2, 4, 15, 60,  '케이블', 2.5),
   e('hip_abduction', '힙 어브덕션 머신',       'glutes', 2, 4, 15, 60,  '머신', 2.5),
   e('sumo_dl',       '스모 데드리프트',        'glutes', 1, 4, 8,  180, '바벨', 3.5),
+  e('smith_sumo',    '스미스머신 스모 데드리프트', 'glutes', 1, 4, 8, 180, '스미스머신', 3.5),
   e('step_up',       '덤벨 스텝업',            'glutes', 3, 3, 12, 90,  '덤벨'),
 
   // ── 종아리 ──────────────────────────────────────────────
@@ -143,6 +154,50 @@ export const EXERCISES = [
   e('russian',       '러시안 트위스트',        'core', 3, 3, 20, 45, '맨몸', 2),
   e('plank',         '플랭크',                 'core', 3, 3, 40, 45, '맨몸', 1),
 ];
+
+/**
+ * 동작 패턴 — 같은 부위 안에서도 "미는 동작"과 "당기는 동작"처럼 결이 다른 종목을
+ * 섞어 주기 위한 분류입니다. 계획 생성기가 하루 안에서 같은 부위 종목을 여러 개
+ * 고를 때, 되도록 서로 다른 패턴이 나오도록 씁니다.
+ */
+const PATTERN_IDS = {
+  press_h: ['bb_bench', 'bb_incline', 'db_bench', 'db_incline', 'smith_bench', 'smith_incline',
+            'machine_press', 'dips_chest', 'pushup', 'cg_bench', 'smith_cg_bench',
+            'dips_tri', 'machine_dip', 'bench_dip'],
+  press_v: ['ohp', 'db_shoulder', 'smith_ohp', 'arnold', 'machine_sp'],
+  fly:     ['db_fly', 'incline_fly', 'cable_cross', 'pec_deck'],
+  pull_v:  ['pullup', 'chinup', 'lat_pulldown', 'lat_close', 'straight_pull', 'db_pullover'],
+  pull_h:  ['bb_row', 'pendlay', 'tbar_row', 'smith_row', 'db_row', 'seated_row',
+            'chest_sup_row', 'cable_row_1arm', 'face_pull', 'upright_row', 'smith_upright'],
+  hinge:   ['deadlift', 'smith_deadlift', 'rdl', 'smith_rdl', 'stiff_dl', 'sumo_dl', 'smith_sumo',
+            'hip_thrust', 'smith_thrust', 'glute_bridge', 'leg_curl'],
+  squat:   ['back_squat', 'front_squat', 'smith_squat', 'smith_front_squat',
+            'leg_press', 'hack_squat', 'goblet_squat'],
+  lunge:   ['bulgarian', 'lunge', 'smith_lunge', 'smith_split', 'step_up'],
+  raise:   ['front_raise', 'cable_front', 'plate_front', 'side_raise', 'cable_side',
+            'machine_side', 'bent_lateral', 'rear_pec_deck', 'cable_kickback', 'hip_abduction'],
+  curl:    ['bb_curl', 'ez_curl', 'db_curl', 'hammer_curl', 'incline_curl', 'preacher',
+            'cable_curl', 'conc_curl', 'smith_drag_curl'],
+  ext:     ['skullcrusher', 'smith_skull', 'oh_ext', 'pushdown', 'rope_pushdown',
+            'kickback', 'cable_oh_ext', 'leg_ext'],
+  calf:    ['calf_raise', 'seated_calf', 'smith_calf', 'db_calf_raise', 'leg_press_calf'],
+  core:    ['hang_leg', 'cable_crunch', 'crunch', 'ab_rollout', 'russian', 'plank'],
+};
+
+const PATTERN_BY_ID = {};
+for (const [pattern, ids] of Object.entries(PATTERN_IDS)) {
+  for (const id of ids) PATTERN_BY_ID[id] = pattern;
+}
+
+/** 부위만 아는 종목(사용자가 직접 추가한 것 등)의 기본 패턴 */
+const GROUP_PATTERN = {
+  chest: 'press_h', back: 'pull_h', delt_f: 'press_v', delt_sr: 'raise',
+  biceps: 'curl', triceps: 'ext', thighs: 'squat', glutes: 'hinge',
+  calves: 'calf', core: 'core',
+};
+
+export const patternOf = (ex) =>
+  (ex && (PATTERN_BY_ID[ex.id] || GROUP_PATTERN[ex.group])) || 'other';
 
 const BASE_BY_ID = Object.fromEntries(EXERCISES.map(x => [x.id, x]));
 

@@ -86,9 +86,17 @@ function playClip(key) {
   if (!a) return null;
   try {
     a.currentTime = 0;
+    a.muted = false;            // 언락 때 물려 둔 음소거를 확실히 풉니다
     a.volume = settings().voiceVolume;
     return a.play();
   } catch (e) { return Promise.reject(e); }
+}
+
+/** 재생 중인 클립을 모두 세웁니다 (화면을 벗어나거나 운동을 멈출 때) */
+function stopClips() {
+  for (const a of clipCache.values()) {
+    try { if (!a.paused) { a.pause(); a.currentTime = 0; } } catch { /* 무시 */ }
+  }
 }
 
 /** 지금 설정 기준으로 클립을 써야 하는지 (자동이거나 명시적으로 고른 경우) */
@@ -186,10 +194,20 @@ export function unlockAudio() {
   // 시도하는 클립은 이 사용자 동작 없이는 조용히 막힐 수 있습니다.
   // 주의: iOS Safari 는 <audio>.volume 을 무시하므로 volume=0 으로는 안 들리게
   // 할 수 없습니다 (실제로 30개 카운트 클립이 전부 들리게 재생되는 버그가 있었음).
-  // muted 속성은 iOS 도 존중하므로 이걸로 소리를 죽여야 합니다.
+  // muted 로 죽이고, 프로미스를 기다리지 않고 그 자리에서 바로 세웁니다 —
+  // 기다리는 동안 소리가 새어 나가지 않게 하려는 것이고, 재생 허가 자체는
+  // play() 를 부른 시점(사용자 동작 안)에 이미 받아집니다.
   for (const key of Object.keys(clipManifest || {})) {
     const a = clipFor(key);
-    if (a) { a.muted = true; a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; }); }
+    if (!a) continue;
+    a.muted = true;
+    let p = null;
+    try { p = a.play(); } catch { /* 무시 */ }
+    try { a.pause(); a.currentTime = 0; } catch { /* 무시 */ }
+    // pause() 때문에 play() 프로미스가 거절되는 건 정상입니다 (AbortError)
+    Promise.resolve(p).catch(() => {}).finally(() => {
+      try { a.pause(); a.currentTime = 0; a.muted = false; } catch { /* 무시 */ }
+    });
   }
   unlocked = true;
   return true;
@@ -240,6 +258,16 @@ export function speakCount(n) {
 
 export function stopSpeaking() {
   try { synth?.cancel(); } catch { /* 무시 */ }
+  stopClips();
+}
+
+// 화면이 가려지면(탭 전환·홈으로 나가기) 하던 말을 끊습니다.
+// 안 끊으면 기기가 밀어 둔 음성이 나중에 한꺼번에 쏟아져서
+// "가만히 있는데 숫자를 마구 세는" 것처럼 들립니다.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') stopSpeaking();
+  });
 }
 
 // 자주 쓰는 안내 문구 (클립 키를 함께 넘겨 나중에 교체 가능하게)

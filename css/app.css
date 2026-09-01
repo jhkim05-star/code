@@ -326,6 +326,9 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
 }
 .setpip.done { background: var(--good); border-color: var(--good); color: var(--paper-2); }
 .setpip.cur { border-color: var(--accent); border-width: 2px; color: var(--accent); font-weight: 700; }
+/* 웜업 세트 — 본 세트와 한눈에 구분되게 점선 테두리로 */
+.setpip.warm { border-style: dashed; color: var(--warn); background: transparent; }
+.setpip.warm.done { background: var(--warn); border-style: solid; border-color: var(--warn); color: var(--paper-2); }
 
 /* 세트 목록과 하단 조작부 사이의 남는 공간 — 화면이 남을 때 전체 시간이 여기 뜹니다 */
 .run-mid { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 28px; }

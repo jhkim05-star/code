@@ -16,6 +16,13 @@ import { uid, todayYmd, clamp } from './util.js';
 
 const TICK_MS = 100;
 
+/**
+ * 지금 돌고 있는 러너. 화면을 벗어났는데 정리가 안 된 러너가 뒤에 남아 계속
+ * 카운트를 세면 "가만히 있는데 하나 둘 셋 소리가 마구잡이로 난다"가 됩니다.
+ * 새 러너가 시작할 때 앞의 것을 반드시 세워서 그런 유령이 생기지 않게 합니다.
+ */
+let activeRunner = null;
+
 export class Runner {
   /**
    * @param {object} day   계획의 하루 (blocks 배열을 가짐)
@@ -62,7 +69,10 @@ export class Runner {
           targetReps: st.reps,
           reps: null,
           weight: st.weight ?? null,
-          rest: b.rest,
+          rest: st.rest ?? b.rest,
+          // 계획에 세트별 휴식이 따로 적혀 있으면(웜업) 그 세트에선 그 값을 씁니다
+          planRest: st.rest ?? null,
+          warmup: !!st.warmup,
           tempo: b.tempo ?? s.tempo,
           done: false,
           at: null,
@@ -128,6 +138,10 @@ export class Runner {
   // ── 구동 ──────────────────────────────────────────────────
   start() {
     if (this.timer) return;
+    // 앞서 돌던 러너가 남아 있으면 먼저 세웁니다 (유령 카운트 방지)
+    if (activeRunner && activeRunner !== this) activeRunner.stop();
+    activeRunner = this;
+    this._applySetRest();   // 첫 세트가 웜업이면 휴식도 웜업 기준으로
     this.requestWakeLock();
     this.timer = setInterval(() => this.tick(), TICK_MS);
     document.addEventListener('visibilitychange', this.onVisible);
@@ -136,9 +150,14 @@ export class Runner {
   stop() {
     clearInterval(this.timer);
     this.timer = null;
+    // 예약해 둔 "1초 뒤 세트 완료" · "마지막 n회" 안내도 같이 취소합니다
+    clearTimeout(this._finishTimer);
+    clearTimeout(this._lastRepTimer);
+    this._finishing = false;
     stopSpeaking();
     this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.onVisible);
+    if (activeRunner === this) activeRunner = null;
   }
 
   onVisible = () => {
@@ -185,7 +204,8 @@ export class Runner {
         this.emit('rep', this.rep);
         const left = this.targetReps - this.rep;
         if (left > 0 && left === settings().announceLastReps) {
-          setTimeout(() => cue.lastRep(), this.tempo * 500);
+          clearTimeout(this._lastRepTimer);
+          this._lastRepTimer = setTimeout(() => cue.lastRep(), this.tempo * 500);
         }
       }
       // 마지막 횟수를 다 채웠으면, 방금 부른 숫자가 끝까지 들리도록 1초 쉬었다가
@@ -293,10 +313,22 @@ export class Runner {
     this.emit('tick', this);
   }
 
+  /**
+   * 지금 세트에 맞는 휴식 시간을 잡습니다.
+   * 웜업처럼 세트별 휴식이 정해진 세트면 그 값을, 아니면 사용자가 슬라이더로
+   * 맞춰 둔 값(있으면)을, 그것도 없으면 종목 기본값을 씁니다.
+   */
+  _applySetRest() {
+    const planRest = this.setRec?.planRest;
+    if (planRest) this.rest = planRest;
+    else this.rest = this._userRest ?? this.block?.rest ?? settings().restDefault;
+  }
+
   /** 휴식 기본값 자체를 바꿉니다 (슬라이더) */
   setRest(sec) {
     const prev = this.rest;
     this.rest = clamp(sec, 10, 600);
+    this._userRest = this.rest;   // 이 종목 동안은 사용자가 맞춘 값을 이어 씁니다
     if (this.state === 'resting') {
       this.restEndAt += (this.rest - prev) * 1000;
       this.restWarned = false;
@@ -320,12 +352,14 @@ export class Runner {
     const entry = this.entry;
     if (this.setIndex + 1 < (entry?.sets.length || 0)) {
       this.setIndex += 1;
+      this._applySetRest();
     } else if (this.exIndex + 1 < this.day.blocks.length) {
       this.exIndex += 1;
       this.setIndex = 0;
       const b = this.block;
       this.tempo = b.tempo ?? settings().tempo;
-      this.rest = b.rest ?? settings().restDefault;
+      this._userRest = null;      // 종목이 바뀌면 슬라이더로 맞춘 값은 초기화
+      this._applySetRest();
       cue.nextEx(b.name);
     } else {
       this.finishWorkout();
@@ -356,7 +390,8 @@ export class Runner {
       this.setIndex = 0;
       const b = this.block;
       this.tempo = b.tempo ?? settings().tempo;
-      this.rest = b.rest ?? settings().restDefault;
+      this._userRest = null;
+      this._applySetRest();
       this.rep = 0;
       this.state = 'ready';
       this.emit('state', this.state);
@@ -373,8 +408,9 @@ export class Runner {
       this.exIndex -= 1;
       this.setIndex = this.entry.sets.length - 1;
       this.tempo = this.block.tempo ?? settings().tempo;
-      this.rest = this.block.rest ?? settings().restDefault;
+      this._userRest = null;
     } else return;
+    this._applySetRest();
     const rec = this.setRec;
     if (rec) { rec.done = false; rec.at = null; }
     this.rep = 0;
@@ -403,7 +439,8 @@ export class Runner {
       exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
       sets: block.sets.map(st => ({
         targetReps: st.reps, reps: null, weight: st.weight,
-        rest: block.rest, tempo: block.tempo, done: false, at: null,
+        rest: st.rest ?? block.rest, planRest: st.rest ?? null, warmup: !!st.warmup,
+        tempo: block.tempo, done: false, at: null,
       })),
     };
     const insertAt = this.day.blocks.length ? this.exIndex + 1 : 0;
@@ -438,7 +475,8 @@ export class Runner {
       exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
       sets: newBlock.sets.map((st, i) => ({
         targetReps: st.reps, reps: null, weight: st.weight,
-        rest: newBlock.rest, tempo: newBlock.tempo,
+        rest: st.rest ?? newBlock.rest, planRest: st.rest ?? null, warmup: !!st.warmup,
+        tempo: newBlock.tempo,
         // 이미 끝낸 세트가 있었다면(운동 중간에 바꾼 경우) 그 결과는 남겨 둡니다
         done: oldEntry?.sets[i]?.done || false,
         at: oldEntry?.sets[i]?.at || null,
@@ -513,10 +551,12 @@ export class Runner {
 
   /** 목표 위치로 바로 점프 */
   jumpTo(exIndex, setIndex = 0) {
+    const movedExercise = clamp(exIndex, 0, this.day.blocks.length - 1) !== this.exIndex;
     this.exIndex = clamp(exIndex, 0, this.day.blocks.length - 1);
     this.setIndex = clamp(setIndex, 0, this.entry.sets.length - 1);
     this.tempo = this.block.tempo ?? settings().tempo;
-    this.rest = this.block.rest ?? settings().restDefault;
+    if (movedExercise) this._userRest = null;
+    this._applySetRest();
     this.rep = 0;
     this.state = 'ready';
     this.emit('state', this.state);
