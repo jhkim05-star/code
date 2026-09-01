@@ -15,8 +15,8 @@ const KEYS = ['settings', 'plans', 'sessions', 'customExercises', 'meta'];
 export const DEFAULT_SETTINGS = {
   // 카운트
   tempo: 3.0,             // 1회에 걸리는 초
-  tempoMin: 1.0,
-  tempoMax: 8.0,
+  tempoMin: 0,
+  tempoMax: 4.0,
   countdownSec: 3,        // 세트 시작 전 "셋 둘 하나"
   announceLastReps: 2,    // 마지막 n회 남았을 때 알림
   // 휴식

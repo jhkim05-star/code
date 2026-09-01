@@ -210,6 +210,16 @@ function editBlock(root, weekStart, plan, day, index) {
             type: 'number', inputmode: 'numeric', value: st.reps, placeholder: '횟수',
             style: { flex: 1 },
             oninput: (e) => { st.reps = Number(e.target.value) || st.reps; },
+            onchange: () => {
+              // 무게와 마찬가지로, 뒤에 남은 같은 종류(본 세트/웜업) 세트에 이어서 채웁니다
+              let changed = false;
+              for (let j = i + 1; j < b.sets.length; j++) {
+                if (!!b.sets[j].warmup !== !!st.warmup) continue;
+                b.sets[j].reps = st.reps;
+                changed = true;
+              }
+              if (changed) paintSets();
+            },
           }),
           h('input', {
             type: 'number', inputmode: 'decimal', step: '0.5', value: st.weight ?? '',

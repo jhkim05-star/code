@@ -155,8 +155,8 @@ function countCard(s) {
     }), '운동 중에도 화면의 슬라이더로 언제든 바꿀 수 있습니다. 종목마다 따로 정해 둔 값이 있으면 그게 우선입니다.'),
 
     field('속도 조절 범위', h('div', { style: { display: 'flex', gap: '8px' } },
-      stepper({ value: s.tempoMin, min: 0.5, max: 4, step: 0.5, format: v => `${v.toFixed(1)}초`, onchange: v => setSetting('tempoMin', v) }),
-      stepper({ value: s.tempoMax, min: 3, max: 15, step: 0.5, format: v => `${v.toFixed(1)}초`, onchange: v => setSetting('tempoMax', v) }),
+      stepper({ value: s.tempoMin, min: 0, max: 3.5, step: 0.5, format: v => `${v.toFixed(1)}초`, onchange: v => setSetting('tempoMin', v) }),
+      stepper({ value: s.tempoMax, min: 1, max: 4, step: 0.5, format: v => `${v.toFixed(1)}초`, onchange: v => setSetting('tempoMax', v) }),
     ), '운동 중 슬라이더가 움직이는 최소·최대 범위입니다.'),
 
     field('세트 시작 전 카운트다운', stepper({

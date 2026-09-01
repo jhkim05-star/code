@@ -201,16 +201,19 @@ const WARMUP_REST = 45;
 /**
  * 본 세트 앞에 붙일 웜업 세트를 만듭니다.
  * 가벼울수록 많이, 무거워질수록 적게 — 40%: 목표의 1.3배, 60%: 목표만큼, 80%: 절반.
- * @param {number} workingWeight  본 운동 무게 (없으면 웜업도 만들지 않습니다)
- * @param {number} workingReps    본 운동 목표 횟수
+ * 본 운동 무게를 아직 모르면(기준 무게도 기록도 없는 새 종목) 웜업 세트 자체는
+ * 그대로 만들되 무게 칸은 비워 둡니다 — "웜업을 켰는데 하나도 안 보인다"는
+ * 문제를 막기 위한 것으로, 나중에 무게를 정하면 세트 편집에서 채우면 됩니다.
+ * @param {number|null} workingWeight  본 운동 무게
+ * @param {number} workingReps         본 운동 목표 횟수
  * @param {string} equip
  */
 export function warmupSets(workingWeight, workingReps = 10, equip = '바벨') {
-  if (!(workingWeight > 0)) return [];
   const repMul = [1.3, 1, 0.6];
+  const known = workingWeight > 0;
   return WARMUP_PCTS.map((pct, i) => ({
-    reps: Math.max(3, Math.round(workingReps * repMul[i])),
-    weight: roundForEquip(workingWeight * pct, equip),
+    reps: Math.max(3, Math.round((workingReps || 10) * repMul[i])),
+    weight: known ? roundForEquip(workingWeight * pct, equip) : null,
     rest: WARMUP_REST,
     warmup: true,
   }));

@@ -319,12 +319,13 @@ function openSetEditor(runner, opt = {}) {
       value: rec.weight ?? '', placeholder: '추천 없음',
     });
     const r = h('input', { type: 'number', inputmode: 'numeric', value: rec.targetReps });
+    const canRemove = (runner.session.entries[target.exIndex]?.sets.length || 0) > 1;
     return h('div', null,
       h('h3', null, exName),
       h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
         `${opt.next ? '다음 · ' : ''}${target.setIndex + 1}세트`),
       field(`무게 (${s.unit})`, w, '이 종목의 아직 하지 않은 뒤 세트들에도 그대로 이어서 적용됩니다.'),
-      field('목표 횟수', r),
+      field('목표 횟수', r, '무게와 마찬가지로 아직 하지 않은 뒤 세트들에도 이어서 적용됩니다.'),
       h('button.btn-block.btn-primary', {
         style: { marginTop: '6px' },
         onclick: () => {
@@ -336,6 +337,26 @@ function openSetEditor(runner, opt = {}) {
           runner.emit('state', runner.state);
         },
       }, '적용'),
+      h('hr.rule'),
+      h('.btn-row', null,
+        h('button.btn-sm', {
+          onclick: () => {
+            runner.addSetAfter(target.exIndex, target.setIndex);
+            close();
+            toast('세트를 추가했습니다');
+            runner.emit('state', runner.state);
+          },
+        }, '＋ 이 세트 복사해서 추가'),
+        h('button.btn-sm.btn-danger', {
+          disabled: !canRemove,
+          onclick: () => {
+            if (!runner.removeSetAt(target.exIndex, target.setIndex)) return;
+            close();
+            toast('세트를 지웠습니다');
+            runner.emit('state', runner.state);
+          },
+        }, '이 세트 삭제'),
+      ),
     );
   });
 }

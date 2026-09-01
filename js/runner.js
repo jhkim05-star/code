@@ -535,18 +535,70 @@ export class Runner {
     this.emit('tick', this);
   }
 
-  setNextTargetReps(n) {
-    const next = this.peekNext();
-    if (!next?.rec) return;
-    next.rec.targetReps = clamp(Math.round(n), 1, 100);
-    this.emit('tick', this);
-  }
-
+  /** setWeight() 와 같은 방식으로, 아직 끝내지 않은 뒤 세트들에도 목표 횟수를 이어 적용합니다 */
   setTargetReps(n) {
     const rec = this.setRec;
     if (!rec) return;
-    rec.targetReps = clamp(Math.round(n), 1, 100);
+    const reps = clamp(Math.round(n), 1, 100);
+    rec.targetReps = reps;
+    for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
+      const later = this.entry.sets[i];
+      if (later.done) break;
+      later.targetReps = reps;
+    }
     this.emit('tick', this);
+  }
+
+  setNextTargetReps(n) {
+    const next = this.peekNext();
+    if (!next?.rec) return;
+    const reps = clamp(Math.round(n), 1, 100);
+    next.rec.targetReps = reps;
+    const entry = this.session.entries[next.exIndex];
+    for (let i = next.setIndex + 1; i < entry.sets.length; i++) {
+      const later = entry.sets[i];
+      if (later.done) break;
+      later.targetReps = reps;
+    }
+    this.emit('tick', this);
+  }
+
+  /**
+   * 세트를 하나 더 끼워 넣습니다 — 지정한 자리 바로 뒤에, 그 세트를 복사해서 넣습니다.
+   * "생각보다 더 할 수 있어서 한 세트 추가" 같은 상황을 위한 것입니다.
+   * @returns 새로 생긴 세트의 인덱스
+   */
+  addSetAfter(exIndex, setIndex) {
+    const entry = this.session.entries[exIndex];
+    const base = entry?.sets[setIndex];
+    if (!base) return -1;
+    const fresh = {
+      targetReps: base.targetReps, reps: null, weight: base.weight,
+      rest: base.rest, planRest: base.planRest ?? null, warmup: !!base.warmup,
+      tempo: base.tempo, done: false, at: null,
+    };
+    entry.sets.splice(setIndex + 1, 0, fresh);
+    if (exIndex === this.exIndex && setIndex + 1 <= this.setIndex) this.setIndex += 1;
+    this.emit('tick', this);
+    return setIndex + 1;
+  }
+
+  /**
+   * 세트를 하나 뺍니다. 이 종목의 마지막 하나 남은 세트는 지울 수 없습니다.
+   * 지금 보고 있던 세트를 지우면 그 뒤 세트가 그 자리로 당겨집니다.
+   */
+  removeSetAt(exIndex, setIndex) {
+    const entry = this.session.entries[exIndex];
+    if (!entry || entry.sets.length <= 1 || !entry.sets[setIndex]) return false;
+    entry.sets.splice(setIndex, 1);
+    if (exIndex === this.exIndex) {
+      if (setIndex < this.setIndex) this.setIndex -= 1;
+      this.setIndex = clamp(this.setIndex, 0, entry.sets.length - 1);
+      this._applySetRest();
+      if (this.state !== 'ready') { this.state = 'ready'; this.rep = 0; this.emit('state', this.state); }
+    }
+    this.emit('tick', this);
+    return true;
   }
 
   /** 목표 위치로 바로 점프 */
