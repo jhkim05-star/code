@@ -64,7 +64,7 @@ function calendarCard(root, all) {
   const grid = h('.cal-grid', null,
     ...DOW_KO.map((w, i) => h('.cal-dow', { style: i === 0 ? { color: 'var(--accent)' } : null }, w)),
     ...cells.map((d) => {
-      if (!d) return h('.cal-cell.empty');
+      if (!d) return h('.cal-cell.blank');   // 1일 앞의 빈 칸 (자리만 차지)
       const date = ymd(new Date(calYear, calMonth, d));
       const list = byDate.get(date) || [];
       const isToday = date === today;

@@ -11,6 +11,7 @@ import { GROUPS, GROUP_NAME, byGroup } from './exercises.js';
 import { settings, customExercises, avoidExerciseIds } from './store.js';
 import { fmtWeekRange, parseYmd, addDays, ymd, DOW_KO } from './util.js';
 import { recommendExerciseCount } from './planner.js';
+import { BENCHMARKS, resolveBenchmarks } from './weights.js';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const API_VERSION = '2023-06-01';
@@ -97,7 +98,8 @@ function historyDigest(sessions, weeks = 3) {
   return lines.length ? lines.join('\n') : '완료된 세트 기록이 아직 없습니다.';
 }
 
-function systemPrompt() {
+/** @param {object[]} sessions  기준 무게를 기록에서 역산할 때 씁니다 */
+export function systemPrompt(sessions = []) {
   const p = settings().plan;
   const weekDesc = [1, 2, 3, 4, 5, 6, 0]
     .map(d => `${DOW_KO[d]}: ${(p.week[d] || []).length ? p.week[d].map(g => GROUP_NAME[g] || g).join('+') : '휴식'}`)
@@ -106,16 +108,30 @@ function systemPrompt() {
   const minutes = p.sessionMinutes || 60;
   const count = recommendExerciseCount(minutes);
 
+  // 기준 무게 — 이 사람이 지금 어느 정도를 드는지 알아야 종목과 횟수 범위를
+  // 수준에 맞게 고를 수 있습니다. (실제 무게 수치는 앱이 채우므로 모델은 참고만 합니다)
+  const marks = resolveBenchmarks(p.benchmarks, sessions);
+  const markDesc = BENCHMARKS
+    .filter(b => marks[b.id] > 0)
+    .map(b => `${b.name} ${marks[b.id]}kg`)
+    .join(' · ') || '아직 모름 (무난한 강도로 잡아 주세요)';
+  const warmupDesc = p.warmup
+    ? '켜 둠 — 메인 종목 앞 웜업 3세트는 앱이 자동으로 붙이므로 blocks 에 따로 넣지 마세요.'
+    : '꺼 둠';
+
   return `당신은 혼자 웨이트 트레이닝을 하는 사람의 전담 코치입니다. 한국어로 답합니다.
 
 이 사람이 운동계획 탭에서 정해 둔 요일별 부위 배치: ${weekDesc}
 가진 기구: ${equipDesc}
 하루에 쓸 수 있는 시간: ${minutes}분 (종목 ${count}개 안팎)
+지금 다루는 무게(기준): ${markDesc}
+웜업: ${warmupDesc}
 같은 부위 조합이 한 주에 여러 번 나오면(예: 가슴 날이 두 번) 두 날의 종목 구성을 서로 다르게 하고, 제목 끝에 (A) (B) 로 표시합니다.
 
 계획을 짤 때 지킬 것:
 - 위 요일별 부위 배치를 기본으로 따르되, 사용자의 특별 요청이 있으면 그에 맞게 요일이나 부위를 바꿔도 됩니다.
-- 운동 이름은 아래 "사용 가능한 운동" 목록에 있는 것을 글자 그대로 씁니다. 목록에 없는 종목은 꼭 필요할 때만 쓰고, group 은 반드시 목록의 부위 코드 중 하나로 지정합니다.
+- 운동 이름은 아래 "사용 가능한 운동" 목록에 있는 것을 글자 그대로 씁니다. 이 목록은 이미 가진 기구로 걸러 둔 것이라, 목록 밖 종목은 이 사람이 할 수 없습니다. group 은 반드시 목록의 부위 코드 중 하나로 지정합니다.
+- 무게(kg)는 위 기준 무게와 지난 기록을 보고 앱이 자동으로 채우니 적지 않아도 됩니다. 대신 그 수준에 맞는 종목과 횟수 범위를 고르는 데 참고하세요.
 - 하루 운동은 종목 ${count}개 안팎으로, 위에 적힌 ${minutes}분 안에 끝나는 분량으로 합니다.
 - 복합관절 운동을 앞에, 고립 운동을 뒤에 배치합니다.
 - 하루 안에서 같은 부위를 여러 종목 할 때는 동작 결이 다른 것끼리 묶습니다(가슴이면 프레스 다음 플라이, 등이면 수직 당기기 다음 수평 로우).
@@ -168,7 +184,7 @@ export async function generatePlanWithAi(weekStart, request, sessions = []) {
   const body = {
     model: model.id,
     max_tokens: 8000,
-    system: systemPrompt(),
+    system: systemPrompt(sessions),
     messages: [{ role: 'user', content: userPrompt(weekStart, request, sessions) }],
     output_config: { format: { type: 'json_schema', schema: planSchema() } },
   };

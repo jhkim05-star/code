@@ -399,6 +399,21 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
     for (const x of byGroup(g.id, custom)) byName.set(x.name.replace(/\s/g, ''), x);
   }
 
+  // AI 에게는 가진 기구로 거른 목록만 보여 주지만, 그래도 목록 밖 종목을 내놓을 수
+  // 있습니다. 그때는 같은 부위에서 실제로 할 수 있는 종목으로 바꿔 둡니다 —
+  // 기구가 없어서 못 하는 운동이 계획에 남으면 그날 통째로 못 쓰게 되니까요.
+  const equipment = s.plan.equipment || [];
+  const avoid = avoidExerciseIds();
+  const usable = (ex) => !equipment.length || equipment.includes(ex.equip);
+  const toUsable = (ex, usedToday) => {
+    if (usable(ex)) return ex;
+    const pool = byGroup(ex.group, custom, equipment, avoid);
+    if (!pool.length) return ex;
+    // 성격이 가장 비슷한(tier 가 가까운) 것으로, 그날 이미 쓴 종목은 피해서
+    const ranked = [...pool].sort((a, b) => Math.abs(a.tier - ex.tier) - Math.abs(b.tier - ex.tier));
+    return ranked.find(x => !usedToday.has(x.id)) || ranked[0];
+  };
+
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i);
@@ -412,15 +427,17 @@ export function normalizeAiPlan(raw, weekStart, sessions = []) {
     }
 
     const blocks = [];
+    const usedToday = new Set();
     for (const b of (rawDay.blocks || rawDay.exercises)) {
       const key = String(b.name || b.exercise || '').replace(/\s/g, '');
       const known = (b.exerciseId && findExercise(b.exerciseId, custom)) || byName.get(key);
-      const ex = known || {
+      const ex = toUsable(known || {
         id: `ai_${key || uid('ex')}`,
         name: b.name || b.exercise || '이름 없는 운동',
         group: b.group || 'core', equip: '기타',
         tier: 2, sets: 3, reps: 10, rest: 90, tempo: 3,
-      };
+      }, usedToday);
+      usedToday.add(ex.id);
       const sets = Number.isFinite(+b.sets) ? Math.round(+b.sets) : ex.sets;
       const reps = Number.isFinite(+b.reps) ? Math.round(+b.reps) : ex.reps;
       const rest = Number.isFinite(+b.rest) ? Math.round(+b.rest) : ex.rest;
