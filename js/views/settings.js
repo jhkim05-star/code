@@ -369,9 +369,36 @@ async function doImport(root) {
 }
 
 function aboutCard() {
+  // 지금 열려 있는 화면이 어느 판인지 — 새로 배포했는데 그대로인 것 같을 때
+  // 여기 버전을 보고 확인할 수 있습니다.
+  const ver = h('span.num', null, '확인 중…');
+  (async () => {
+    try {
+      const keys = (await caches.keys()).filter(k => k.startsWith('workout-log-'));
+      ver.textContent = keys.length ? keys.sort().at(-1).replace('workout-log-', '') : '캐시 없음';
+    } catch { ver.textContent = '알 수 없음'; }
+  })();
+
   return h('.card.flat', null,
     h('.hint', { style: { textAlign: 'center', lineHeight: '1.7' } },
       '운동일지 · 혼자 하는 웨이트를 위한 기록과 계획', h('br'),
-      '홈 화면에 추가하면 앱처럼 전체 화면으로 열립니다.'),
+      '홈 화면에 추가하면 앱처럼 전체 화면으로 열립니다.', h('br'),
+      '지금 버전 ', ver),
+    h('button.btn-block.btn-ghost', {
+      style: { marginTop: '10px' },
+      onclick: () => refreshApp(),
+    }, '최신 버전으로 새로고침'),
   );
+}
+
+/** 받아 둔 화면을 모두 비우고 새로 받아옵니다 (배포한 새 버전이 안 보일 때) */
+async function refreshApp() {
+  toast('최신 버전을 받아오는 중…');
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update();
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  } catch { /* 캐시를 못 비워도 새로고침은 합니다 */ }
+  location.reload();
 }

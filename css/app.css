@@ -57,6 +57,12 @@ html, body {
   font-size: 16px;
   line-height: 1.5;
   overscroll-behavior-y: none;
+  /* 한글은 기본 설정에서 글자 단위로 줄바꿈이 됩니다. 칸이 좁아지면
+     "스미스머신 인클라인 프레스"가 한 글자씩 세로로 쪼개져 버리므로,
+     띄어쓰기에서만 넘어가게 하고(keep-all) 한 낱말이 줄보다 길 때만
+     어쩔 수 없이 끊습니다(break-word). */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 body { -webkit-text-size-adjust: 100%; }
 
@@ -421,7 +427,9 @@ body.no-tabs .toast { bottom: auto; top: calc(var(--safe-t) + 56px); }
   padding: 12px 4px; border-bottom: 1px solid var(--rule); cursor: pointer;
   display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
 }
-.picker li small { color: var(--ink-3); font-size: 12px; flex: 0 0 auto; }
+/* 이름 칸이 오른쪽 정보에 밀려 잘게 쪼개지지 않도록 넉넉히 잡아 둡니다 */
+.picker li > span { flex: 1 1 auto; min-width: 0; }
+.picker li small { color: var(--ink-3); font-size: 12px; flex: 0 1 auto; text-align: right; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

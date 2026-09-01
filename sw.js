@@ -6,7 +6,7 @@
  * (AI 계획 생성만 인터넷이 필요합니다.)
  */
 
-const CACHE = 'workout-log-v14';
+const CACHE = 'workout-log-v15';
 
 const ASSETS = [
   './',
@@ -59,32 +59,20 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;      // API 호출은 그대로 통과
 
-  // 오디오(목소리 파일·manifest)는 네트워크를 먼저 시도합니다.
-  // 이 파일들은 사용자가 언제든 바꿔 넣을 수 있는데, 캐시부터 주는 방식이면
-  // 새 파일로 바꾼 뒤에도 몇 번을 다시 열어야 겨우 반영되는 문제가 있었습니다.
-  // 오프라인일 때만 예전 캐시로 대체합니다.
-  if (url.pathname.includes('/audio/')) {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(req, res.clone()));
-          return res;
-        })
-        .catch(() => caches.match(req)),
-    );
-    return;
-  }
-
-  // 앱 화면(코드)은 캐시를 먼저 주고 뒤에서 갱신 — 오프라인에서도 즉시 열립니다
+  // 네트워크를 먼저 보고, 안 되면 캐시로 — 온라인이면 늘 최신 화면이 뜨고
+  // 오프라인이면 마지막으로 받아 둔 화면이 그대로 열립니다.
+  //
+  // 예전에는 앱 코드(HTML·JS·CSS)를 "캐시 먼저"로 주고 뒤에서 갱신했는데,
+  // 그러면 새로 배포해도 최소 한 번은 옛 화면이 그대로 떠서 "고쳤다는데
+  // 그대로인데?" 가 됩니다. 홈 화면에 추가해 둔 경우엔 앱을 껐다 켜도
+  // 옛 화면이 남아 더 헷갈립니다. 파일 몇 십 KB짜리 앱이라 네트워크를
+  // 먼저 보는 편이 낫습니다.
   e.respondWith(
-    caches.match(req).then((hit) => {
-      const net = fetch(req)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(req, res.clone()));
-          return res;
-        })
-        .catch(() => hit || caches.match('./index.html'));
-      return hit || net;
-    }),
+    fetch(req)
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(req, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html'))),
   );
 });
