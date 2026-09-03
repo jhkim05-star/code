@@ -10,7 +10,8 @@
     videos: [],
     settings: {
       cols: 4,              // 썸네일 가로 개수 (3 또는 4)
-      aladinKey: '',        // 선택: 알라딘 TTB 키(국내서 정확도 향상)
+      aladinKey: '',        // 선택: 알라딘 TTB 키(국내서 정확도 향상, 2026.10.30 서비스 종료 예정)
+      kakaoProxyUrl: '',    // 선택: 카카오 책 검색 프록시 주소(reading/proxy 참고)
       tmdbKey: '',          // 선택: TMDB API 키(영상 정보 정확도 향상)
       lastTab: 'shelf',
       lastBackupAt: '',     // 마지막 JSON 백업 시각(ISO)

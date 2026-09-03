@@ -205,11 +205,52 @@
     });
   }
 
+  /* ---------- 카카오 (국내서, 프록시 필요) ----------
+   * 카카오 책 검색 API는 Authorization 헤더를 요구해 브라우저에서 직접
+   * 호출할 수 없다(CORS 사전 요청을 카카오가 허용하지 않음). 그래서
+   * REST API 키를 보관하고 대신 호출해 주는 아주 작은 중계 서버(프록시)가
+   * 필요하다 — reading/proxy/ 에 Cloudflare Workers 용 코드를 뒀다.
+   * 설정에 그 프록시 주소(kakaoProxyUrl)를 넣으면 쓸 수 있다.
+   */
+
+  function searchKakao(q, proxyUrl) {
+    const isIsbn = /^[\d-]{10,17}$/.test(q);
+    const base = proxyUrl.replace(/\/$/, '') + '/?query=' + encodeURIComponent(q) +
+      (isIsbn ? '&target=isbn' : '') + '&size=16';
+    return getJson(base).then(function (data) {
+      if (!data || data.error) throw new Error(data && data.error ? data.error : 'kakao proxy error');
+      const docs = data.documents || [];
+      return docs.map(function (d) {
+        // isbn 필드에 "8965188256 9788965188256" 처럼 10/13자리가 공백으로
+        // 병기되어 오므로 13자리를 우선 취한다.
+        const isbns = String(d.isbn || '').split(' ').filter(Boolean);
+        const isbn13 = isbns.filter(function (i) { return i.length === 13; })[0];
+        return {
+          source: 'kakao',
+          sourceId: d.isbn || d.url || '',
+          title: d.title || '',
+          subtitle: '',
+          authors: d.authors || [],
+          translator: (d.translators || []).join(', '),
+          publisher: d.publisher || '',
+          publishedDate: (d.datetime || '').slice(0, 10),
+          isbn: isbn13 || isbns[0] || '',
+          pageCount: null,
+          language: 'ko',
+          origin: 'domestic',
+          genre: '',
+          coverUrl: U.https(d.thumbnail || ''),
+          description: (d.contents || '').slice(0, 1200)
+        };
+      }).filter(function (b) { return b.title; });
+    });
+  }
+
   // 제목(또는 ISBN)으로 책 검색
-  // 알라딘 키가 있으면 국내서 정확도가 높은 알라딘을 먼저 쓰고,
-  // 결과가 없거나 실패하면 Google Books → Open Library 순으로 넘어갑니다.
+  // 국내서 정확도가 높은 순서(알라딘 → 카카오)로 먼저 시도하고,
+  // 둘 다 설정이 안 됐거나 결과가 없으면 Google Books → Open Library 로 넘어갑니다.
   //
-  // 세 경로가 전부 실패하면(네트워크 차단 등) 에러를 그대로 위(UI)로 던집니다.
+  // 모든 경로가 실패하면(네트워크 차단 등) 에러를 그대로 위(UI)로 던집니다.
   // 여기서 실패를 삼켜 빈 배열을 돌려주면, 호출 쪽이 "검색 결과 없음"과
   // "조회 자체가 안 됨"을 구분하지 못해 사용자에게 원인을 알려줄 수 없습니다.
   API.searchBooks = function (q) {
@@ -218,6 +259,7 @@
     const isIsbn = /^[\d-]{10,17}$/.test(query);
     const gq = isIsbn ? 'isbn:' + query.replace(/-/g, '') : query;
     const aladinKey = (Store.settings && Store.settings.aladinKey || '').trim();
+    const kakaoProxyUrl = (Store.settings && Store.settings.kakaoProxyUrl || '').trim();
 
     function google() {
       return searchGoogleBooks(gq).then(function (list) {
@@ -235,13 +277,23 @@
       });
     }
 
-    if (!aladinKey) return google();
+    function kakaoThenGoogle() {
+      if (!kakaoProxyUrl) return google();
+      return searchKakao(query, kakaoProxyUrl).then(function (list) {
+        return list.length ? list : google();
+      }).catch(function (err) {
+        console.warn('[책꽂이] 카카오(프록시) 조회 실패, 다른 경로로 재시도:', err);
+        return google();
+      });
+    }
+
+    if (!aladinKey) return kakaoThenGoogle();
 
     return searchAladin(query, aladinKey).then(function (list) {
-      return list.length ? list : google();
+      return list.length ? list : kakaoThenGoogle();
     }).catch(function (err) {
       console.warn('[책꽂이] 알라딘 조회 실패 — 다른 경로로 재시도합니다:', err);
-      return google();
+      return kakaoThenGoogle();
     });
   };
 
@@ -353,6 +405,12 @@
         throw err2;
       });
     });
+  };
+
+  // 설정 화면의 "연결 확인" 버튼에서 씀 — 알라딘 우선순위와 무관하게
+  // 카카오 프록시 자체가 살아있는지만 직접 확인한다.
+  API.testKakaoProxy = function (proxyUrl) {
+    return searchKakao('해리포터', proxyUrl);
   };
 
   global.API = API;

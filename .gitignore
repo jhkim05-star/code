@@ -1,0 +1,4 @@
+# Cloudflare Workers (reading/proxy) 로컬 배포 산출물 — 비밀 키가 담길 수 있어 커밋하지 않는다
+.wrangler/
+node_modules/
+.dev.vars

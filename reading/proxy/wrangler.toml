@@ -1,0 +1,13 @@
+# Cloudflare Workers 배포 설정.
+# 이름은 자유롭게 바꿔도 되고, 바꾸면 배포 주소(https://<name>.<계정>.workers.dev)도 함께 바뀐다.
+name = "bookshelf-kakao-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# 카카오 REST API 키는 여기 적지 않는다. 배포 후 아래 명령으로 비밀로 등록한다.
+#   wrangler secret put KAKAO_REST_API_KEY
+#
+# 남용 방지를 위해 출처를 자신의 GitHub Pages 주소로 좁히고 싶다면
+# (선택) 아래 주석을 풀고 값을 채운다. 비워 두면 모든 출처를 허용한다.
+# [vars]
+# ALLOWED_ORIGIN = "https://<사용자명>.github.io"
