@@ -359,6 +359,16 @@
     shield: '<svg viewBox="0 0 24 24"><path d="M12 3.5l7 2.5v5.5c0 4-2.9 7.4-7 8.5-4.1-1.1-7-4.5-7-8.5V6z"/><path d="M9 12l2 2 4-4"/></svg>'
   };
 
+  // 입력칸의 예시(placeholder) 문구를 실제 키로 착각해 그대로 타이핑/붙여넣기 한
+  // 경우를 걸러낸다. 지금까지 이 필드에 썼던 예시 문자열 전부와, 'x'가 6개
+  // 이상 이어지는 자리표시 패턴을 함께 본다.
+  const KNOWN_PLACEHOLDER_KEYS = ['ttbxxxxxxxxxx1234', 'ttbkim05271234001'];
+  function isPlaceholderLikeKey(key) {
+    if (!key) return false;
+    if (KNOWN_PLACEHOLDER_KEYS.indexOf(key) !== -1) return true;
+    return /x{6,}/i.test(key);
+  }
+
   // 마지막 백업 이후 경과일. 30일이 넘으면 경고색으로 알린다.
   function backupStatusHtml() {
     const last = Store.settings.lastBackupAt;
@@ -423,13 +433,16 @@
       '<div class="list-item" style="cursor:default;align-items:flex-start">' +
       '<span class="list-icon red">' + ICON.key + '</span>' +
       '<span class="list-text"><span class="list-title">알라딘 TTB 키 (선택 · 국내서)</span>' +
-      '<span class="list-desc">국내서는 알라딘이 표지·출판사·분류가 가장 정확합니다. ' +
-      '키를 넣으면 알라딘을 먼저 조회하고, 결과가 없으면 Google Books 로 넘어갑니다.</span>' +
-      '</span></div>' +
+      '<span class="list-desc">' + (Store.settings.aladinKey
+        ? '키가 등록되어 있습니다. 국내서는 알라딘을 먼저 조회하고, 결과가 없으면 Google Books 로 넘어갑니다.'
+        : '아직 키가 없습니다 — 지금은 Google Books 로만 조회하는데, 국내 신간·번역서는 ' +
+          '표지·정보가 자주 비어 있습니다. 아래에서 무료로 발급받아 넣으면 훨씬 정확해집니다.') +
+      '</span></span></div>' +
       '<div style="padding:0 14px 14px">' +
-      '<input class="input" id="setAladin" placeholder="ttbxxxxxxxxxx1234" value="' +
+      '<input class="input" id="setAladin" placeholder="예: ttbkim05271234001 (알라딘에서 발급받은 값)" value="' +
       esc(Store.settings.aladinKey || '') + '" autocomplete="off" spellcheck="false">' +
-      '<div class="hint">알라딘 홈페이지 → 알라딘 서재 → OpenAPI 메뉴에서 무료로 발급받습니다.</div>' +
+      '<div class="hint">알라딘 홈페이지 → 알라딘 서재 → OpenAPI 메뉴에서 무료로 발급받습니다. ' +
+      '입력칸 안의 회색 글씨는 예시일 뿐 실제 값이 아닙니다 — 직접 타이핑해야 저장됩니다.</div>' +
       '<div class="btn-row">' +
       '<button class="btn sm" type="button" data-act="save-aladin">저장</button>' +
       '<button class="btn sm ghost" type="button" data-act="test-aladin">연결 확인</button>' +
@@ -483,11 +496,21 @@
         Store.setSetting('tmdbKey', body.querySelector('#setTmdb').value.trim());
         UI.toast('저장했습니다.');
       } else if (act === 'save-aladin') {
-        Store.setSetting('aladinKey', body.querySelector('#setAladin').value.trim());
+        const key = body.querySelector('#setAladin').value.trim();
+        if (isPlaceholderLikeKey(key)) {
+          UI.toast('입력칸의 회색 글씨는 예시입니다. 알라딘에서 직접 발급받은 값을 넣어 주세요.', 'warn');
+          return;
+        }
+        Store.setSetting('aladinKey', key);
         UI.toast('저장했습니다.');
+        UI.renderSettings();
       } else if (act === 'test-aladin') {
         const key = body.querySelector('#setAladin').value.trim();
         if (!key) { UI.toast('먼저 TTB 키를 입력해 주세요.', 'warn'); return; }
+        if (isPlaceholderLikeKey(key)) {
+          UI.toast('입력칸의 회색 글씨는 예시입니다. 알라딘에서 직접 발급받은 값을 넣어 주세요.', 'warn');
+          return;
+        }
         Store.setSetting('aladinKey', key);
         btn.disabled = true;
         btn.textContent = '확인 중…';
