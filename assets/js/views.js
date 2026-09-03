@@ -331,6 +331,8 @@
   UI.exportJson = function () {
     U.download(new Blob([Store.exportJson()], { type: 'application/json' }),
       '기록백업_' + U.stamp() + '.json');
+    Store.setSetting('lastBackupAt', U.nowIso());
+    if (UI.state.tab === 'settings') UI.renderSettings();
     UI.toast('백업 파일을 내보냈습니다.');
   };
 
@@ -353,8 +355,39 @@
     restore: '<svg viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M8 12l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
     grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
     key: '<svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20l-2 2.5"/><path d="M16 12v3"/></svg>',
-    trash: '<svg viewBox="0 0 24 24"><path d="M4.5 7h15"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/></svg>'
+    trash: '<svg viewBox="0 0 24 24"><path d="M4.5 7h15"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6.5 7l1 12a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2l1-12"/></svg>',
+    shield: '<svg viewBox="0 0 24 24"><path d="M12 3.5l7 2.5v5.5c0 4-2.9 7.4-7 8.5-4.1-1.1-7-4.5-7-8.5V6z"/><path d="M9 12l2 2 4-4"/></svg>'
   };
+
+  // 마지막 백업 이후 경과일. 30일이 넘으면 경고색으로 알린다.
+  function backupStatusHtml() {
+    const last = Store.settings.lastBackupAt;
+    const days = last ? U.daysBetween(last.slice(0, 10), new Date()) - 1 : null;
+    const stale = (days === null || days > 30);
+    const text = last
+      ? U.fmtDate(last) + ' (' + (days <= 0 ? '오늘' : days + '일 전') + ')'
+      : '아직 백업한 적이 없습니다';
+    return '<button class="list-item" type="button" data-act="json-out">' +
+      '<span class="list-icon ' + (stale ? 'red' : 'blue') + '">' + ICON.backup + '</span>' +
+      '<span class="list-text"><span class="list-title">마지막 백업</span>' +
+      '<span class="list-desc"' + (stale ? ' style="color:var(--red-soft)"' : '') + '>' +
+      esc(text) + (stale ? ' · 지금 내보내는 것을 권합니다' : '') + '</span></span>' +
+      '<span class="list-chevron">›</span></button>';
+  }
+
+  // 브라우저가 저장소를 임의로 비우지 않도록 허가받은 상태인지
+  function storageStatusHtml() {
+    const p = Store.settings.persistent;
+    let desc;
+    if (p === true) desc = '브라우저가 이 앱의 저장소를 임의로 비우지 않습니다';
+    else if (p === false) desc = '브라우저가 공간 확보를 위해 기록을 지울 수 있습니다. 백업을 자주 받아주세요';
+    else desc = '이 브라우저는 저장소 보호 상태를 알려주지 않습니다';
+    return '<div class="list-item" style="cursor:default">' +
+      '<span class="list-icon ' + (p === true ? 'blue' : 'grey') + '">' + ICON.shield + '</span>' +
+      '<span class="list-text"><span class="list-title">저장소 보호 ' +
+      (p === true ? '적용됨' : p === false ? '미적용' : '알 수 없음') + '</span>' +
+      '<span class="list-desc">' + esc(desc) + '</span></span></div>';
+  }
 
   UI.renderSettings = function () {
     const st = Store.state;
@@ -388,8 +421,22 @@
 
     html += '<p class="settings-group-title">자동 조회</p><div class="list-card">' +
       '<div class="list-item" style="cursor:default;align-items:flex-start">' +
-      '<span class="list-icon grey">' + ICON.key + '</span>' +
-      '<span class="list-text"><span class="list-title">TMDB API 키 (선택)</span>' +
+      '<span class="list-icon red">' + ICON.key + '</span>' +
+      '<span class="list-text"><span class="list-title">알라딘 TTB 키 (선택 · 국내서)</span>' +
+      '<span class="list-desc">국내서는 알라딘이 표지·출판사·분류가 가장 정확합니다. ' +
+      '키를 넣으면 알라딘을 먼저 조회하고, 결과가 없으면 Google Books 로 넘어갑니다.</span>' +
+      '</span></div>' +
+      '<div style="padding:0 14px 14px">' +
+      '<input class="input" id="setAladin" placeholder="ttbxxxxxxxxxx1234" value="' +
+      esc(Store.settings.aladinKey || '') + '" autocomplete="off" spellcheck="false">' +
+      '<div class="hint">알라딘 홈페이지 → 알라딘 서재 → OpenAPI 메뉴에서 무료로 발급받습니다.</div>' +
+      '<div class="btn-row">' +
+      '<button class="btn sm" type="button" data-act="save-aladin">저장</button>' +
+      '<button class="btn sm ghost" type="button" data-act="test-aladin">연결 확인</button>' +
+      '</div></div>' +
+      '<div class="list-item" style="cursor:default;align-items:flex-start">' +
+      '<span class="list-icon blue">' + ICON.key + '</span>' +
+      '<span class="list-text"><span class="list-title">TMDB API 키 (선택 · 영상)</span>' +
       '<span class="list-desc">비워두면 iTunes 검색을 씁니다. 키를 넣으면 한글 제목·장르가 더 정확해집니다.</span>' +
       '</span></div>' +
       '<div style="padding:0 14px 14px">' +
@@ -403,6 +450,8 @@
       '<span class="list-text"><span class="list-title">저장된 기록</span>' +
       '<span class="list-desc">책 ' + st.books.length + '권 · 영상 ' + st.videos.length + '편' +
       (st.updatedAt ? ' · 마지막 저장 ' + U.fmtDateTime(st.updatedAt) : '') + '</span></span></div>' +
+      backupStatusHtml() +
+      storageStatusHtml() +
       listItem(ICON.trash, 'red', '모든 기록 삭제', '되돌릴 수 없습니다', 'wipe') +
       '</div>';
 
@@ -433,6 +482,25 @@
       else if (act === 'save-tmdb') {
         Store.setSetting('tmdbKey', body.querySelector('#setTmdb').value.trim());
         UI.toast('저장했습니다.');
+      } else if (act === 'save-aladin') {
+        Store.setSetting('aladinKey', body.querySelector('#setAladin').value.trim());
+        UI.toast('저장했습니다.');
+      } else if (act === 'test-aladin') {
+        const key = body.querySelector('#setAladin').value.trim();
+        if (!key) { UI.toast('먼저 TTB 키를 입력해 주세요.', 'warn'); return; }
+        Store.setSetting('aladinKey', key);
+        btn.disabled = true;
+        btn.textContent = '확인 중…';
+        API.searchBooks('소년이 온다').then(function (list) {
+          const viaAladin = list.filter(function (r) { return r.source === 'aladin'; }).length;
+          if (viaAladin) UI.toast('알라딘 연결 정상 — ' + viaAladin + '건 조회됨');
+          else UI.toast('알라딘 응답이 없어 다른 경로로 조회됩니다. 키를 확인해 주세요.', 'warn');
+        }).catch(function () {
+          UI.toast('조회에 실패했습니다. 키와 네트워크를 확인해 주세요.', 'warn');
+        }).then(function () {
+          btn.disabled = false;
+          btn.textContent = '연결 확인';
+        });
       } else if (act === 'wipe') {
         if (confirm('모든 기록을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?') &&
             confirm('정말 삭제할까요? 먼저 JSON 백업을 받아두는 것을 권합니다.')) {

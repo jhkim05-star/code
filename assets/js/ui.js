@@ -594,8 +594,12 @@
 
     html += '<div class="field"><label for="fTitle">제목 *</label>' +
       '<input class="input" id="fTitle" value="' + esc(b.title) + '" placeholder="책 제목"></div>';
-    html += '<div class="field"><label for="fAuthors">저자 <span style="font-weight:400">(쉼표로 구분)</span></label>' +
-      '<input class="input" id="fAuthors" value="' + esc((b.authors || []).join(', ')) + '"></div>';
+    html += '<div class="field-row">' +
+      '<div class="field"><label for="fAuthors">저자 <span style="font-weight:400">(쉼표 구분)</span></label>' +
+      '<input class="input" id="fAuthors" value="' + esc((b.authors || []).join(', ')) + '"></div>' +
+      '<div class="field"><label for="fTranslator">옮긴이</label>' +
+      '<input class="input" id="fTranslator" value="' + esc(b.translator) + '"></div>' +
+      '</div>';
     html += '<div class="field-row">' +
       '<div class="field"><label for="fPublisher">출판사</label>' +
       '<input class="input" id="fPublisher" value="' + esc(b.publisher) + '"></div>' +
@@ -658,6 +662,7 @@
         bindLookup(root, 'book', function (r) {
           if (r.title) root.querySelector('#fTitle').value = r.title;
           if (r.authors && r.authors.length) root.querySelector('#fAuthors').value = r.authors.join(', ');
+          if (r.translator) root.querySelector('#fTranslator').value = r.translator;
           if (r.publisher) root.querySelector('#fPublisher').value = r.publisher;
           if (r.publishedDate) root.querySelector('#fPubDate').value = r.publishedDate;
           if (r.pageCount) root.querySelector('#fPages').value = r.pageCount;
@@ -700,6 +705,7 @@
             title: title,
             authors: root.querySelector('#fAuthors').value.split(',')
               .map(function (s) { return s.trim(); }).filter(Boolean),
+            translator: root.querySelector('#fTranslator').value.trim(),
             publisher: root.querySelector('#fPublisher').value.trim(),
             publishedDate: root.querySelector('#fPubDate').value.trim(),
             pageCount: U.num(root.querySelector('#fPages').value, null),

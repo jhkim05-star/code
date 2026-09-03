@@ -38,6 +38,22 @@
     });
   }
 
+  /* 브라우저가 공간 확보를 위해 저장소를 비우는 일을 막도록 요청한다.
+   * 사파리는 홈 화면에 추가된 웹앱에 대해 대체로 허용한다.
+   * 거부되더라도 앱은 그대로 동작하며, 설정 화면에 상태만 표시한다. */
+  function requestPersistence() {
+    function mark(v) {
+      if (Store.settings.persistent === v) return;
+      Store.setSetting('persistent', v);
+      if (state.tab === 'settings') UI.renderSettings();
+    }
+    if (!navigator.storage || !navigator.storage.persist) { mark(null); return; }
+    navigator.storage.persisted().then(function (already) {
+      if (already) { mark(true); return; }
+      return navigator.storage.persist().then(function (granted) { mark(!!granted); });
+    }).catch(function () { mark(null); });
+  }
+
   function init() {
     Store.init();
     state.tab = Store.settings.lastTab || 'shelf';
@@ -93,6 +109,7 @@
 
     applyTabChrome(state.tab);
     UI.render();
+    requestPersistence();
 
     // 홈 화면 추가(PWA) 지원
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {

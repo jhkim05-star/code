@@ -26,9 +26,9 @@
     ]);
   }
 
-  // file:// 등 CORS가 막히는 환경을 위한 JSONP 대체 경로
+  // CORS 응답 헤더를 주지 않는 API(알라딘) 및 file:// 환경을 위한 JSONP 경로
   let jsonpSeq = 0;
-  function jsonp(url, ms) {
+  function jsonp(url, ms, paramName) {
     return new Promise(function (resolve, reject) {
       const cb = '__bs_cb_' + (++jsonpSeq) + '_' + Date.now().toString(36);
       const script = document.createElement('script');
@@ -40,7 +40,8 @@
       }
       global[cb] = function (data) { cleanup(); resolve(data); };
       script.onerror = function () { cleanup(); reject(new Error('network')); };
-      script.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'callback=' + cb;
+      script.src = url + (url.indexOf('?') === -1 ? '?' : '&') +
+        (paramName || 'callback') + '=' + cb;
       document.head.appendChild(script);
     });
   }
@@ -130,18 +131,105 @@
     });
   }
 
+  /* ---------- 알라딘 (국내서, TTB 키 필요) ----------
+   * CORS 헤더를 주지 않으므로 output=js + Callback 파라미터(JSONP)로 호출합니다.
+   * 국내 신간·번역서의 표지와 서지가 Google Books 보다 정확합니다.
+   */
+
+  // "한강 (지은이), 김철수 (옮긴이)" -> {authors:['한강'], translator:'김철수'}
+  function parseAladinAuthor(raw) {
+    const out = { authors: [], translator: '' };
+    String(raw || '').split(',').forEach(function (part) {
+      const s = part.trim();
+      if (!s) return;
+      const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
+      const name = (m ? m[1] : s).trim();
+      const role = m ? m[2] : '';
+      if (!name) return;
+      if (/옮긴이|번역|역자/.test(role)) {
+        out.translator = out.translator ? out.translator + ', ' + name : name;
+      } else if (/그림|사진|엮은이|감수|기획/.test(role)) {
+        // 부가 참여자는 저자로 넣지 않는다
+      } else {
+        out.authors.push(name);
+      }
+    });
+    if (!out.authors.length && raw) out.authors = [String(raw).trim()];
+    return out;
+  }
+
+  // 알라딘 표지는 coversum(작은 판)으로 오는 경우가 많아 큰 판으로 올린다
+  function upgradeAladinCover(url) {
+    if (!url) return '';
+    return U.https(url).replace(/\/cover(sum|small|mb)\//, '/cover500/');
+  }
+
+  function searchAladin(q, key) {
+    const isIsbn = /^[\d-]{10,17}$/.test(q);
+    const url = 'https://www.aladin.co.kr/ttb/api/ItemSearch.aspx' +
+      '?ttbkey=' + encodeURIComponent(key) +
+      '&Query=' + encodeURIComponent(isIsbn ? q.replace(/-/g, '') : q) +
+      '&QueryType=' + (isIsbn ? 'ISBN' : 'Keyword') +
+      '&MaxResults=16&start=1&SearchTarget=Book&Cover=Big' +
+      '&OptResult=itemPage&Version=20131101&output=js';
+
+    // 알라딘 문서상 콜백 파라미터 이름은 Callback
+    return jsonp(url, 9000, 'Callback').then(function (data) {
+      if (!data || data.errorCode) {
+        throw new Error(data && data.errorMessage ? data.errorMessage : 'aladin error');
+      }
+      const items = data.item || [];
+      return items.map(function (it) {
+        const who = parseAladinAuthor(it.author);
+        const cat = it.categoryName || '';
+        const sub = it.subInfo || {};
+        return {
+          source: 'aladin',
+          sourceId: String(it.itemId || ''),
+          title: (it.title || '').replace(/^\[.*?\]\s*/, ''),
+          subtitle: '',
+          authors: who.authors,
+          translator: who.translator,
+          publisher: it.publisher || '',
+          publishedDate: it.pubDate || '',
+          isbn: it.isbn13 || it.isbn || '',
+          pageCount: U.num(sub.itemPage, null),
+          language: cat.indexOf('외국도서') === 0 ? '' : 'ko',
+          origin: cat.indexOf('외국도서') === 0 ? 'foreign' : 'domestic',
+          // 국내도서는 한글 분류, 외국도서는 영문 분류로 오므로 순서대로 시도
+          genre: Store.mapAladinCategory(cat) || Store.mapBookCategory([cat], !!cat),
+          coverUrl: upgradeAladinCover(it.cover),
+          description: (it.description || '').slice(0, 1200)
+        };
+      }).filter(function (b) { return b.title; });
+    });
+  }
+
   // 제목(또는 ISBN)으로 책 검색
+  // 알라딘 키가 있으면 국내서 정확도가 높은 알라딘을 먼저 쓰고,
+  // 결과가 없거나 실패하면 Google Books → Open Library 순으로 넘어갑니다.
   API.searchBooks = function (q) {
     const query = String(q || '').trim();
     if (!query) return Promise.resolve([]);
     const isIsbn = /^[\d-]{10,17}$/.test(query);
     const gq = isIsbn ? 'isbn:' + query.replace(/-/g, '') : query;
+    const aladinKey = (Store.settings && Store.settings.aladinKey || '').trim();
 
-    return searchGoogleBooks(gq).then(function (list) {
-      if (list.length) return list;
-      return searchOpenLibrary(query);
-    }).catch(function () {
-      return searchOpenLibrary(query).catch(function () { return []; });
+    function google() {
+      return searchGoogleBooks(gq).then(function (list) {
+        return list.length ? list : searchOpenLibrary(query);
+      }).catch(function () {
+        return searchOpenLibrary(query).catch(function () { return []; });
+      });
+    }
+
+    if (!aladinKey) return google();
+
+    return searchAladin(query, aladinKey).then(function (list) {
+      return list.length ? list : google();
+    }).catch(function (err) {
+      console.warn('알라딘 조회 실패 — 다른 경로로 재시도합니다.', err);
+      return google();
     });
   };
 

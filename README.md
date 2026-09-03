@@ -52,19 +52,56 @@ python3 -m http.server 8123
 > 표지 자동 조회와 표지 이미지 로딩은 인터넷 연결이 필요합니다.
 > HTTPS 로 서비스해야 표지 이미지가 차단되지 않습니다(혼합 콘텐츠 차단).
 
+### GitHub Pages 로 배포
+
+`.github/workflows/pages.yml` 이 `main` 과 작업 브랜치의 푸시마다 저장소를 그대로 배포합니다.
+**최초 한 번만** 저장소에서 아래를 설정하면 그다음부터는 자동입니다.
+
+1. 저장소 **Settings → Pages → Build and deployment → Source** 를 **GitHub Actions** 로 변경
+2. **Actions** 탭에서 `Deploy to GitHub Pages` 실행 결과 확인
+3. 배포 주소는 `https://<사용자명>.github.io/<저장소명>/` 입니다. 이 주소를 아이폰 사파리로 열어
+   홈 화면에 추가하면 됩니다.
+
+Pages 는 HTTPS 로 서비스되므로 표지 이미지 혼합 콘텐츠 문제가 없습니다.
+저장소가 비공개면 Pages 공개 여부를 함께 확인하세요(비공개 저장소의 Pages 는 유료 플랜 기능입니다).
+
 ## 데이터 저장
 
 - 모든 기록은 브라우저 `localStorage` 의 `bookshelf.data.v1` 키에 저장됩니다. 서버로 나가는 개인 기록은 없습니다.
-- 기기를 바꾸거나 사파리 데이터를 지우면 사라집니다. **설정 → JSON 백업 내보내기**로 주기적으로 받아두세요.
 - 복원은 **설정 → JSON 백업 불러오기**에서 `합치기` / `덮어쓰기` 중 선택합니다.
+
+### 기록이 사라지지 않게 하려면
+
+브라우저 저장소는 공간이 부족하거나 사용자가 사파리 데이터를 지우면 함께 지워집니다.
+앱에서 두 가지 안전장치를 둡니다.
+
+- **저장소 보호 요청** — 앱을 열 때 `navigator.storage.persist()` 로 "이 앱의 저장소는 임의로
+  비우지 말아 달라"고 요청합니다. 사파리는 홈 화면에 추가된 웹앱에 대해 대체로 허용합니다.
+  현재 상태는 설정 화면의 **저장소 보호** 항목에 표시됩니다.
+- **백업 경과일 표시** — 설정 화면의 **마지막 백업** 항목이 마지막으로 JSON 을 내보낸 날짜와
+  경과일을 보여주고, 30일이 넘거나 한 번도 백업하지 않았으면 붉은색으로 알립니다. 눌러서 바로 내보냅니다.
+
+이 두 가지로도 **사용자가 직접 사파리 방문 기록·데이터를 지우는 경우는 막지 못합니다.**
+그 경우까지 대비하려면 백업 파일을 iCloud 드라이브나 다른 저장소에 두는 방식이 필요합니다.
 
 ## 표지·정보 자동 조회
 
-| 구분 | 1순위 | 2순위 | API 키 |
-|---|---|---|---|
-| 책 | Google Books API | Open Library | 불필요 |
-| 영상 | iTunes Search API | — | 불필요 |
-| 영상(선택) | TMDB | iTunes | 설정에서 입력 |
+| 구분 | 1순위 | 2순위 | 3순위 | API 키 |
+|---|---|---|---|---|
+| 책 | Google Books | Open Library | — | 불필요 |
+| 책(키 입력 시) | **알라딘** | Google Books | Open Library | 설정에서 입력 |
+| 영상 | iTunes Search | — | — | 불필요 |
+| 영상(키 입력 시) | TMDB | iTunes Search | — | 설정에서 입력 |
+
+**국내서는 알라딘 키를 넣는 것을 권합니다.** Google Books 는 한국 신간 커버리지가 약해
+표지가 없거나 출판사·분류가 비는 경우가 잦습니다. 알라딘은 표지·출판사·발행일·ISBN13·
+쪽수·분류(`국내도서>소설/시/희곡>한국소설` → `소설`)를 함께 주고, `한강 (지은이), 조현욱 (옮긴이)`
+형태의 저자 문자열에서 저자와 옮긴이를 갈라 채웁니다.
+
+- 키 발급: 알라딘 → 알라딘 서재 → OpenAPI 메뉴에서 무료로 받습니다(TTB 키).
+- 설정 화면의 **연결 확인** 버튼으로 키가 실제로 동작하는지 바로 확인할 수 있습니다.
+- 알라딘은 CORS 헤더를 주지 않아 `output=js` + `Callback` 파라미터(JSONP)로 호출합니다.
+- 카카오·네이버 책 검색 API 는 브라우저에서 직접 호출할 수 없어(CORS 차단, 서버 중계 필요) 쓰지 않았습니다.
 
 - 제목을 입력하고 잠시 멈추면 자동으로 조회하고, `찾기` 버튼으로도 즉시 조회합니다. ISBN 을 넣어도 됩니다.
 - 가져온 값은 전부 폼에서 수정할 수 있고, 표지는 직접 URL 을 넣거나 사진 앨범에서 고를 수도 있습니다(가로 420px 로 줄여 저장).
@@ -103,13 +140,14 @@ python3 -m http.server 8123
 ## 파일 구조
 
 ```
+.github/workflows/pages.yml  GitHub Pages 자동 배포
 index.html                 화면 뼈대
 manifest.webmanifest       홈 화면 추가(PWA) 설정
 sw.js                      오프라인 캐시(앱 파일만, 외부 요청은 통과)
 assets/css/app.css         디자인 토큰과 전체 스타일
 assets/js/util.js          날짜·주차·포맷 등 공용 함수
 assets/js/store.js         데이터 모델, localStorage, 장르 분류표
-assets/js/api.js           Google Books / Open Library / iTunes / TMDB 조회
+assets/js/api.js           알라딘 / Google Books / Open Library / iTunes / TMDB 조회
 assets/js/xlsx.js          의존성 없는 XLSX(엑셀) 작성기
 assets/js/stats.js         월별·주별 집계
 assets/js/ui.js            썸네일·상세·입력폼·바텀시트
