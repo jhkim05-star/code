@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>책꽂이 · 기록</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="description" content="읽는 책과 읽은 책, 본 영상을 기록하는 개인 독서·감상 노트">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="책꽂이">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="cols-4">
+
+<div class="app">
+
+  <header class="topbar" id="topbar">
+    <div class="topbar-row">
+      <h1 class="topbar-title" id="viewTitle">책꽂이</h1>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="btnFilterToggle" type="button" aria-label="검색" title="검색">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        </button>
+        <button class="icon-btn accent-red" id="btnAdd" type="button" aria-label="새 기록 추가" title="추가">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="filter-row" id="filterRow" hidden>
+      <input type="search" id="filterInput" placeholder="제목 · 저자 · 장르 검색" autocomplete="off" enterkeyhint="search">
+      <button class="text-btn" id="btnFilterClear" type="button">지우기</button>
+    </div>
+  </header>
+
+  <main class="main" id="main">
+
+    <!-- 책꽂이: 읽는 중 + 읽을 예정 -->
+    <section class="view" id="view-shelf" data-view="shelf">
+      <div class="seg-row">
+        <div class="seg" id="shelfSeg" role="tablist">
+          <button class="seg-item is-on" data-shelf="all" type="button">전체</button>
+          <button class="seg-item" data-shelf="reading" type="button">읽는 중</button>
+          <button class="seg-item" data-shelf="planned" type="button">읽을 예정</button>
+        </div>
+      </div>
+      <div id="shelfBody"></div>
+    </section>
+
+    <!-- 책장: 완독 -->
+    <section class="view" id="view-library" data-view="library" hidden>
+      <div class="seg-row">
+        <div class="seg" id="librarySort">
+          <button class="seg-item is-on" data-sort="finished" type="button">최근 완독</button>
+          <button class="seg-item" data-sort="rating" type="button">별점</button>
+          <button class="seg-item" data-sort="title" type="button">제목</button>
+        </div>
+      </div>
+      <div id="libraryBody"></div>
+    </section>
+
+    <!-- 비디오장 -->
+    <section class="view" id="view-video" data-view="video" hidden>
+      <div class="seg-row">
+        <div class="seg" id="videoFilter">
+          <button class="seg-item is-on" data-kind="all" type="button">전체</button>
+          <button class="seg-item" data-kind="movie" type="button">영화</button>
+          <button class="seg-item" data-kind="series" type="button">시리즈</button>
+        </div>
+      </div>
+      <div id="videoBody"></div>
+    </section>
+
+    <!-- 통계 -->
+    <section class="view" id="view-stats" data-view="stats" hidden>
+      <div class="seg-row">
+        <div class="seg" id="statsGran">
+          <button class="seg-item is-on" data-gran="month" type="button">월별</button>
+          <button class="seg-item" data-gran="week" type="button">주별</button>
+        </div>
+      </div>
+      <div id="statsBody"></div>
+    </section>
+
+    <!-- 설정 / 내보내기 -->
+    <section class="view" id="view-settings" data-view="settings" hidden>
+      <div id="settingsBody"></div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab is-on" data-tab="shelf" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h4.2v13H4zM10.4 5.5h4.2v13h-4.2z"/><path d="M16.9 6.6l3.5.9-2.9 11-3.4-.9z"/></svg>
+      <span>책꽂이</span>
+    </button>
+    <button class="tab" data-tab="library" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h11a2 2 0 0 1 2 2v13H6a2 2 0 0 1-2-2z"/><path d="M17 6.5h3v13H6"/></svg>
+      <span>책장</span>
+    </button>
+    <button class="tab" data-tab="video" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg>
+      <span>비디오장</span>
+    </button>
+    <button class="tab" data-tab="stats" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5"/></svg>
+      <span>통계</span>
+    </button>
+    <button class="tab" data-tab="settings" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6L6 18M18 18l-1.4-1.4M7.4 7.4L6 6"/></svg>
+      <span>설정</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- 모달(바텀시트) 컨테이너 -->
+<div class="sheet-host" id="sheetHost" hidden>
+  <div class="sheet-scrim" id="sheetScrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head">
+      <button class="text-btn" id="sheetClose" type="button">닫기</button>
+      <h2 class="sheet-title" id="sheetTitle"></h2>
+      <button class="text-btn accent" id="sheetAction" type="button" hidden></button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="assets/js/util.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/xlsx.js"></script>
+<script src="assets/js/stats.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/views.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

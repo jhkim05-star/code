@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>jhkim05 앱 모음</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: #000; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+      "Noto Sans KR", system-ui, sans-serif;
+  }
+  .wrap {
+    max-width: 480px; margin: 0 auto;
+    padding: calc(48px + env(safe-area-inset-top, 0px)) 20px calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
+  .sub { font-size: 13.5px; color: #9299a6; margin: 0 0 32px; line-height: 1.5; }
+  .list { display: flex; flex-direction: column; gap: 14px; }
+  a.card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px; border-radius: 16px;
+    background: #0d0e11; border: 1px solid #23262e;
+    text-decoration: none; color: inherit;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  a.card:active { transform: scale(.98); }
+  .icon {
+    width: 56px; height: 56px; border-radius: 14px; flex: 0 0 auto;
+    overflow: hidden; background: #16181d;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .info { min-width: 0; flex: 1; }
+  .title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  .desc { font-size: 12.5px; color: #8a91a0; margin-top: 3px; line-height: 1.45; }
+  .chevron { color: #565b66; font-size: 18px; flex: 0 0 auto; }
+  .reading .icon { box-shadow: inset 0 0 0 1px rgba(255,55,95,.35); }
+  .workout .icon { box-shadow: inset 0 0 0 1px rgba(10,132,255,.35); }
+  footer { margin-top: 40px; font-size: 11px; color: #565b66; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>앱 모음</h1>
+  <p class="sub">각 앱은 완전히 독립된 정적 웹앱입니다. 아이폰에서 열어 홈 화면에 추가하면 앱처럼 씁니다.</p>
+  <div class="list">
+    <a class="card reading" href="reading/">
+      <div class="icon"><img src="reading/assets/icons/icon-192.png" alt="" loading="lazy"></div>
+      <div class="info">
+        <div class="title">책꽂이 · 기록</div>
+        <div class="desc">읽는 책·읽은 책, 본 영화·드라마를 남기는 독서·감상 노트</div>
+      </div>
+      <div class="chevron">›</div>
+    </a>
+    <a class="card workout" href="workout/">
+      <div class="icon"><img src="workout/icons/icon-192.png" alt="" loading="lazy"></div>
+      <div class="info">
+        <div class="title">운동일지</div>
+        <div class="desc">혼자 하는 웨이트를 위한 계획 · 실행 · 기록</div>
+      </div>
+      <div class="chevron">›</div>
+    </a>
+  </div>
+  <footer>기록은 이 브라우저 안에만 저장됩니다. 서버나 계정이 따로 없습니다.<br>단, 두 앱은 같은 사이트를 쓰므로 사파리에서 이 사이트의 데이터를 지우면 둘 다 함께 사라집니다.</footer>
+</div>
+</body>
+</html>
