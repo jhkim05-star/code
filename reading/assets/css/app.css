@@ -296,7 +296,11 @@ body.cols-4 .cover { aspect-ratio: 2 / 2.84; }
   animation: fade .2s ease; }
 .sheet {
   position: absolute; left: 0; right: 0; bottom: 0;
-  max-height: 92dvh; max-height: 92vh;
+  /* 92% 만으로는 다이나믹 아일랜드·노치가 있는 기기에서 콘텐츠가 긴 시트가
+     상태바 영역까지 밀고 올라가 버튼이 그 아래 깔릴 수 있다.
+     안전 영역만큼은 항상 비워 둔다. */
+  max-height: calc(92dvh - env(safe-area-inset-top, 0px));
+  max-height: calc(92vh - env(safe-area-inset-top, 0px));
   display: flex; flex-direction: column;
   background: var(--surface-1);
   border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg);
