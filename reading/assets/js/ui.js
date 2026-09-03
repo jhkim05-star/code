@@ -516,14 +516,27 @@
     const input = box.querySelector('[data-lk-q]');
     const results = box.querySelector('[data-lk-results]');
 
+    let runSeq = 0;
+
     function run() {
       const q = input.value.trim();
       if (!q) { UI.toast('검색어를 입력해 주세요.', 'warn'); return; }
+      const seq = ++runSeq;  // 이전 검색이 늦게 끝나 지금 결과를 덮어쓰지 않도록
       results.innerHTML = '<div class="loading"><span class="spinner"></span>찾는 중…</div>';
+
+      // 3초 넘게 걸리면 기다리는 이유를 알려준다(그냥 멈춘 것처럼 보이지 않도록)
+      const slowTimer = setTimeout(function () {
+        if (seq !== runSeq) return;
+        results.innerHTML = '<div class="loading"><span class="spinner"></span>' +
+          '찾는 중… 인터넷 연결이 느리면 조금 더 걸릴 수 있어요</div>';
+      }, 3000);
+
       const kindHint = kind === 'video'
         ? (chipValue(root, 'kind') || 'movie') : null;
       const p = kind === 'book' ? API.searchBooks(q) : API.searchVideos(q, kindHint);
       p.then(function (list) {
+        clearTimeout(slowTimer);
+        if (seq !== runSeq) return;
         if (!list.length) {
           results.innerHTML = '<div class="hint">검색 결과가 없습니다. 제목을 바꿔보거나 아래에 직접 입력해 주세요.</div>';
           return;
@@ -547,9 +560,14 @@
           results.innerHTML = '<div class="hint" style="color:var(--blue-soft)">정보를 채웠습니다. 아래에서 확인·수정하세요.</div>';
         };
       }).catch(function (err) {
-        console.warn(err);
-        results.innerHTML = '<div class="hint">조회에 실패했습니다(네트워크 또는 일일 조회 한도). ' +
-          '잠시 후 다시 시도하거나 아래에 직접 입력해 주세요.</div>';
+        clearTimeout(slowTimer);
+        console.warn('[책꽂이] 표지·서지정보 조회 최종 실패:', err);
+        if (seq !== runSeq) return;
+        results.innerHTML = '<div class="hint">조회에 실패했습니다(네트워크 연결을 확인해 주세요). ' +
+          '<button class="table-toggle" type="button" data-lk-retry style="display:inline">다시 시도</button> ' +
+          '또는 아래에 직접 입력해 주세요.</div>';
+        const retryBtn = results.querySelector('[data-lk-retry]');
+        if (retryBtn) retryBtn.addEventListener('click', run);
       });
     }
 

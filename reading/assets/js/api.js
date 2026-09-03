@@ -22,7 +22,7 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       }),
-      timeout(ms || 9000)
+      timeout(ms || 5000)
     ]);
   }
 
@@ -32,7 +32,7 @@
     return new Promise(function (resolve, reject) {
       const cb = '__bs_cb_' + (++jsonpSeq) + '_' + Date.now().toString(36);
       const script = document.createElement('script');
-      const timer = setTimeout(function () { cleanup(); reject(new Error('timeout')); }, ms || 9000);
+      const timer = setTimeout(function () { cleanup(); reject(new Error('timeout')); }, ms || 5000);
       function cleanup() {
         clearTimeout(timer);
         try { delete global[cb]; } catch (e) { global[cb] = undefined; }
@@ -174,7 +174,7 @@
       '&OptResult=itemPage&Version=20131101&output=js';
 
     // 알라딘 문서상 콜백 파라미터 이름은 Callback
-    return jsonp(url, 9000, 'Callback').then(function (data) {
+    return jsonp(url, 5000, 'Callback').then(function (data) {
       if (!data || data.errorCode) {
         throw new Error(data && data.errorMessage ? data.errorMessage : 'aladin error');
       }
@@ -208,6 +208,10 @@
   // 제목(또는 ISBN)으로 책 검색
   // 알라딘 키가 있으면 국내서 정확도가 높은 알라딘을 먼저 쓰고,
   // 결과가 없거나 실패하면 Google Books → Open Library 순으로 넘어갑니다.
+  //
+  // 세 경로가 전부 실패하면(네트워크 차단 등) 에러를 그대로 위(UI)로 던집니다.
+  // 여기서 실패를 삼켜 빈 배열을 돌려주면, 호출 쪽이 "검색 결과 없음"과
+  // "조회 자체가 안 됨"을 구분하지 못해 사용자에게 원인을 알려줄 수 없습니다.
   API.searchBooks = function (q) {
     const query = String(q || '').trim();
     if (!query) return Promise.resolve([]);
@@ -217,9 +221,17 @@
 
     function google() {
       return searchGoogleBooks(gq).then(function (list) {
-        return list.length ? list : searchOpenLibrary(query);
-      }).catch(function () {
-        return searchOpenLibrary(query).catch(function () { return []; });
+        if (list.length) return list;
+        return searchOpenLibrary(query).catch(function (err) {
+          console.warn('[책꽂이] Open Library 조회 실패:', err);
+          throw err;
+        });
+      }).catch(function (err) {
+        console.warn('[책꽂이] Google Books 조회 실패, Open Library 로 재시도:', err);
+        return searchOpenLibrary(query).catch(function (err2) {
+          console.warn('[책꽂이] Open Library 조회도 실패:', err2);
+          throw err2;
+        });
       });
     }
 
@@ -228,7 +240,7 @@
     return searchAladin(query, aladinKey).then(function (list) {
       return list.length ? list : google();
     }).catch(function (err) {
-      console.warn('알라딘 조회 실패 — 다른 경로로 재시도합니다.', err);
+      console.warn('[책꽂이] 알라딘 조회 실패 — 다른 경로로 재시도합니다:', err);
       return google();
     });
   };
@@ -316,6 +328,7 @@
   }
 
   // 영화/시리즈 검색. kind: 'movie' | 'series'
+  // 두 경로가 전부 실패하면 에러를 그대로 위로 던집니다(이유는 searchBooks 주석 참고).
   API.searchVideos = function (q, kind) {
     const query = String(q || '').trim();
     if (!query) return Promise.resolve([]);
@@ -324,10 +337,21 @@
     const primary = key ? searchTmdb(query, key) : searchItunes(query, kind);
     return primary.then(function (list) {
       if (list.length) return list;
-      return key ? searchItunes(query, kind) : [];
-    }).catch(function () {
-      return key ? searchItunes(query, kind).catch(function () { return []; })
-                 : [];
+      if (!key) return [];
+      return searchItunes(query, kind).catch(function (err) {
+        console.warn('[책꽂이] iTunes 조회 실패:', err);
+        throw err;
+      });
+    }).catch(function (err) {
+      if (!key) {
+        console.warn('[책꽂이] iTunes 조회 실패:', err);
+        throw err;
+      }
+      console.warn('[책꽂이] TMDB 조회 실패, iTunes 로 재시도:', err);
+      return searchItunes(query, kind).catch(function (err2) {
+        console.warn('[책꽂이] iTunes 조회도 실패:', err2);
+        throw err2;
+      });
     });
   };
 
