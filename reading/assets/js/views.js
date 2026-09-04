@@ -432,27 +432,9 @@
     html += '<p class="settings-group-title">자동 조회</p><div class="list-card">' +
       '<div class="list-item" style="cursor:default;align-items:flex-start">' +
       '<span class="list-icon red">' + ICON.key + '</span>' +
-      '<span class="list-text"><span class="list-title">알라딘 TTB 키 (선택 · 국내서)</span>' +
-      '<span class="list-desc" style="color:var(--red-soft)">알라딘 OpenAPI 는 2026. 10. 30. 서비스가 종료될 예정입니다. ' +
-      '그 전까지는 그대로 쓰이고, 이후에는 자동으로 아래 카카오(등록해 두었다면) → Google Books 순으로 넘어갑니다.</span>' +
-      '<span class="list-desc">' + (Store.settings.aladinKey
-        ? '키가 등록되어 있습니다. 국내서는 알라딘을 먼저 조회합니다.'
-        : '아직 키가 없습니다. 종료가 얼마 안 남아 새로 발급받기보다 아래 카카오 쪽을 권합니다.') +
-      '</span></span></div>' +
-      '<div style="padding:0 14px 14px">' +
-      '<input class="input" id="setAladin" placeholder="예: ttbkim05271234001 (알라딘에서 발급받은 값)" value="' +
-      esc(Store.settings.aladinKey || '') + '" autocomplete="off" spellcheck="false">' +
-      '<div class="hint">알라딘 홈페이지 → 알라딘 서재 → OpenAPI 메뉴에서 무료로 발급받습니다. ' +
-      '입력칸 안의 회색 글씨는 예시일 뿐 실제 값이 아닙니다 — 직접 타이핑해야 저장됩니다.</div>' +
-      '<div class="btn-row">' +
-      '<button class="btn sm" type="button" data-act="save-aladin">저장</button>' +
-      '<button class="btn sm ghost" type="button" data-act="test-aladin">연결 확인</button>' +
-      '</div></div>' +
-      '<div class="list-item" style="cursor:default;align-items:flex-start">' +
-      '<span class="list-icon red">' + ICON.key + '</span>' +
-      '<span class="list-text"><span class="list-title">카카오 책 검색 프록시 (선택 · 국내서)</span>' +
+      '<span class="list-text"><span class="list-title">카카오 책 검색 프록시 (국내서 · 우선 사용)</span>' +
       '<span class="list-desc">' + (Store.settings.kakaoProxyUrl
-        ? '프록시가 등록되어 있습니다. 알라딘이 없거나 결과가 없을 때 카카오를 조회합니다.'
+        ? '프록시가 등록되어 있습니다. 국내서는 카카오를 가장 먼저 조회합니다.'
         : '카카오 책 검색은 브라우저에서 직접 부를 수 없어, API 키를 대신 들고 있는 ' +
           '작은 중계 서버(프록시) 주소가 필요합니다. 직접 만들어 두는 방법은 ' +
           'reading/proxy/README.md 를 참고하세요(무료, Cloudflare Workers).') +
@@ -463,6 +445,23 @@
       '<div class="btn-row">' +
       '<button class="btn sm" type="button" data-act="save-kakao">저장</button>' +
       '<button class="btn sm ghost" type="button" data-act="test-kakao">연결 확인</button>' +
+      '</div></div>' +
+      '<div class="list-item" style="cursor:default;align-items:flex-start">' +
+      '<span class="list-icon grey">' + ICON.key + '</span>' +
+      '<span class="list-text"><span class="list-title">알라딘 TTB 키 (선택 · 보조 경로)</span>' +
+      '<span class="list-desc" style="color:var(--red-soft)">알라딘 OpenAPI 는 2026. 10. 30. 서비스가 종료될 예정이라 ' +
+      '더 이상 권하지 않습니다. 카카오가 없거나 결과가 없을 때만 보조로 쓰입니다.</span>' +
+      '<span class="list-desc">' + (Store.settings.aladinKey
+        ? '키가 등록되어 있어 카카오 다음 순서로 조회됩니다.'
+        : '등록되어 있지 않습니다. 위 카카오만으로 충분합니다.') +
+      '</span></span></div>' +
+      '<div style="padding:0 14px 14px">' +
+      '<input class="input" id="setAladin" placeholder="예: ttbkim05271234001 (알라딘에서 발급받은 값)" value="' +
+      esc(Store.settings.aladinKey || '') + '" autocomplete="off" spellcheck="false">' +
+      '<div class="hint">입력칸 안의 회색 글씨는 예시일 뿐 실제 값이 아닙니다 — 직접 타이핑해야 저장됩니다.</div>' +
+      '<div class="btn-row">' +
+      '<button class="btn sm" type="button" data-act="save-aladin">저장</button>' +
+      '<button class="btn sm ghost" type="button" data-act="test-aladin">연결 확인</button>' +
       '</div></div>' +
       '<div class="list-item" style="cursor:default;align-items:flex-start">' +
       '<span class="list-icon blue">' + ICON.key + '</span>' +
@@ -531,11 +530,12 @@
         Store.setSetting('aladinKey', key);
         btn.disabled = true;
         btn.textContent = '확인 중…';
-        API.searchBooks('소년이 온다').then(function (list) {
-          const viaAladin = list.filter(function (r) { return r.source === 'aladin'; }).length;
-          if (viaAladin) UI.toast('알라딘 연결 정상 — ' + viaAladin + '건 조회됨');
-          else UI.toast('알라딘 응답이 없어 다른 경로로 조회됩니다. 키를 확인해 주세요.', 'warn');
-        }).catch(function () {
+        // 검색 우선순위(카카오가 먼저)와 무관하게 알라딘 자체만 직접 확인한다.
+        API.testAladinKey(key).then(function (list) {
+          if (list.length) UI.toast('알라딘 연결 정상 — ' + list.length + '건 조회됨');
+          else UI.toast('알라딘 응답이 없습니다. 키를 확인해 주세요.', 'warn');
+        }).catch(function (err) {
+          console.warn('[책꽂이] 알라딘 연결 확인 실패:', err);
           UI.toast('조회에 실패했습니다. 키와 네트워크를 확인해 주세요.', 'warn');
         }).then(function () {
           btn.disabled = false;

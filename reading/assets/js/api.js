@@ -247,8 +247,10 @@
   }
 
   // 제목(또는 ISBN)으로 책 검색
-  // 국내서 정확도가 높은 순서(알라딘 → 카카오)로 먼저 시도하고,
-  // 둘 다 설정이 안 됐거나 결과가 없으면 Google Books → Open Library 로 넘어갑니다.
+  // 국내서는 카카오(프록시)를 가장 먼저 씁니다. 알라딘은 2026.10.30 서비스가
+  // 종료될 예정이라 새로 추천하지 않지만, 종료 전까지는 카카오가 없거나
+  // 실패했을 때의 보조 경로로 남겨 둡니다. 둘 다 없거나 결과가 없으면
+  // Google Books → Open Library 로 넘어갑니다.
   //
   // 모든 경로가 실패하면(네트워크 차단 등) 에러를 그대로 위(UI)로 던집니다.
   // 여기서 실패를 삼켜 빈 배열을 돌려주면, 호출 쪽이 "검색 결과 없음"과
@@ -277,23 +279,23 @@
       });
     }
 
-    function kakaoThenGoogle() {
-      if (!kakaoProxyUrl) return google();
-      return searchKakao(query, kakaoProxyUrl).then(function (list) {
+    function aladinThenGoogle() {
+      if (!aladinKey) return google();
+      return searchAladin(query, aladinKey).then(function (list) {
         return list.length ? list : google();
       }).catch(function (err) {
-        console.warn('[책꽂이] 카카오(프록시) 조회 실패, 다른 경로로 재시도:', err);
+        console.warn('[책꽂이] 알라딘 조회 실패, 다른 경로로 재시도:', err);
         return google();
       });
     }
 
-    if (!aladinKey) return kakaoThenGoogle();
+    if (!kakaoProxyUrl) return aladinThenGoogle();
 
-    return searchAladin(query, aladinKey).then(function (list) {
-      return list.length ? list : kakaoThenGoogle();
+    return searchKakao(query, kakaoProxyUrl).then(function (list) {
+      return list.length ? list : aladinThenGoogle();
     }).catch(function (err) {
-      console.warn('[책꽂이] 알라딘 조회 실패 — 다른 경로로 재시도합니다:', err);
-      return kakaoThenGoogle();
+      console.warn('[책꽂이] 카카오(프록시) 조회 실패 — 다른 경로로 재시도합니다:', err);
+      return aladinThenGoogle();
     });
   };
 
@@ -407,10 +409,13 @@
     });
   };
 
-  // 설정 화면의 "연결 확인" 버튼에서 씀 — 알라딘 우선순위와 무관하게
-  // 카카오 프록시 자체가 살아있는지만 직접 확인한다.
+  // 설정 화면의 "연결 확인" 버튼에서 씀 — 검색 우선순위와 무관하게
+  // 그 서비스 자체가 살아있는지만 직접 확인한다.
   API.testKakaoProxy = function (proxyUrl) {
     return searchKakao('해리포터', proxyUrl);
+  };
+  API.testAladinKey = function (key) {
+    return searchAladin('해리포터', key);
   };
 
   global.API = API;
