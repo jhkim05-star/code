@@ -85,6 +85,8 @@ function playClip(key) {
   const a = clipFor(key);
   if (!a) return null;
   try {
+    // 언락 뒷정리가 이 재생을 건드리지 못하게 표시해 둡니다 (아래 unlockAudio 참고)
+    a.dataset.play = String(Number(a.dataset.play || 0) + 1);
     a.currentTime = 0;
     a.muted = false;            // 언락 때 물려 둔 음소거를 확실히 풉니다
     a.volume = settings().voiceVolume;
@@ -201,11 +203,17 @@ export function unlockAudio() {
     const a = clipFor(key);
     if (!a) continue;
     a.muted = true;
+    // 뒷정리가 "그 사이에 진짜로 재생된 소리"를 끄지 않도록 표시를 남겨 둡니다.
+    // 이게 없으면, 파일을 받아오는 데 시간이 걸려 play() 프로미스가 늦게 끝났을 때
+    // 그 뒷정리가 이미 시작된 카운트 소리를 pause() 로 꺼 버립니다
+    // (신호가 약한 곳에서 "카운트가 안 들린다"의 원인).
+    const token = a.dataset.play || '0';
     let p = null;
     try { p = a.play(); } catch { /* 무시 */ }
     try { a.pause(); a.currentTime = 0; } catch { /* 무시 */ }
     // pause() 때문에 play() 프로미스가 거절되는 건 정상입니다 (AbortError)
     Promise.resolve(p).catch(() => {}).finally(() => {
+      if ((a.dataset.play || '0') !== token) { a.muted = false; return; }  // 그 사이 진짜 재생이 있었음
       try { a.pause(); a.currentTime = 0; a.muted = false; } catch { /* 무시 */ }
     });
   }
@@ -239,7 +247,10 @@ export function speak(text, opt = {}) {
 function speakWithTTS(text, opt, s) {
   if (!synth || !text) return;
   try {
-    if (opt.interrupt) synth.cancel();
+    // iOS 는 화면이 잠깐 가려지거나 cancel() 이 겹치면 음성 큐가 멈춘 채로
+    // 남아 그 뒤로 아무 말도 안 나옵니다. 말하기 전에 한 번 풀어 줍니다.
+    if (synth.paused) synth.resume();
+    if (opt.interrupt && (synth.speaking || synth.pending)) synth.cancel();
     const u = new SpeechSynthesisUtterance(String(text));
     if (!chosenVoice) refreshVoices();
     if (chosenVoice) { u.voice = chosenVoice; u.lang = chosenVoice.lang; }

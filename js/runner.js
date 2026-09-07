@@ -584,6 +584,26 @@ export class Runner {
   }
 
   /**
+   * 종목 순서를 바꿉니다. 계획(day.blocks)과 오늘 기록(session.entries)을 같이
+   * 옮기고, 지금 하고 있던 종목을 계속 가리키도록 위치를 따라 옮깁니다.
+   * ("오늘은 스쿼트부터 하고 싶다" 처럼 운동 중에 순서를 바꿀 때 씁니다.)
+   */
+  moveExercise(from, to) {
+    const n = this.day.blocks.length;
+    if (from === to || from < 0 || from >= n || to < 0 || to >= n) return false;
+
+    const staying = this.day.blocks[this.exIndex];
+    this.day.blocks.splice(to, 0, ...this.day.blocks.splice(from, 1));
+    this.session.entries.splice(to, 0, ...this.session.entries.splice(from, 1));
+
+    const moved = this.day.blocks.indexOf(staying);
+    this.exIndex = moved >= 0 ? moved : clamp(to, 0, n - 1);
+    this.emit('tick', this);
+    this.emit('state', this.state);
+    return true;
+  }
+
+  /**
    * 세트를 하나 뺍니다. 이 종목의 마지막 하나 남은 세트는 지울 수 없습니다.
    * 지금 보고 있던 세트를 지우면 그 뒤 세트가 그 자리로 당겨집니다.
    */

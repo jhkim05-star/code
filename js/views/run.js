@@ -64,7 +64,10 @@ function startRun(root, day, weekStart, plan) {
   const runner = new Runner(day, { weekStart });
   runner.start();
 
-  const ui = buildUi(root, runner);
+  // 종목 순서를 바꾸면 계획에도 남깁니다 (중간에 앱을 닫았다 열어도 그대로)
+  const persist = () => { if (plan) savePlan(plan); };
+
+  const ui = buildUi(root, runner, persist);
   const offTick = runner.on('tick', ui.sync);
   const offState = runner.on('state', ui.rebuild);
   const offDone = runner.on('done', (session) => {
@@ -77,7 +80,7 @@ function startRun(root, day, weekStart, plan) {
   return () => { offTick(); offState(); offDone(); runner.stop(); };
 }
 
-function buildUi(root, runner) {
+function buildUi(root, runner, persist = () => {}) {
   const s = settings();
 
   const bar = h('i');
@@ -95,7 +98,7 @@ function buildUi(root, runner) {
   // 제목은 버튼 아래 자기 줄에 따로 둡니다.
   const top = h('.run-top', null,
     h('button.btn-sm.btn-ghost', { onclick: () => quit(runner) }, '‹ 그만'),
-    h('button.btn-sm.btn-ghost', { onclick: () => openList(runner) }, '목록'),
+    h('button.btn-sm.btn-ghost', { onclick: () => openList(runner, persist) }, '목록'),
   );
   const title = h('.run-title.eyebrow', null, runner.day.title);
 
@@ -363,27 +366,71 @@ function openSetEditor(runner, opt = {}) {
   });
 }
 
-/** 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동, 종목 즉흥 추가, 오늘 메모 */
-function openList(runner) {
-  const close = modal(() => h('div', null,
+/**
+ * 오늘 종목 전체 목록 — 원하는 곳으로 바로 이동, 순서 바꾸기, 세트 늘리기,
+ * 종목 즉흥 추가, 오늘 메모.
+ */
+function openList(runner, persist = () => {}) {
+  const list = h('div');
+  let close = () => {};
+
+  const paint = () => {
+    mount(list, ...runner.day.blocks.map((b, i) => {
+      const entry = runner.session.entries[i];
+      const done = entry.sets.filter(x => x.done).length;
+      const total = entry.sets.length;
+      const finished = done >= total;
+      const current = i === runner.exIndex;
+
+      return h('div', { style: { padding: '10px 0', borderBottom: '1px solid var(--rule)' } },
+        h('div', {
+          style: {
+            display: 'flex', gap: '10px', alignItems: 'baseline', cursor: 'pointer',
+            color: current ? 'var(--accent)' : null, fontWeight: current ? '700' : null,
+          },
+          onclick: () => { close(); runner.jumpTo(i, 0); },
+        },
+          h('span', { style: { flex: 1, minWidth: 0 } }, `${i + 1}. ${b.name}`),
+          h('small', { style: { flex: '0 0 auto', color: finished ? 'var(--good)' : 'var(--ink-3)' } },
+            `${done} / ${total}세트${finished ? ' ✓' : ''}`),
+        ),
+        h('.btn-row', { style: { marginTop: '6px' } },
+          h('button.btn-sm.btn-ghost', {
+            disabled: i === 0,
+            onclick: () => { runner.moveExercise(i, i - 1); persist(); paint(); },
+          }, '↑ 앞으로'),
+          h('button.btn-sm.btn-ghost', {
+            disabled: i === runner.day.blocks.length - 1,
+            onclick: () => { runner.moveExercise(i, i + 1); persist(); paint(); },
+          }, '↓ 뒤로'),
+          // 이미 끝낸 종목이라도 세트를 더 붙일 수 있습니다 ("한 세트 더 되겠는데")
+          h('button.btn-sm', {
+            onclick: () => {
+              const at = runner.addSetAfter(i, total - 1);
+              if (at < 0) return;
+              if (finished) { close(); runner.jumpTo(i, at); toast(`${b.name} 한 세트 더`); return; }
+              paint();
+              runner.emit('state', runner.state);
+              toast('세트를 늘렸습니다');
+            },
+          }, '＋ 세트'),
+        ),
+      );
+    }));
+  };
+  paint();
+
+  close = modal(() => h('div', null,
     h('h3', null, '오늘의 운동'),
+    h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
+      '이름을 누르면 그 종목으로 넘어갑니다. 화살표로 순서를 바꾸고, 끝낸 종목도 ＋세트로 한 세트 더 할 수 있습니다.'),
     field('오늘 메모', h('textarea', {
       value: runner.session.comment || '',
       placeholder: '컨디션, 특이사항 등을 적어 두세요',
       rows: 2,
       oninput: (e) => { runner.session.comment = e.target.value; },
     })),
-    h('ul.picker', null, ...runner.day.blocks.map((b, i) => {
-      const entry = runner.session.entries[i];
-      const done = entry.sets.filter(x => x.done).length;
-      return h('li', {
-        style: i === runner.exIndex ? { color: 'var(--accent)', fontWeight: '700' } : null,
-        onclick: () => { close(); runner.jumpTo(i, 0); },
-      },
-        h('span', null, `${i + 1}. ${b.name}`),
-        h('small', null, `${done} / ${entry.sets.length}세트`),
-      );
-    })),
+    list,
     h('button.btn-block', {
       style: { marginTop: '10px' },
       onclick: () => {
