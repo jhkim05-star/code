@@ -1,78 +1,116 @@
-/**
- * 오프라인용 서비스 워커.
- *
- * 앱 파일은 캐시에 넣어 두고 네트워크가 없어도 열리게 합니다.
- * 헬스장 지하에서 신호가 안 잡혀도 운동은 진행돼야 하니까요.
- * (AI 계획 생성만 인터넷이 필요합니다.)
- */
-
-const CACHE = 'workout-log-v16';
-
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './css/app.css',
-  './js/app.js',
-  './js/ui.js',
-  './js/util.js',
-  './js/store.js',
-  './js/voice.js',
-  './js/exercises.js',
-  './js/weights.js',
-  './js/planner.js',
-  './js/runner.js',
-  './js/ai.js',
-  './js/views/planTab.js',
-  './js/views/execTab.js',
-  './js/views/exercisePicker.js',
-  './js/views/run.js',
-  './js/views/history.js',
-  './js/views/stats.js',
-  './js/views/settings.js',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+/** Versioned app-shell installation, network-first reads, and app-scoped cleanup only. */
+const CACHE = 'workout-log-v19-review2';
+const PREFIX = 'workout-log-';
+const ROOT = new URL('./', self.location.href);
+const CORE = [
+    './', './index.html', './manifest.webmanifest', './css/app.css',
+    './js/app.js', './js/config.js', './js/util.js', './js/ui.js', './js/store.js', './js/validation.js', './js/persistence.js',
+    './js/exercises.js', './js/weights.js', './js/timing.js', './js/planner.js', './js/runner.js', './js/voice.js', './js/ai.js', './js/ai-contract.js', './js/stats-model.js',
+    './js/views/planTab.js', './js/views/planPreview.js', './js/views/execTab.js', './js/views/exercisePicker.js', './js/views/run.js', './js/views/history.js', './js/views/stats.js', './js/views/settings.js',
+    './audio/manifest.json',
 ];
-
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE)
-      // 하나가 없어도 설치는 계속되도록 개별로 담습니다
-      .then(c => Promise.allSettled(ASSETS.map(u => c.add(u))))
-      .then(() => self.skipWaiting()),
-  );
+const OPTIONAL = ['./icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
+const absolute = path => new URL(path, ROOT).href;
+async function fetchTimed(req, ms = 2500) {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), ms);
+    try {
+        return await fetch(req, { cache: 'no-store', signal: controller.signal });
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+self.addEventListener('install', event => {
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE);
+        // A missing essential module must not activate a half-installed release.
+        await Promise.all(CORE.map(async (path) => {
+            const response = await fetchTimed(absolute(path), 10000);
+            if (!response.ok)
+                throw new Error('Missing essential asset: ' + path);
+            await cache.put(absolute(path), response);
+        }));
+        await Promise.allSettled(OPTIONAL.map(async (path) => {
+            const response = await fetchTimed(absolute(path), 3000);
+            if (response.ok)
+                await cache.put(absolute(path), response);
+        }));
+        // Audio is optional. Missing recordings fall back to device speech without preventing app installation.
+        try {
+            const manifest = await (await cache.match(absolute('./audio/manifest.json'))).json();
+            const paths = Object.values(manifest.clips || {}).slice(0, 60).filter(p => typeof p === 'string' && new URL(p, ROOT).origin === ROOT.origin && new URL(p, ROOT).pathname.startsWith(ROOT.pathname + 'audio/'));
+            await Promise.allSettled(paths.map(async (path) => {
+                const response = await fetchTimed(absolute(path), 2000);
+                if (response.status === 200)
+                    await cache.put(absolute(path), response);
+            }));
+        }
+        catch { }
+        await self.skipWaiting();
+    })());
 });
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
+self.addEventListener('activate', event => {
+    event.waitUntil((async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(key => key.startsWith(PREFIX) && key !== CACHE).map(key => caches.delete(key)));
+        await self.clients.claim();
+    })());
 });
-
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-
-  const url = new URL(req.url);
-  if (url.origin !== location.origin) return;      // API 호출은 그대로 통과
-
-  // 네트워크를 먼저 보고, 안 되면 캐시로 — 온라인이면 늘 최신 화면이 뜨고
-  // 오프라인이면 마지막으로 받아 둔 화면이 그대로 열립니다.
-  //
-  // 예전에는 앱 코드(HTML·JS·CSS)를 "캐시 먼저"로 주고 뒤에서 갱신했는데,
-  // 그러면 새로 배포해도 최소 한 번은 옛 화면이 그대로 떠서 "고쳤다는데
-  // 그대로인데?" 가 됩니다. 홈 화면에 추가해 둔 경우엔 앱을 껐다 켜도
-  // 옛 화면이 남아 더 헷갈립니다. 파일 몇 십 KB짜리 앱이라 네트워크를
-  // 먼저 보는 편이 낫습니다.
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok) caches.open(CACHE).then(c => c.put(req, res.clone()));
-        return res;
-      })
-      .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html'))),
-  );
+self.addEventListener('fetch', event => {
+    const request = event.request, url = new URL(request.url);
+    if (request.method !== 'GET' || url.origin !== ROOT.origin || !url.pathname.startsWith(ROOT.pathname))
+        return;
+    let storePromise = Promise.resolve();
+    const responsePromise = (async () => {
+        const cache = await caches.open(CACHE);
+        const isAudioClip = url.pathname.startsWith(ROOT.pathname + 'audio/') && !url.pathname.endsWith('/manifest.json');
+        if (isAudioClip) {
+            const hit = await cache.match(request);
+            if (hit)
+                return hit;
+            try {
+                const response = await fetchTimed(request, 1200);
+                if (response.status === 200 && !request.headers.has('range'))
+                    storePromise = cache.put(request, response.clone()).catch(() => { });
+                return response;
+            }
+            catch {
+                return new Response('녹음 음성을 불러오지 못했습니다.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+            }
+        }
+        try {
+            const response = await fetchTimed(request);
+            if (response.status === 200 && !request.headers.has('range')) {
+                const copy = response.clone();
+                storePromise = cache.put(request, copy).catch(() => { });
+                return response;
+            }
+            const hit = await cache.match(request);
+            return hit || response;
+        }
+        catch {
+            const hit = await cache.match(request);
+            if (hit)
+                return hit;
+            if (request.mode === 'navigate') {
+                const shell = await cache.match(absolute('./index.html'));
+                if (shell)
+                    return shell;
+            }
+            return new Response('이 파일의 오프라인 사본이 없습니다.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+        }
+    })();
+    event.respondWith(responsePromise);
+    event.waitUntil(responsePromise.then(() => storePromise).catch(() => { }));
+});
+self.addEventListener('message', event => {
+    if (event.data?.type !== 'CACHE_STATUS')
+        return;
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE), missing = [];
+        for (const path of CORE)
+            if (!await cache.match(absolute(path)))
+                missing.push(path);
+        event.ports[0]?.postMessage({ version: CACHE, ready: missing.length === 0, missing });
+    })());
 });

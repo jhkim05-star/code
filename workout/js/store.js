@@ -1,310 +1,525 @@
-/**
- * 저장소 — 모든 데이터는 이 기기 안에만 있습니다 (IndexedDB, localStorage 폴백).
- *
- * 부팅할 때 전부 메모리로 읽어와서 읽기는 동기, 쓰기는 디바운스해서 비동기로 내려씁니다.
- * 데이터 양이 작기 때문에(1년치 기록 ≈ 수백 KB) 이 방식이 가장 단순하고 안전합니다.
- */
-
-const DB_NAME = 'workout-log';
-const DB_VER = 1;
-const STORE = 'kv';
-const LS_PREFIX = 'wl:';
-
-const KEYS = ['settings', 'plans', 'sessions', 'customExercises', 'meta'];
-
-export const DEFAULT_SETTINGS = {
-  // 카운트
-  tempo: 3.0,             // 1회에 걸리는 초
-  tempoMin: 0,
-  tempoMax: 4.0,
-  countdownSec: 3,        // 세트 시작 전 "셋 둘 하나"
-  announceLastReps: 2,    // 마지막 n회 남았을 때 알림
-  // 휴식
-  restDefault: 90,        // 초
-  restWarnSec: 10,        // 휴식 종료 n초 전 알림
-  autoStartRest: true,    // 세트 끝나면 휴식 자동 시작
-  autoAdvance: true,      // 휴식 끝나면 다음 세트로 자동 이동
-  // 음성
-  voiceEnabled: true,
-  voiceURI: '',           // 비우면 자동으로 한국어 여성 음성 선택
-  voiceRate: 1.0,
-  voicePitch: 1.25,       // 밝은 톤
-  voiceVolume: 1.0,
-  countStyle: 'native',   // native = 하나·둘·셋, sino = 일·이·삼
-  beepEnabled: true,
-  // 기타
-  keepAwake: true,
-  unit: 'kg',
-  // AI
-  apiKey: '',
-  aiModel: 'claude-opus-5',
-  // 운동 계획 설정 (운동계획 탭에서 편집)
-  plan: {
-    equipment: [],               // 가진 기구. 빈 배열 = 전부 허용
-    variantsPerGroup: 2,         // 같은 부위 조합이 겹치는 날엔 종목을 서로 다르게
-    sessionMinutes: 60,          // 하루에 쓸 수 있는 시간(분) — 종목 수를 여기 맞춥니다
-    warmup: false,               // 메인 종목 앞에 웜업 3세트(본 무게의 40·60·80%)를 넣을지
-    // 기준 무게(kg) — 이 네 종목만 넣어 두면 나머지 종목 무게를 자동으로 채웁니다.
-    // 비워 두면 지난 기록에서 역산합니다.
-    benchmarks: { bench: null, pulldown: null, squat: null, ohp: null },
-    // 요일별로 그날 할 부위 목록. 0=일 … 6=토. 빈 배열/없음 = 휴식
-    week: {
-      1: ['chest', 'delt_f', 'triceps'],   // 월 — 가슴 · 어깨 전면 · 삼두
-      2: ['back', 'delt_sr', 'biceps'],    // 화 — 등 · 어깨 측후면 · 이두
-      3: [],                               // 수 — 휴식
-      4: ['chest', 'delt_f', 'triceps'],   // 목
-      5: ['back', 'delt_sr', 'biceps'],    // 금
-      6: [],                               // 토 — 휴식
-      0: ['thighs', 'glutes', 'calves'],   // 일 — 하체
-    },
-  },
-  // 비추천(피하고 싶은) 종목 id 목록 — 계획 생성 때 후보에서 빠집니다
-  avoidExerciseIds: [],
-};
-
-const mem = {
-  settings: null,
-  plans: {},           // { 'YYYY-MM-DD'(월요일): WeeklyPlan }
-  sessions: [],        // Session[] — 최신이 뒤
-  customExercises: [],
-  meta: { rotation: {} },  // 부위별로 최근에 쓴 종목 인덱스
-};
-
-let db = null;
-let ready = false;
-
+/** Backward-compatible storage with a single, revisioned v2 snapshot and explicit errors. */
+import { DEFAULT_SETTINGS, emptyData } from './config.js';
+import { clone, uid, finite, LB_PER_KG } from './util.js';
+import { validateData, validateSettings, validateSession, validateWeeklyPlan, validateDraft, parseBackup } from './validation.js';
+import { SnapshotWriter } from './persistence.js';
+export { DEFAULT_SETTINGS };
+const SNAPSHOT_KEY = 'wl:snapshot.v2';
+const DB_SNAPSHOT = 'snapshot.v2';
+const LEGACY_KEYS = ['settings', 'plans', 'sessions', 'customExercises', 'meta'];
+const providerCredential = /^(apiKey|proxyToken|openaiKey|anthropicKey|apiToken|openaiApiKey|anthropicApiKey|openaiProxyToken|clientToken)$/i;
+let mem = emptyData(), db = null, writer = null, ready = false, lastSave = Promise.resolve();
+let status = { state: 'loading', message: '저장소 확인 중', readOnly: false, dirty: false, revision: 0 };
+const listeners = new Set();
+let releaseWriterLock = null, ownsWriterLock = false;
+export const storageStatus = () => ({ ...status });
+export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+function notify() {
+    for (const fn of listeners) {
+        try {
+            fn(storageStatus());
+        }
+        catch (e) {
+            console.error(e);
+        }
+    }
+}
 function openDB() {
-  return new Promise((resolve) => {
-    if (!('indexedDB' in globalThis)) return resolve(null);
-    let req;
-    try { req = indexedDB.open(DB_NAME, DB_VER); } catch { return resolve(null); }
-    req.onupgradeneeded = () => {
-      const d = req.result;
-      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-    // Safari 프라이빗 모드 등에서 영영 안 열리는 경우 대비
-    setTimeout(() => resolve(req.readyState === 'done' ? req.result : null), 2500);
-  });
+    return new Promise(resolve => {
+        if (!globalThis.indexedDB)
+            return resolve(null);
+        let req, settled = false;
+        const finish = value => {
+            if (settled) {
+                value?.close?.();
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const timer = setTimeout(() => finish(null), 2500);
+        try {
+            req = indexedDB.open('workout-log', 1);
+            req.onupgradeneeded = () => {
+                if (!req.result.objectStoreNames.contains('kv'))
+                    req.result.createObjectStore('kv');
+            };
+            req.onsuccess = () => finish(req.result);
+            req.onerror = () => finish(null);
+            req.onblocked = () => finish(null);
+        }
+        catch {
+            finish(null);
+        }
+    });
 }
-
 function idbGet(key) {
-  return new Promise((resolve) => {
-    if (!db) return resolve(undefined);
+    return new Promise(resolve => {
+        if (!db)
+            return resolve(undefined);
+        let settled = false;
+        const finish = value => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const timer = setTimeout(() => finish(undefined), 2500);
+        try {
+            const tx = db.transaction('kv', 'readonly');
+            const r = tx.objectStore('kv').get(key);
+            r.onsuccess = () => finish(r.result);
+            r.onerror = () => finish(undefined);
+            tx.onabort = () => finish(undefined);
+        }
+        catch {
+            finish(undefined);
+        }
+    });
+}
+function idbWrite(snapshot) {
+    return new Promise(resolve => {
+        if (!db)
+            return resolve(false);
+        let tx, settled = false;
+        const finish = ok => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(ok);
+        };
+        const timer = setTimeout(() => {
+            try {
+                tx?.abort();
+            }
+            catch { }
+            finish(false);
+        }, 5000);
+        try {
+            tx = db.transaction('kv', 'readwrite');
+            const store = tx.objectStore('kv');
+            const r = store.get(DB_SNAPSHOT);
+            r.onsuccess = () => {
+                const current = r.result;
+                if (current && current.revision > snapshot.revision) {
+                    tx.abort();
+                    return;
+                }
+                store.put(snapshot, DB_SNAPSHOT);
+            };
+            tx.oncomplete = () => finish(true);
+            tx.onerror = () => finish(false);
+            tx.onabort = () => finish(false);
+        }
+        catch {
+            finish(false);
+        }
+    });
+}
+function idbPut(key, value) {
+    return new Promise(resolve => {
+        if (!db)
+            return resolve(false);
+        let tx, settled = false;
+        const finish = ok => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(ok);
+        };
+        const timer = setTimeout(() => {
+            try {
+                tx?.abort();
+            }
+            catch { }
+            finish(false);
+        }, 5000);
+        try {
+            tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(value, key);
+            tx.oncomplete = () => finish(true);
+            tx.onerror = () => finish(false);
+            tx.onabort = () => finish(false);
+        }
+        catch {
+            finish(false);
+        }
+    });
+}
+function localRaw(key) {
     try {
-      const r = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => resolve(undefined);
-    } catch { resolve(undefined); }
-  });
+        return localStorage.getItem(key);
+    }
+    catch {
+        return null;
+    }
 }
-
-function idbSet(key, val) {
-  return new Promise((resolve) => {
-    if (!db) return resolve(false);
+function localGet(key) { const raw = localRaw(key); return raw == null ? undefined : JSON.parse(raw); }
+function localSet(key, value) { localStorage.setItem(key, JSON.stringify(value)); return true; }
+function scrubProviderCredentials(value) {
+    if (!value || typeof value !== 'object')
+        return false;
+    let changed = false;
+    for (const key of Object.keys(value)) {
+        if (providerCredential.test(key)) {
+            delete value[key];
+            changed = true;
+        }
+        else
+            changed = scrubProviderCredentials(value[key]) || changed;
+    }
+    return changed;
+}
+async function purgeStoredProviderCredentials() {
+    const localKeys = [];
     try {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(val, key);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch { resolve(false); }
-  });
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('wl:'))
+                localKeys.push(key);
+        }
+    }
+    catch { }
+    for (const key of localKeys) {
+        const raw = localRaw(key);
+        if (raw == null)
+            continue;
+        let value;
+        try {
+            value = JSON.parse(raw);
+        }
+        catch {
+            // Corrupt storage is handled by the normal recovery path below.
+            continue;
+        }
+        if (scrubProviderCredentials(value)) {
+            try {
+                localSet(key, value);
+            }
+            catch {
+                throw new Error('기존 제공자 API 키를 localStorage에서 제거하지 못했습니다.');
+            }
+        }
+    }
+    for (const key of [DB_SNAPSHOT, 'settings']) {
+        const value = await idbGet(key);
+        if (value !== undefined && scrubProviderCredentials(value) && !await idbPut(key, value))
+            throw new Error('기존 제공자 API 키를 IndexedDB에서 제거하지 못했습니다.');
+    }
 }
-
-function lsGet(key) {
-  try {
-    const raw = localStorage.getItem(LS_PREFIX + key);
-    return raw ? JSON.parse(raw) : undefined;
-  } catch { return undefined; }
+async function acquireWriter() {
+    if (!globalThis.navigator?.locks)
+        return true;
+    return new Promise(resolve => {
+        navigator.locks.request('workout-log-writer-v2', { ifAvailable: true }, async (lock) => {
+            if (!lock) {
+                resolve(false);
+                return;
+            }
+            resolve(true);
+            await new Promise(r => { releaseWriterLock = r; });
+        }).catch(() => resolve(false));
+    });
 }
-
-function lsSet(key, val) {
-  try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(val)); } catch { /* 용량 초과 무시 */ }
-}
-
-/** 깊은 병합 — 새 버전에서 설정 항목이 늘어나도 기존 값은 유지 */
-function merge(base, over) {
-  if (over === undefined || over === null) return structuredClone(base);
-  if (typeof base !== 'object' || Array.isArray(base) || base === null) return over;
-  const out = structuredClone(base);
-  for (const k of Object.keys(over)) out[k] = merge(base[k], over[k]);
-  return out;
-}
-
 export async function initStore() {
-  db = await openDB();
-  for (const k of KEYS) {
-    const v = (await idbGet(k)) ?? lsGet(k);
-    if (v === undefined) continue;
-    if (k === 'settings') mem.settings = v;
-    else mem[k] = v;
-  }
-  mem.settings = merge(DEFAULT_SETTINGS, mem.settings);
-  if (!Array.isArray(mem.sessions)) mem.sessions = [];
-  if (!Array.isArray(mem.customExercises)) mem.customExercises = [];
-  if (!mem.plans || typeof mem.plans !== 'object') mem.plans = {};
-  if (!mem.meta) mem.meta = { rotation: {} };
-  ready = true;
-  return mem;
+    const ownsLock = await acquireWriter();
+    ownsWriterLock = ownsLock;
+    db = await openDB();
+    if (ownsLock)
+        await purgeStoredProviderCredentials();
+    writer = new SnapshotWriter({
+        writer: uid('window'),
+        local: { read: async () => localGet(SNAPSHOT_KEY), writeSync: value => localSet(SNAPSHOT_KEY, value) },
+        database: { read: () => idbGet(DB_SNAPSHOT), write: idbWrite },
+    });
+    try {
+        const latest = await writer.load();
+        if (writer.readErrors.length)
+            throw new Error('저장소 사본을 읽지 못했습니다. 오래된 사본으로 자동 교체하지 않습니다. 원본 복구 파일을 먼저 내보내 주세요.');
+        if (latest)
+            mem = validateData(latest.data);
+        else {
+            // Legacy copies carry no common revision. Keep both unchanged and surface a conflict rather than guessing.
+            const legacy = {}, localLegacy = {}, dbLegacy = {};
+            let conflict = false, found = false;
+            for (const k of LEGACY_KEYS) {
+                const a = await idbGet(k), b = localGet('wl:' + k);
+                if (a !== undefined)
+                    dbLegacy[k] = a;
+                if (b !== undefined)
+                    localLegacy[k] = b;
+                if (a !== undefined && b !== undefined && JSON.stringify(a) !== JSON.stringify(b))
+                    conflict = true;
+                legacy[k] = a ?? b;
+                if (legacy[k] !== undefined)
+                    found = true;
+            }
+            if (localRaw(SNAPSHOT_KEY) != null || await idbGet(DB_SNAPSHOT))
+                throw new Error('저장된 스냅샷을 해석하지 못했습니다. 원본은 그대로 보존됩니다.');
+            mem = found ? validateData({ ...emptyData(), ...Object.fromEntries(Object.entries(legacy).filter(([, v]) => v !== undefined)) }, { legacy: true }) : emptyData();
+            if (conflict) {
+                mem.meta.legacyConflict = { local: localLegacy, database: dbLegacy };
+                status = { ...status, readOnly: true, state: 'conflict', message: '이전 IndexedDB와 localStorage가 다릅니다. 설정에서 복구 원본을 선택해 주세요.' };
+            }
+        }
+        if (!ownsLock)
+            status = { ...status, readOnly: true, state: 'readonly', message: '다른 창에서 사용 중입니다. 이 창은 읽기 전용이에요.' };
+        else if (!status.readOnly)
+            status = { ...status, state: 'saved', message: '기기 저장소 준비됨', revision: writer.revision };
+    }
+    catch (err) {
+        mem = emptyData();
+        status = { ...status, state: 'error', readOnly: true, message: `자동 초기화하지 않았습니다. ${err.message}` };
+    }
+    ready = true;
+    notify();
+    if (globalThis.addEventListener) {
+        addEventListener('storage', e => {
+            if (e.key !== SNAPSHOT_KEY || !e.newValue)
+                return;
+            try {
+                const incoming = JSON.parse(e.newValue);
+                if (incoming.writer !== writer.writer && incoming.revision >= writer.revision && !status.readOnly) {
+                    status = { ...status, readOnly: true, state: 'conflict', message: '다른 창에서 새 기록을 저장했습니다. 백업 후 이 창을 새로고침해 주세요.' };
+                    notify();
+                }
+            }
+            catch { }
+        });
+        addEventListener('pagehide', () => { releaseWriterLock?.(); releaseWriterLock = null; });
+        addEventListener('pageshow', async (e) => {
+            if (e.persisted) {
+                const owns = await acquireWriter();
+                status.readOnly = !owns;
+                status.message = '화면 복원 후 최신 저장값 확인을 위해 새로고침해 주세요.';
+                status.readOnly = true;
+                notify();
+            }
+        });
+    }
+    return mem;
 }
-
-const pending = new Set();
-let flushTimer = null;
-
-function scheduleFlush(key) {
-  pending.add(key);
-  clearTimeout(flushTimer);
-  flushTimer = setTimeout(flush, 250);
+function ensureWritable() {
+    if (status.readOnly)
+        throw new Error(status.message);
 }
-
-export async function flush() {
-  clearTimeout(flushTimer);
-  const keys = [...pending];
-  pending.clear();
-  for (const k of keys) {
-    const val = k === 'settings' ? mem.settings : mem[k];
-    lsSet(k, val);
-    await idbSet(k, val);
-  }
+function persist() {
+    if (!writer)
+        return Promise.reject(new Error('저장소가 아직 준비되지 않았습니다.'));
+    const requestedRevision = writer.revision + 1;
+    status = { ...status, state: 'saving', dirty: true, message: '기기에 저장 중' };
+    notify();
+    lastSave = writer.save(mem).then(result => {
+        if (requestedRevision === writer.revision)
+            status = { ...status, state: 'saved', dirty: false, revision: result.revision, message: result.database ? '기기에 저장됨' : '기기에 저장됨 · localStorage만 사용 중' };
+        notify();
+        return result;
+    }).catch(err => { status = { ...status, state: 'error', dirty: true, message: err.message }; notify(); throw err; });
+    // UI can await flush(); the event handler also reports the failure prominently.
+    lastSave.catch(() => { });
+    return lastSave;
 }
-// 앱을 닫기 직전에 남은 쓰기를 마저 내려보냄
-addEventListener('pagehide', () => { for (const k of pending) lsSet(k, k === 'settings' ? mem.settings : mem[k]); });
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
-
-// ── 설정 ────────────────────────────────────────────────────
+function replaceMem(next) { ensureWritable(); mem = next; return persist(); }
+export async function flush() { await lastSave; return !status.dirty; }
+export async function retrySave() { ensureWritable(); return persist(); }
 export const settings = () => mem.settings;
-
-export function setSetting(path, value) {
-  const parts = path.split('.');
-  let node = mem.settings;
-  for (let i = 0; i < parts.length - 1; i++) node = node[parts[i]];
-  node[parts.at(-1)] = value;
-  scheduleFlush('settings');
-  return mem.settings;
-}
-
-export function replaceSettings(next) {
-  mem.settings = merge(DEFAULT_SETTINGS, next);
-  scheduleFlush('settings');
-  return mem.settings;
-}
-
-// ── 주간 계획 ───────────────────────────────────────────────
 export const plans = () => mem.plans;
-export const getPlan = (weekStart) => mem.plans[weekStart] || null;
-
-export function savePlan(plan) {
-  mem.plans[plan.weekStart] = plan;
-  scheduleFlush('plans');
-  return plan;
-}
-
-export function deletePlan(weekStart) {
-  delete mem.plans[weekStart];
-  scheduleFlush('plans');
-}
-
-// ── 운동 기록 ───────────────────────────────────────────────
 export const sessions = () => mem.sessions;
-
-export function saveSession(session) {
-  const i = mem.sessions.findIndex(s => s.id === session.id);
-  if (i >= 0) mem.sessions[i] = session;
-  else mem.sessions.push(session);
-  mem.sessions.sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
-  scheduleFlush('sessions');
-  return session;
-}
-
-export function deleteSession(id) {
-  mem.sessions = mem.sessions.filter(s => s.id !== id);
-  scheduleFlush('sessions');
-}
-
-export const getSession = (id) => mem.sessions.find(s => s.id === id) || null;
-
-/** 해당 날짜(YYYY-MM-DD)에 완료된 세션 */
-export const sessionsOn = (date) => mem.sessions.filter(s => s.date === date);
-
-// ── 사용자 추가 종목 ────────────────────────────────────────
 export const customExercises = () => mem.customExercises;
-
-export function addCustomExercise(ex) {
-  mem.customExercises.push(ex);
-  scheduleFlush('customExercises');
-  return ex;
-}
-
-export function removeCustomExercise(id) {
-  mem.customExercises = mem.customExercises.filter(x => x.id !== id);
-  scheduleFlush('customExercises');
-}
-
-// ── 비추천 종목 ──────────────────────────────────────────────
-export const avoidExerciseIds = () => mem.settings.avoidExerciseIds;
-export const isAvoided = (id) => mem.settings.avoidExerciseIds.includes(id);
-
-export function toggleAvoid(id) {
-  const list = mem.settings.avoidExerciseIds;
-  const i = list.indexOf(id);
-  if (i >= 0) list.splice(i, 1);
-  else list.push(id);
-  scheduleFlush('settings');
-  return list.includes(id);
-}
-
-// ── 종목 로테이션 상태 (부위마다 매주 다른 종목이 나오도록) ──
 export const rotation = () => mem.meta.rotation;
-
-export function bumpRotation(groupId, by = 1) {
-  mem.meta.rotation[groupId] = (mem.meta.rotation[groupId] || 0) + by;
-  scheduleFlush('meta');
-}
-
-// ── 백업 / 복원 ─────────────────────────────────────────────
-export function exportAll() {
-  return {
-    app: 'workout-log',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    settings: mem.settings,
-    plans: mem.plans,
-    sessions: mem.sessions,
-    customExercises: mem.customExercises,
-    meta: mem.meta,
-  };
-}
-
-export async function importAll(data, { merge: doMerge = false } = {}) {
-  if (!data || data.app !== 'workout-log') throw new Error('이 앱의 백업 파일이 아닙니다.');
-  if (doMerge) {
-    const byId = new Map(mem.sessions.map(s => [s.id, s]));
-    for (const s of data.sessions || []) byId.set(s.id, s);
-    mem.sessions = [...byId.values()].sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
-    mem.plans = { ...mem.plans, ...(data.plans || {}) };
-    const cx = new Map(mem.customExercises.map(x => [x.id, x]));
-    for (const x of data.customExercises || []) cx.set(x.id, x);
-    mem.customExercises = [...cx.values()];
-  } else {
-    mem.sessions = data.sessions || [];
-    mem.plans = data.plans || {};
-    mem.customExercises = data.customExercises || [];
-    mem.settings = merge(DEFAULT_SETTINGS, data.settings);
-    mem.meta = data.meta || { rotation: {} };
-  }
-  for (const k of KEYS) scheduleFlush(k);
-  await flush();
-}
-
-export async function wipeAll() {
-  mem.settings = structuredClone(DEFAULT_SETTINGS);
-  mem.plans = {};
-  mem.sessions = [];
-  mem.customExercises = [];
-  mem.meta = { rotation: {} };
-  for (const k of KEYS) scheduleFlush(k);
-  await flush();
-}
-
+export const getPlan = key => mem.plans[key] || null;
+export const getSession = id => mem.sessions.find(s => s.id === id) || null;
+export const sessionsOn = date => mem.sessions.filter(s => s.date === date);
+export const draft = () => mem.draft;
+export const metadata = () => mem.meta;
 export const isReady = () => ready;
+export const avoidExerciseIds = () => mem.settings.avoidExerciseIds;
+export const isAvoided = id => avoidExerciseIds().includes(id);
+export function setSetting(path, value) {
+    ensureWritable();
+    const pathParts = path.split('.');
+    if (pathParts.some(k => ['__proto__', 'constructor', 'prototype'].includes(k)))
+        throw new Error('허용되지 않은 설정 경로입니다.');
+    if (pathParts.some(k => providerCredential.test(k)))
+        throw new Error('제공자 API 키는 브라우저 저장소에 저장할 수 없습니다.');
+    const next = clone(mem.settings), parts = pathParts;
+    let node = next;
+    for (const k of parts.slice(0, -1)) {
+        if (!node[k] || typeof node[k] !== 'object')
+            throw new Error('설정 경로가 올바르지 않습니다.');
+        node = node[k];
+    }
+    node[parts.at(-1)] = value;
+    mem.settings = validateSettings(next);
+    persist();
+    return mem.settings;
+}
+export function replaceSettings(next) { ensureWritable(); mem.settings = validateSettings(next); persist(); return mem.settings; }
+export function savePlan(plan) { ensureWritable(); const value = validateWeeklyPlan(plan, plan.weekStart); mem.plans[value.weekStart] = value; persist(); return value; }
+export function deletePlan(key) { ensureWritable(); delete mem.plans[key]; persist(); }
+export function saveSession(session) {
+    ensureWritable();
+    const s = validateSession(session), i = mem.sessions.findIndex(x => x.id === s.id);
+    if (i < 0)
+        mem.sessions.push(s);
+    else
+        mem.sessions[i] = s;
+    mem.sessions.sort((a, b) => a.startedAt - b.startedAt);
+    persist();
+    return s;
+}
+export function deleteSession(id) { ensureWritable(); mem.sessions = mem.sessions.filter(s => s.id !== id); persist(); }
+export function saveDraft(value) {
+    ensureWritable();
+    const copy = validateDraft(value);
+    mem.draft = copy;
+    return persist();
+}
+export function clearDraft() { ensureWritable(); mem.draft = null; return persist(); }
+export async function finalizeSession(session) {
+    ensureWritable();
+    const next = clone(mem), s = validateSession(session), i = next.sessions.findIndex(x => x.id === s.id);
+    if (i < 0)
+        next.sessions.push(s);
+    else
+        next.sessions[i] = s;
+    next.sessions.sort((a, b) => a.startedAt - b.startedAt);
+    next.draft = null;
+    return replaceMem(next); // One snapshot commits history + removes the draft together.
+}
+export function addCustomExercise(ex) {
+    ensureWritable();
+    const next = validateData({ ...mem, customExercises: [...mem.customExercises, ex] });
+    mem = next;
+    persist();
+    return ex;
+}
+export function removeCustomExercise(id) { ensureWritable(); mem.customExercises = mem.customExercises.filter(x => x.id !== id); mem.settings.avoidExerciseIds = mem.settings.avoidExerciseIds.filter(x => x !== id); persist(); }
+export function toggleAvoid(id) {
+    const list = [...avoidExerciseIds()];
+    const i = list.indexOf(id);
+    if (i >= 0)
+        list.splice(i, 1);
+    else
+        list.push(id);
+    setSetting('avoidExerciseIds', list);
+    return list.includes(id);
+}
+export function bumpRotation(groupId = 'global', by = 1) { ensureWritable(); mem.meta.rotation[groupId] = (mem.meta.rotation[groupId] || 0) + by; persist(); }
+export function exportAll() {
+    const data = clone(mem);
+    delete data.meta.legacyConflict;
+    return { app: 'workout-log', version: 2, exportedAt: new Date().toISOString(), data };
+}
+function importCandidate(data, mode) {
+    const next = parseBackup(data).data;
+    if (mode === 'replace')
+        return next;
+    if (mode !== 'merge')
+        throw new Error('불러오기 방식은 합치기 또는 덮어쓰기입니다.');
+    if (next.meta.unitReviewRequired || mem.meta.unitReviewRequired)
+        throw new Error('단위가 확인되지 않은 기록은 합칠 수 없습니다. 기존 kg/lb 단위를 먼저 확인하고, 가져올 백업도 단위를 확인한 뒤 다시 내보내 주세요.');
+    const merged = clone(mem);
+    // Keep existing records on conflict. Import never silently replaces a newer local record.
+    const mergeById = (current, incoming) => { const ids = new Set(current.map(x => x.id)); return [...current, ...incoming.filter(x => !ids.has(x.id))]; };
+    merged.sessions = mergeById(merged.sessions, next.sessions);
+    merged.customExercises = mergeById(merged.customExercises, next.customExercises);
+    merged.plans = { ...next.plans, ...merged.plans };
+    merged.meta.unitReviewRequired ||= !!next.meta.unitReviewRequired;
+    return validateData(merged);
+}
+export async function importAll(data, { mode, merge: oldMerge } = {}) {
+    if (mode === 'cancel')
+        return { cancelled: true };
+    const resolved = mode || (oldMerge === true ? 'merge' : oldMerge === false ? 'replace' : null);
+    if (!resolved)
+        throw new Error('불러오기 방식을 명시해 주세요.');
+    ensureWritable();
+    const next = importCandidate(data, resolved);
+    try {
+        localSet('wl:before-import.v2', exportAll());
+    }
+    catch {
+        throw new Error('복원 전 안전 사본을 만들지 못했습니다. 현재 백업을 먼저 내려받아 주세요.');
+    }
+    await replaceMem(next);
+    return { cancelled: false };
+}
+export async function wipeAll() {
+    ensureWritable();
+    try {
+        localSet('wl:before-wipe.v2', exportAll());
+    }
+    catch {
+        throw new Error('초기화 전 안전 사본을 만들지 못했습니다. 먼저 백업해 주세요.');
+    }
+    await replaceMem(emptyData());
+}
+export async function resolveLegacyConflict(which) {
+    if (!ownsWriterLock)
+        throw new Error('다른 창을 먼저 닫고 이 창을 새로고침해 주세요.');
+    const c = mem.meta.legacyConflict;
+    if (!c || !['local', 'database'].includes(which))
+        throw new Error('복구 원본이 없습니다.');
+    const next = validateData({ ...emptyData(), ...c[which] }, { legacy: true });
+    localSet('wl:legacy-copies.v1', c);
+    status.readOnly = false;
+    await replaceMem(next);
+}
+export async function resolveLegacyUnits(unit) {
+    ensureWritable();
+    if (!['kg', 'lb'].includes(unit))
+        throw new Error('기존 숫자의 단위를 골라 주세요.');
+    const next = clone(mem);
+    if (unit === 'lb') {
+        const convert = s => {
+            if (s.weight != null)
+                s.weight /= LB_PER_KG;
+        };
+        next.sessions.forEach(s => s.entries.forEach(e => e.sets.forEach(convert)));
+        Object.values(next.plans).forEach(p => p.days.forEach(d => d.blocks.forEach(b => b.sets.forEach(convert))));
+        next.draft?.session.entries.forEach(e => e.sets.forEach(convert));
+        next.draft?.planSnapshot?.blocks?.forEach(b => b.sets.forEach(convert));
+        for (const k of Object.keys(next.settings.plan.benchmarks))
+            if (next.settings.plan.benchmarks[k] != null)
+                next.settings.plan.benchmarks[k] /= LB_PER_KG;
+    }
+    next.meta.unitReviewRequired = false;
+    next.meta.unitResolvedAt = Date.now();
+    localSet('wl:before-unit-resolution.v2', exportAll());
+    await replaceMem(next);
+}
+/** Emergency raw export: may contain credentials; keep private, do not share as a bug report. */
+export async function exportRecoveryCopies() {
+    const local = {}, database = {};
+    for (const key of [SNAPSHOT_KEY, ...LEGACY_KEYS.map(k => 'wl:' + k), 'wl:before-import.v2', 'wl:before-wipe.v2', 'wl:before-unit-resolution.v2']) {
+        const raw = localRaw(key);
+        if (raw != null)
+            local[key] = raw;
+    }
+    for (const key of [DB_SNAPSHOT, ...LEGACY_KEYS]) {
+        const value = await idbGet(key);
+        if (value !== undefined)
+            database[key] = value;
+    }
+    return { app: 'workout-recovery-raw', exportedAt: new Date().toISOString(), warning: '개인 보관용. 운동 기록과 설정 등 민감한 개인 정보가 포함됩니다.', local, database, memory: exportAll() };
+}
+/** Explicit recovery from corrupt storage. Caller must show replacement confirmation. */
+export async function restoreProtectedBackup(raw) {
+    if (!ownsWriterLock || !status.readOnly || status.state !== 'error')
+        throw new Error('손상 복구는 이 창이 저장소를 단독 사용 중일 때만 가능합니다.');
+    const next = parseBackup(raw).data;
+    const originals = await exportRecoveryCopies();
+    try {
+        localSet('wl:corrupt-before-restore.v2', originals);
+    }
+    catch {
+        throw new Error('손상 원본 안전 사본을 만들 수 없습니다. 기기의 공간을 확보한 뒤 다시 시도해 주세요.');
+    }
+    status = { ...status, readOnly: false };
+    await replaceMem(next);
+}

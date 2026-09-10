@@ -1,648 +1,713 @@
-/**
- * 운동 실행 엔진.
- *
- * 상태 흐름:
- *   ready → countdown(준비 셋 둘 하나) → counting(횟수 세는 중)
- *         → setdone → resting(휴식) → 다음 세트의 ready → … → done
- *
- * 모든 시간은 타임스탬프로 계산합니다. 화면이 잠깐 가려져 타이머가 느려지더라도
- * 다시 돌아왔을 때 실제 경과 시간에 맞게 따라잡습니다.
- */
-
-import { speakCount, cue, beep, stopSpeaking } from './voice.js';
+/** One session is the source of truth. No delayed callbacks can complete a different set. */
 import { settings, sessions } from './store.js';
-import { suggestWeight } from './planner.js';
-import { uid, todayYmd, clamp } from './util.js';
-
-const TICK_MS = 100;
-
-/**
- * 지금 돌고 있는 러너. 화면을 벗어났는데 정리가 안 된 러너가 뒤에 남아 계속
- * 카운트를 세면 "가만히 있는데 하나 둘 셋 소리가 마구잡이로 난다"가 됩니다.
- * 새 러너가 시작할 때 앞의 것을 반드시 세워서 그런 유령이 생기지 않게 합니다.
- */
+import { makeBlock } from './planner.js';
+import { speakCount, cue, beep, stopSpeaking } from './voice.js';
+import { uid, todayYmd, clone, clamp, finite } from './util.js';
+import { transitionTiming } from './timing.js';
+import { validateSession, validateDraft } from './validation.js';
 let activeRunner = null;
-
+const REST_STATES = new Set(['resting', 'exercise_rest', 'exercise_setup']);
 export class Runner {
-  /**
-   * @param {object} day   계획의 하루 (blocks 배열을 가짐)
-   * @param {object} opts  { weekStart }
-   */
-  constructor(day, opts = {}) {
-    const s = settings();
-
-    this.day = day;
-    this.listeners = new Map();
-
-    this.state = 'ready';
-    this.exIndex = 0;
-    this.setIndex = 0;
-    this.rep = 0;
-
-    this.tempo = day.blocks[0]?.tempo ?? s.tempo;
-    this.rest = day.blocks[0]?.rest ?? s.restDefault;
-
-    this.lastRepAt = 0;
-    this.nextRepAt = 0;
-    this.restEndAt = 0;
-    this.countdownEndAt = 0;
-    this.restWarned = false;
-
-    this.timer = null;
-    this.wakeLock = null;
-
-    this.session = {
-      id: uid('ses'),
-      date: todayYmd(),
-      weekStart: opts.weekStart || null,
-      dayId: day.id || null,
-      title: day.title || '운동',
-      startedAt: Date.now(),
-      endedAt: null,
-      comment: '',
-      entries: day.blocks.map(b => ({
-        exerciseId: b.exerciseId,
-        name: b.name,
-        group: b.group,
-        note: b.note || '',
-        sets: (b.sets || []).map(st => ({
-          targetReps: st.reps,
-          reps: null,
-          weight: st.weight ?? null,
-          rest: st.rest ?? b.rest,
-          // 계획에 세트별 휴식이 따로 적혀 있으면(웜업) 그 세트에선 그 값을 씁니다
-          planRest: st.rest ?? null,
-          warmup: !!st.warmup,
-          tempo: b.tempo ?? s.tempo,
-          done: false,
-          at: null,
-        })),
-      })),
-    };
-  }
-
-  // ── 이벤트 ────────────────────────────────────────────────
-  on(evt, cb) {
-    if (!this.listeners.has(evt)) this.listeners.set(evt, new Set());
-    this.listeners.get(evt).add(cb);
-    return () => this.listeners.get(evt).delete(cb);
-  }
-
-  emit(evt, payload) {
-    for (const cb of this.listeners.get(evt) || []) cb(payload);
-  }
-
-  // ── 현재 위치 ─────────────────────────────────────────────
-  get block()    { return this.day.blocks[this.exIndex] || null; }
-  get entry()    { return this.session.entries[this.exIndex] || null; }
-  get setRec()   { return this.entry?.sets[this.setIndex] || null; }
-  get totalSets() { return this.session.entries.reduce((a, e) => a + e.sets.length, 0); }
-  get doneSets()  { return this.session.entries.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0); }
-  get targetReps() { return this.setRec?.targetReps ?? this.block?.reps ?? 10; }
-  get elapsedSec() { return Math.max(0, (Date.now() - this.session.startedAt) / 1000); }
-
-  /**
-   * 다음 세트의 위치를 미리 봅니다 (지금 위치는 안 바꿈).
-   * 휴식 중엔 setIndex/exIndex 가 아직 "방금 끝낸 세트"를 가리키고 있어서
-   * (advance() 는 휴식이 끝나야 실행됩니다), 휴식 화면에서 "다음 세트"를
-   * 고치려면 이 위치를 따로 계산해야 합니다.
-   */
-  peekNext() {
-    const entry = this.entry;
-    if (this.setIndex + 1 < (entry?.sets.length || 0)) {
-      return { exIndex: this.exIndex, setIndex: this.setIndex + 1, rec: entry.sets[this.setIndex + 1] };
+    constructor(day, opt = {}) {
+        this.options = opt;
+        this.config = clone(opt.settings || settings());
+        this.clock = opt.now || (() => Date.now());
+        this.audio = opt.audio || { speakCount, cue, beep, stop: stopSpeaking };
+        this.blockFactory = opt.makeBlock || ((ex, extra) => makeBlock(ex, { sessions: sessions(), ...extra }));
+        this.planSnapshot = clone(day); // Never mutate the plan supplied by the caller.
+        this.listeners = new Map();
+        this.state = 'ready';
+        this.exIndex = 0;
+        this.setIndex = 0;
+        this.rep = 0;
+        this.epoch = 0;
+        this.timer = null;
+        this.running = false;
+        this.wakeLock = null;
+        this.wakeGeneration = 0;
+        this.nextRepAt = 0;
+        this.lastRepAt = 0;
+        this.deadline = 0;
+        this.completeAt = null;
+        this.lastCountdown = null;
+        this.transition = null;
+        this.pausedInfo = null;
+        this.restWarned = false;
+        this.session = { id: uid('ses'), date: todayYmd(), plannedDate: day.date, weekStart: opt.weekStart || null, dayId: day.id || null,
+            title: day.title || '운동', startedAt: this.clock(), endedAt: null, pausedMs: 0, comment: '', status: 'draft', schema: 2,
+            entries: (day.blocks || []).map(b => this.entryFromBlock(b)) };
+        this.syncCurrent();
     }
-    if (this.exIndex + 1 < this.day.blocks.length) {
-      const nextEntry = this.session.entries[this.exIndex + 1];
-      return { exIndex: this.exIndex + 1, setIndex: 0, rec: nextEntry?.sets[0] || null };
+    entryFromBlock(b) {
+        return { ...clone(b), id: uid('entry'), sets: (b.sets || []).map(st => ({
+                ...clone(st), id: uid('set'), targetReps: st.reps, reps: null, weight: st.weight ?? null,
+                planRest: st.rest ?? null, rest: st.rest ?? b.rest ?? this.config.restDefault,
+                warmup: !!st.warmup, done: false, confirmed: false, skipped: false, rir: null, at: null,
+                tempo: b.tempo ?? this.config.tempo, unit: 'kg',
+            })) };
     }
-    return null;
-  }
-
-  get progress() {
-    const t = this.totalSets;
-    return t ? this.doneSets / t : 0;
-  }
-
-  /** 휴식 남은 초 */
-  get restLeft() {
-    if (this.state !== 'resting') return 0;
-    return Math.max(0, (this.restEndAt - Date.now()) / 1000);
-  }
-
-  get countdownLeft() {
-    if (this.state !== 'countdown') return 0;
-    return Math.max(0, (this.countdownEndAt - Date.now()) / 1000);
-  }
-
-  // ── 구동 ──────────────────────────────────────────────────
-  start() {
-    if (this.timer) return;
-    // 앞서 돌던 러너가 남아 있으면 먼저 세웁니다 (유령 카운트 방지)
-    if (activeRunner && activeRunner !== this) activeRunner.stop();
-    activeRunner = this;
-    this._applySetRest();   // 첫 세트가 웜업이면 휴식도 웜업 기준으로
-    this.requestWakeLock();
-    this.timer = setInterval(() => this.tick(), TICK_MS);
-    document.addEventListener('visibilitychange', this.onVisible);
-  }
-
-  stop() {
-    clearInterval(this.timer);
-    this.timer = null;
-    // 예약해 둔 "1초 뒤 세트 완료" · "마지막 n회" 안내도 같이 취소합니다
-    clearTimeout(this._finishTimer);
-    clearTimeout(this._lastRepTimer);
-    this._finishing = false;
-    stopSpeaking();
-    this.releaseWakeLock();
-    document.removeEventListener('visibilitychange', this.onVisible);
-    if (activeRunner === this) activeRunner = null;
-  }
-
-  onVisible = () => {
-    // 화면이 꺼졌다 돌아오면 wake lock 이 풀려 있으므로 다시 잡습니다
-    if (document.visibilityState === 'visible') this.requestWakeLock();
-  };
-
-  async requestWakeLock() {
-    if (!settings().keepAwake || this.wakeLock || !navigator.wakeLock) return;
-    try {
-      this.wakeLock = await navigator.wakeLock.request('screen');
-      this.wakeLock.addEventListener('release', () => { this.wakeLock = null; });
-    } catch { /* 지원하지 않는 기기 — 무시 */ }
-  }
-
-  releaseWakeLock() {
-    try { this.wakeLock?.release(); } catch { /* 이미 해제됨 */ }
-    this.wakeLock = null;
-  }
-
-  tick() {
-    const now = Date.now();
-
-    if (this.state === 'countdown') {
-      const left = Math.ceil((this.countdownEndAt - now) / 1000);
-      if (left !== this._lastCountdown && left > 0) {
-        this._lastCountdown = left;
-        speakCount(left);
-        beep(660, 70);
-      }
-      if (now >= this.countdownEndAt) this.beginCounting();
-
-    } else if (this.state === 'counting') {
-      // 여러 번 밀렸으면 따라잡되, 소리는 마지막 것만 냅니다
-      let spoke = false;
-      while (now >= this.nextRepAt && this.rep < this.targetReps) {
-        this.rep += 1;
-        this.lastRepAt = this.nextRepAt;
-        this.nextRepAt = this.lastRepAt + this.tempo * 1000;
-        spoke = true;
-      }
-      if (spoke) {
-        speakCount(this.rep);
-        this.emit('rep', this.rep);
-        const left = this.targetReps - this.rep;
-        if (left > 0 && left === settings().announceLastReps) {
-          clearTimeout(this._lastRepTimer);
-          this._lastRepTimer = setTimeout(() => cue.lastRep(), this.tempo * 500);
+    static fromDraft(draft, opt = {}) {
+        draft = validateDraft(draft);
+        const runner = new Runner(draft.planSnapshot || { title: draft.session.title, blocks: [] }, opt);
+        runner.session = validateSession(draft.session, { draft: true });
+        const saved = draft.runtime || {};
+        const target = runner.findSet(saved.entryId, saved.setId) || runner.firstPending();
+        if (target) {
+            runner.exIndex = target.exIndex;
+            runner.setIndex = target.setIndex;
         }
-      }
-      // 마지막 횟수를 다 채웠으면, 방금 부른 숫자가 끝까지 들리도록 1초 쉬었다가
-      // "세트 완료"로 넘어갑니다 — 바로 이어지면 마지막 숫자가 잘려 들립니다.
-      // (state 는 그대로 'counting' 에 두고, finishSet() 호출만 미룹니다)
-      if (this.rep >= this.targetReps && !this._finishing) {
-        this._finishing = true;
-        this._finishTimer = setTimeout(() => this.finishSet(), 1000);
-      }
-
-    } else if (this.state === 'resting') {
-      const left = this.restLeft;
-      if (!this.restWarned && left <= settings().restWarnSec && left > 0.4) {
-        this.restWarned = true;
-        cue.restSoon();
-      }
-      if (left <= 0) this.finishRest();
+        runner.syncCurrent();
+        runner.rep = saved.rep || 0;
+        runner.tempo = saved.tempo || runner.tempo;
+        runner.countMode = saved.countMode || runner.config.countMode;
+        runner.transition = clone(saved.transition || null);
+        const restoredState = saved.state === 'paused' ? saved.pausedInfo?.state : saved.state;
+        runner.session.pausedMs = (runner.session.pausedMs || 0) + Math.max(0, runner.clock() - (saved.state === 'paused' ? (saved.pausedInfo?.pausedAt || saved.savedAt) : (saved.savedAt || runner.clock())));
+        runner.pausedInfo = { ...(saved.state === 'paused' ? saved.pausedInfo : saved), state: ['done', 'paused'].includes(restoredState) ? 'ready' : restoredState || 'ready', pausedAt: runner.clock() };
+        runner.state = 'paused'; // Never play or resume timers without user interaction.
+        return runner;
     }
-
-    this.emit('tick', this);
-  }
-
-  // ── 조작 ──────────────────────────────────────────────────
-  /** 세트 시작 (준비 카운트다운부터) */
-  beginSet() {
-    const s = settings();
-    this.rep = 0;
-    this.restWarned = false;
-    if (s.countdownSec > 0) {
-      this.state = 'countdown';
-      this._lastCountdown = null;
-      this.countdownEndAt = Date.now() + s.countdownSec * 1000;
-      cue.ready();
-    } else {
-      this.beginCounting();
+    on(event, fn) {
+        if (!this.listeners.has(event))
+            this.listeners.set(event, new Set());
+        this.listeners.get(event).add(fn);
+        return () => this.listeners.get(event)?.delete(fn);
     }
-    this.emit('state', this.state);
-    this.emit('tick', this);
-  }
-
-  beginCounting() {
-    this.state = 'counting';
-    this.rep = 0;
-    const now = Date.now();
-    this.lastRepAt = now;
-    this.nextRepAt = now + this.tempo * 1000;
-    cue.start();
-    this.emit('state', this.state);
-  }
-
-  /** 목표 횟수를 다 채웠거나 사용자가 직접 끝냈을 때 */
-  finishSet(actualReps = null) {
-    // 대기 중인 "1초 뒤 자동 완료" 타이머가 있으면 정리합니다 — 버튼으로
-    // 먼저 끝냈는데 타이머가 나중에 또 실행돼 세트가 두 번 끝나는 걸 막습니다.
-    clearTimeout(this._finishTimer);
-    this._finishing = false;
-    if (this.state !== 'counting' && this.state !== 'countdown') return;
-
-    const rec = this.setRec;
-    if (rec) {
-      rec.reps = actualReps ?? this.rep ?? rec.targetReps;
-      rec.done = true;
-      rec.at = Date.now();
-      rec.tempo = this.tempo;
-      rec.rest = Math.round(this.rest);
-      // 무게를 안 넣었으면 같은 종목의 직전(이미 끝난) 세트 무게를 이어받습니다.
-      if (rec.weight == null) {
-        const prevDone = [...this.entry.sets].slice(0, this.setIndex).reverse().find(s => s.weight != null);
-        if (prevDone) rec.weight = prevDone.weight;
-      }
+    emit(event, payload) {
+        for (const fn of this.listeners.get(event) || [])
+            fn(payload);
     }
-    this.state = 'setdone';
-    cue.setDone();
-    beep(880, 140);
-    this.emit('setdone', rec);
-    this.emit('state', this.state);
-
-    if (settings().autoStartRest && this.hasMore()) this.beginRest();
-    else if (!this.hasMore()) this.finishWorkout();
-  }
-
-  /** 아직 남은 세트가 있는지 */
-  hasMore() {
-    if (this.setIndex + 1 < (this.entry?.sets.length || 0)) return true;
-    return this.exIndex + 1 < this.day.blocks.length;
-  }
-
-  beginRest(seconds = null) {
-    this.state = 'resting';
-    this.restWarned = false;
-    const dur = seconds ?? this.rest;
-    this.restEndAt = Date.now() + dur * 1000;
-    cue.restStart();
-    this.emit('state', this.state);
-    this.emit('tick', this);
-  }
-
-  /** 휴식 시간을 실시간으로 늘리거나 줄입니다 */
-  adjustRest(deltaSec) {
-    this.rest = clamp(this.rest + deltaSec, 10, 600);
-    if (this.state === 'resting') {
-      this.restEndAt = clamp(this.restEndAt + deltaSec * 1000, Date.now(), Date.now() + 600_000);
-      this.restWarned = false;
+    changed() { this.emit('change', this.snapshot()); }
+    setState(next, { silence = true } = {}) {
+        this.epoch++;
+        this.completeAt = null;
+        if (silence)
+            this.audio.stop();
+        this.state = next;
+        this.emit('state', next);
+        this.emit('tick', this);
+        this.changed();
     }
-    this.emit('tick', this);
-  }
-
-  /**
-   * 지금 세트에 맞는 휴식 시간을 잡습니다.
-   * 웜업처럼 세트별 휴식이 정해진 세트면 그 값을, 아니면 사용자가 슬라이더로
-   * 맞춰 둔 값(있으면)을, 그것도 없으면 종목 기본값을 씁니다.
-   */
-  _applySetRest() {
-    const planRest = this.setRec?.planRest;
-    if (planRest) this.rest = planRest;
-    else this.rest = this._userRest ?? this.block?.rest ?? settings().restDefault;
-  }
-
-  /** 휴식 기본값 자체를 바꿉니다 (슬라이더) */
-  setRest(sec) {
-    const prev = this.rest;
-    this.rest = clamp(sec, 10, 600);
-    this._userRest = this.rest;   // 이 종목 동안은 사용자가 맞춘 값을 이어 씁니다
-    if (this.state === 'resting') {
-      this.restEndAt += (this.rest - prev) * 1000;
-      this.restWarned = false;
+    get entry() { return this.session.entries[this.exIndex] || null; }
+    get block() { return this.entry; }
+    get setRec() { return this.entry?.sets[this.setIndex] || null; }
+    get day() { return { ...this.planSnapshot, blocks: this.session.entries.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s, reps: s.targetReps })) })) }; }
+    get targetReps() { return this.setRec?.targetReps ?? 10; }
+    get doneSets() { return this.session.entries.reduce((n, e) => n + e.sets.filter(s => s.done).length, 0); }
+    get totalSets() { return this.session.entries.reduce((n, e) => n + e.sets.length, 0); }
+    get progress() { return this.totalSets ? this.doneSets / this.totalSets : 0; }
+    get elapsedSec() { return Math.max(0, ((this.session.endedAt ?? this.clock()) - this.session.startedAt) / 1000); }
+    get activeElapsedSec() { const pausedNow = this.state === 'paused' ? this.clock() - (this.pausedInfo?.pausedAt || this.clock()) : 0; return Math.max(0, this.elapsedSec - ((this.session.pausedMs || 0) + pausedNow) / 1000); }
+    get restLeft() { return REST_STATES.has(this.state) ? Math.max(0, (this.deadline - this.clock()) / 1000) : 0; }
+    get countdownLeft() { return this.state === 'countdown' ? Math.max(0, (this.deadline - this.clock()) / 1000) : 0; }
+    get isResting() { return REST_STATES.has(this.state); }
+    get measure() { return this.entry?.measure || 'reps'; }
+    get phaseLabel() {
+        if (this.measure === 'duration')
+            return '유지';
+        const phases = this.phaseTempo;
+        if (!phases || this.state !== 'counting')
+            return '';
+        const progress = ((this.clock() - this.lastRepAt) / 1000) % this.tempo;
+        return progress < phases[0] ? '내리기' : progress < phases[0] + phases[1] ? '정지' : '올리기';
     }
-    this.emit('tick', this);
-  }
-
-  skipRest() {
-    if (this.state !== 'resting') return;
-    this.finishRest();
-  }
-
-  finishRest() {
-    cue.restDone();
-    beep(1040, 160);
-    this.advance({ fromRest: true });
-  }
-
-  /** 다음 세트 / 다음 운동으로 */
-  advance({ fromRest = false } = {}) {
-    const entry = this.entry;
-    if (this.setIndex + 1 < (entry?.sets.length || 0)) {
-      this.setIndex += 1;
-      this._applySetRest();
-    } else if (this.exIndex + 1 < this.day.blocks.length) {
-      this.exIndex += 1;
-      this.setIndex = 0;
-      const b = this.block;
-      this.tempo = b.tempo ?? settings().tempo;
-      this._userRest = null;      // 종목이 바뀌면 슬라이더로 맞춘 값은 초기화
-      this._applySetRest();
-      cue.nextEx(b.name);
-    } else {
-      this.finishWorkout();
-      return;
+    syncCurrent() {
+        this.tempo = this.entry?.measure === 'duration' ? 1 : (this.entry?.tempo ?? this.config.tempo);
+        this.tempo = clamp(this.tempo, 0.2, 12);
+        this.rest = this.entry?.rest ?? this.config.restDefault;
+        this.countMode = this.entry?.countMode || this.config.countMode;
+        this.phaseTempo = this.entry?.phaseTempo || this.config.phaseTempo;
+        if (this.phaseTempo && this.measure !== 'duration')
+            this.tempo = this.phaseTempo.reduce((a, b) => a + b, 0);
     }
-    this.rep = 0;
-    this.state = 'ready';
-    this.emit('state', this.state);
-    this.emit('tick', this);
-
-    // 휴식이 끝나서 넘어온 경우에만 자동으로 다음 세트를 시작합니다.
-    // (직접 건너뛰기 등으로 넘어온 경우엔 무게를 바꿀 시간을 주기 위해 기다립니다)
-    if (fromRest && settings().autoAdvance) this.beginSet();
-  }
-
-  /** 이 세트를 건너뜁니다 */
-  skipSet() {
-    const rec = this.setRec;
-    if (rec) { rec.done = false; rec.skipped = true; }
-    if (this.hasMore()) this.advance();
-    else this.finishWorkout();
-  }
-
-  /** 이 운동의 남은 세트를 모두 건너뛰고 다음 운동으로 */
-  skipExercise() {
-    if (this.exIndex + 1 < this.day.blocks.length) {
-      this.exIndex += 1;
-      this.setIndex = 0;
-      const b = this.block;
-      this.tempo = b.tempo ?? settings().tempo;
-      this._userRest = null;
-      this._applySetRest();
-      this.rep = 0;
-      this.state = 'ready';
-      this.emit('state', this.state);
-      this.emit('tick', this);
-    } else {
-      this.finishWorkout();
+    findSet(entryId, setId) {
+        const exIndex = this.session.entries.findIndex(e => e.id === entryId);
+        if (exIndex < 0)
+            return null;
+        const setIndex = this.session.entries[exIndex].sets.findIndex(s => s.id === setId);
+        if (setIndex < 0)
+            return null;
+        return { entryId, setId, exIndex, setIndex, rec: this.session.entries[exIndex].sets[setIndex], entry: this.session.entries[exIndex] };
     }
-  }
-
-  /** 앞 세트로 되돌아가기 (잘못 눌렀을 때) */
-  goBack() {
-    if (this.setIndex > 0) this.setIndex -= 1;
-    else if (this.exIndex > 0) {
-      this.exIndex -= 1;
-      this.setIndex = this.entry.sets.length - 1;
-      this.tempo = this.block.tempo ?? settings().tempo;
-      this._userRest = null;
-    } else return;
-    this._applySetRest();
-    const rec = this.setRec;
-    if (rec) { rec.done = false; rec.at = null; }
-    this.rep = 0;
-    this.state = 'ready';
-    this.emit('state', this.state);
-    this.emit('tick', this);
-  }
-
-  /**
-   * 운동 중에 종목을 하나 더 끼워 넣습니다 (자유운동 구성, 또는 즉흥 추가).
-   * 지금 하고 있는 위치 바로 다음에 넣습니다.
-   * @param {object} ex   exercises.js 의 종목 객체
-   * @param {{sets:number, reps:number}} opt
-   */
-  addExercise(ex, opt = {}) {
-    const s = settings();
-    const setCount = opt.sets ?? ex.sets ?? 3;
-    const reps = opt.reps ?? ex.reps ?? 10;
-    const suggestion = suggestWeight(ex.id, sessions());
-    const block = {
-      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest ?? s.restDefault, tempo: ex.tempo ?? s.tempo,
-      sets: Array.from({ length: setCount }, () => ({ reps, weight: suggestion?.weight ?? null })),
+    currentTarget() { return this.entry && this.setRec ? { entryId: this.entry.id, setId: this.setRec.id, exIndex: this.exIndex, setIndex: this.setIndex, rec: this.setRec, entry: this.entry } : null; }
+    firstPending() {
+        for (let i = 0; i < this.session.entries.length; i++) {
+            const j = this.session.entries[i].sets.findIndex(s => !s.done && !s.skipped);
+            if (j >= 0) {
+                const e = this.session.entries[i];
+                return this.findSet(e.id, e.sets[j].id);
+            }
+        }
+        return null;
+    }
+    peekNext() {
+        for (let i = this.exIndex; i < this.session.entries.length; i++) {
+            const e = this.session.entries[i];
+            for (let j = i === this.exIndex ? this.setIndex + 1 : 0; j < e.sets.length; j++)
+                if (!e.sets[j].done && !e.sets[j].skipped)
+                    return this.findSet(e.id, e.sets[j].id);
+        }
+        return null;
+    }
+    hasMore() { return !!this.peekNext(); }
+    start() {
+        if (this.running)
+            return;
+        if (activeRunner && activeRunner !== this)
+            activeRunner.stop();
+        activeRunner = this;
+        this.running = true;
+        if (!this.options.noTimer)
+            this.timer = setInterval(() => this.tick(), 100);
+        globalThis.document?.addEventListener('visibilitychange', this.onVisible);
+        this.requestWakeLock();
+        this.changed();
+    }
+    stop({ silence = true } = {}) {
+        this.running = false;
+        clearInterval(this.timer);
+        this.timer = null;
+        this.epoch++;
+        this.completeAt = null;
+        if (silence)
+            this.audio.stop();
+        this.releaseWakeLock();
+        globalThis.document?.removeEventListener('visibilitychange', this.onVisible);
+        if (activeRunner === this)
+            activeRunner = null;
+    }
+    onVisible = () => {
+        if (document.visibilityState === 'hidden' && this.state !== 'done')
+            this.pause('화면이 가려져 일시정지했어요.');
+        else if (document.visibilityState === 'visible')
+            this.requestWakeLock();
     };
-    const entry = {
-      exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
-      sets: block.sets.map(st => ({
-        targetReps: st.reps, reps: null, weight: st.weight,
-        rest: st.rest ?? block.rest, planRest: st.rest ?? null, warmup: !!st.warmup,
-        tempo: block.tempo, done: false, at: null,
-      })),
-    };
-    const insertAt = this.day.blocks.length ? this.exIndex + 1 : 0;
-    this.day.blocks.splice(insertAt, 0, block);
-    this.session.entries.splice(insertAt, 0, entry);
-    this.emit('tick', this);
-    return insertAt;
-  }
-
-  /**
-   * 지금 하는 운동을 다른 종목으로 바꿉니다. 오늘 이 세션에만 적용되고
-   * (day.blocks 는 이 실행 화면이 끝나면 버려지는 사본이라) 계획 자체나
-   * 앞으로 생성될 다른 날에는 영향을 주지 않습니다.
-   */
-  substituteExercise(ex, exIndex = this.exIndex) {
-    const cur = this.day.blocks[exIndex];
-    if (!cur) return;
-    const s = settings();
-    const setCount = cur.sets.length;
-    const reps = ex.reps ?? cur.sets[0]?.reps ?? 10;
-    const suggestion = suggestWeight(ex.id, sessions());
-
-    const newBlock = {
-      exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
-      rest: ex.rest ?? cur.rest, tempo: ex.tempo ?? cur.tempo,
-      sets: Array.from({ length: setCount }, () => ({ reps, weight: suggestion?.weight ?? null })),
-    };
-    this.day.blocks[exIndex] = newBlock;
-
-    const oldEntry = this.session.entries[exIndex];
-    this.session.entries[exIndex] = {
-      exerciseId: ex.id, name: ex.name, group: ex.group, note: '',
-      sets: newBlock.sets.map((st, i) => ({
-        targetReps: st.reps, reps: null, weight: st.weight,
-        rest: st.rest ?? newBlock.rest, planRest: st.rest ?? null, warmup: !!st.warmup,
-        tempo: newBlock.tempo,
-        // 이미 끝낸 세트가 있었다면(운동 중간에 바꾼 경우) 그 결과는 남겨 둡니다
-        done: oldEntry?.sets[i]?.done || false,
-        at: oldEntry?.sets[i]?.at || null,
-      })),
-    };
-
-    if (exIndex === this.exIndex) {
-      this.tempo = newBlock.tempo ?? s.tempo;
-      this.rest = newBlock.rest ?? s.restDefault;
+    async requestWakeLock() {
+        if (!this.running || !this.config.keepAwake || this.wakeLock || !globalThis.navigator?.wakeLock)
+            return;
+        const generation = ++this.wakeGeneration;
+        try {
+            const lock = await navigator.wakeLock.request('screen');
+            if (!this.running || generation !== this.wakeGeneration) {
+                await lock.release();
+                return;
+            }
+            this.wakeLock = lock;
+            lock.addEventListener('release', () => {
+                if (this.wakeLock === lock)
+                    this.wakeLock = null;
+            });
+        }
+        catch { /* optional capability */ }
     }
-    this.emit('tick', this);
-  }
-
-  setTempo(sec) {
-    this.tempo = clamp(sec, settings().tempoMin, settings().tempoMax);
-    if (this.state === 'counting') {
-      // 다음 카운트 시점을 새 속도로 다시 계산
-      this.nextRepAt = this.lastRepAt + this.tempo * 1000;
+    releaseWakeLock() {
+        this.wakeGeneration++;
+        const lock = this.wakeLock;
+        this.wakeLock = null;
+        try {
+            Promise.resolve(lock?.release()).catch(() => { });
+        }
+        catch { }
     }
-    this.emit('tick', this);
-  }
-
-  /**
-   * 이 세트의 무게를 바꿉니다. 아직 하지 않은(끝내지 않은) 뒤 세트들에도
-   * 이 값을 그대로 이어서 적용합니다 — 계획 생성 시 같은 종목의 모든 세트에
-   * 동일한 추천 무게가 미리 채워져 있어서(null 이 아님), "빈 세트에만 이어서
-   * 채운다"는 예전 방식으로는 사실상 한 세트만 바뀌고 그 뒤로는 전혀 안
-   * 이어졌습니다. 이미 끝낸(done) 세트는 기록이라 건드리지 않습니다.
-   */
-  setWeight(kg) {
-    const rec = this.setRec;
-    if (!rec) return;
-    rec.weight = kg;
-    for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
-      const later = this.entry.sets[i];
-      if (later.done) break;
-      later.weight = kg;
+    snapshot() {
+        const runtime = { state: this.state, entryId: this.entry?.id, setId: this.setRec?.id, rep: this.rep, tempo: this.tempo, countMode: this.countMode,
+            remaining: Math.max(0, this.deadline - this.clock()), nextRepRemaining: Math.max(0, this.nextRepAt - this.clock()),
+            completionRemaining: this.completeAt == null ? null : Math.max(0, this.completeAt - this.clock()),
+            transition: clone(this.transition), pausedInfo: clone(this.pausedInfo), savedAt: this.clock() };
+        return { schema: 2, session: clone(this.session), planSnapshot: clone(this.planSnapshot), runtime };
     }
-    this.emit('tick', this);
-  }
-
-  /**
-   * peekNext() 가 가리키는 다음 세트의 무게·목표 횟수를 고칩니다 (휴식 중에 씁니다).
-   * setWeight() 와 마찬가지로, 아직 끝내지 않은 그 뒤 세트들에도 이어서 적용합니다.
-   */
-  setNextWeight(kg) {
-    const next = this.peekNext();
-    if (!next?.rec) return;
-    next.rec.weight = kg;
-    const entry = this.session.entries[next.exIndex];
-    for (let i = next.setIndex + 1; i < entry.sets.length; i++) {
-      const later = entry.sets[i];
-      if (later.done) break;
-      later.weight = kg;
+    tick() {
+        if (!this.running || this.state === 'paused' || this.state === 'done')
+            return;
+        const now = this.clock();
+        if (this.state === 'countdown') {
+            const left = Math.ceil((this.deadline - now) / 1000);
+            if (left > 0 && left !== this.lastCountdown) {
+                this.lastCountdown = left;
+                this.audio.speakCount(left);
+            }
+            if (now >= this.deadline)
+                this.beginCounting();
+        }
+        else if (this.state === 'counting') {
+            if (this.countMode !== 'manual' || this.measure === 'duration') {
+                let advanced = false;
+                while (now >= this.nextRepAt && this.rep < this.targetReps) {
+                    this.rep++;
+                    this.lastRepAt = this.nextRepAt;
+                    this.nextRepAt += this.tempo * 1000;
+                    advanced = true;
+                }
+                if (advanced) {
+                    if (this.measure !== 'duration' || this.targetReps - this.rep <= 5)
+                        this.audio.speakCount(this.rep);
+                    this.emit('rep', this.rep);
+                    this.changed();
+                    if (this.config.announceLastReps > 0 && this.targetReps - this.rep === this.config.announceLastReps)
+                        this.audio.cue.lastRep();
+                }
+                if (this.rep >= this.targetReps) {
+                    if (this.completeAt == null)
+                        this.completeAt = now + 800;
+                    else if (now >= this.completeAt)
+                        this.finishSet();
+                }
+            }
+        }
+        else if (REST_STATES.has(this.state)) {
+            const left = this.restLeft;
+            if (!this.restWarned && this.state !== 'exercise_setup' && this.config.restWarnSec > 0 && left <= this.config.restWarnSec && left > 0) {
+                this.restWarned = true;
+                this.audio.cue.restSoon(Math.ceil(left));
+            }
+            if (now >= this.deadline)
+                this.finishRest();
+        }
+        this.emit('tick', this);
     }
-    this.emit('tick', this);
-  }
-
-  /** setWeight() 와 같은 방식으로, 아직 끝내지 않은 뒤 세트들에도 목표 횟수를 이어 적용합니다 */
-  setTargetReps(n) {
-    const rec = this.setRec;
-    if (!rec) return;
-    const reps = clamp(Math.round(n), 1, 100);
-    rec.targetReps = reps;
-    for (let i = this.setIndex + 1; i < this.entry.sets.length; i++) {
-      const later = this.entry.sets[i];
-      if (later.done) break;
-      later.targetReps = reps;
+    beginSet() {
+        if (this.state !== 'ready' || !this.setRec || this.setRec.done || this.setRec.skipped)
+            return false;
+        this.rep = 0;
+        this.restWarned = false;
+        if (this.config.countdownSec > 0) {
+            this.deadline = this.clock() + this.config.countdownSec * 1000;
+            this.lastCountdown = null;
+            this.setState('countdown');
+            this.audio.cue.ready();
+        }
+        else
+            this.beginCounting();
+        return true;
     }
-    this.emit('tick', this);
-  }
-
-  setNextTargetReps(n) {
-    const next = this.peekNext();
-    if (!next?.rec) return;
-    const reps = clamp(Math.round(n), 1, 100);
-    next.rec.targetReps = reps;
-    const entry = this.session.entries[next.exIndex];
-    for (let i = next.setIndex + 1; i < entry.sets.length; i++) {
-      const later = entry.sets[i];
-      if (later.done) break;
-      later.targetReps = reps;
+    beginCounting() {
+        if (!['ready', 'countdown'].includes(this.state) || !this.setRec || this.setRec.done)
+            return false;
+        this.rep = 0;
+        this.lastRepAt = this.clock();
+        this.nextRepAt = this.clock() + this.tempo * 1000;
+        this.setState('counting');
+        this.audio.cue.start();
+        return true;
     }
-    this.emit('tick', this);
-  }
-
-  /**
-   * 세트를 하나 더 끼워 넣습니다 — 지정한 자리 바로 뒤에, 그 세트를 복사해서 넣습니다.
-   * "생각보다 더 할 수 있어서 한 세트 추가" 같은 상황을 위한 것입니다.
-   * @returns 새로 생긴 세트의 인덱스
-   */
-  addSetAfter(exIndex, setIndex) {
-    const entry = this.session.entries[exIndex];
-    const base = entry?.sets[setIndex];
-    if (!base) return -1;
-    const fresh = {
-      targetReps: base.targetReps, reps: null, weight: base.weight,
-      rest: base.rest, planRest: base.planRest ?? null, warmup: !!base.warmup,
-      tempo: base.tempo, done: false, at: null,
-    };
-    entry.sets.splice(setIndex + 1, 0, fresh);
-    if (exIndex === this.exIndex && setIndex + 1 <= this.setIndex) this.setIndex += 1;
-    this.emit('tick', this);
-    return setIndex + 1;
-  }
-
-  /**
-   * 세트를 하나 뺍니다. 이 종목의 마지막 하나 남은 세트는 지울 수 없습니다.
-   * 지금 보고 있던 세트를 지우면 그 뒤 세트가 그 자리로 당겨집니다.
-   */
-  removeSetAt(exIndex, setIndex) {
-    const entry = this.session.entries[exIndex];
-    if (!entry || entry.sets.length <= 1 || !entry.sets[setIndex]) return false;
-    entry.sets.splice(setIndex, 1);
-    if (exIndex === this.exIndex) {
-      if (setIndex < this.setIndex) this.setIndex -= 1;
-      this.setIndex = clamp(this.setIndex, 0, entry.sets.length - 1);
-      this._applySetRest();
-      if (this.state !== 'ready') { this.state = 'ready'; this.rep = 0; this.emit('state', this.state); }
+    cancelSet() {
+        if (!['countdown', 'counting', 'review'].includes(this.state))
+            return;
+        this.rep = 0;
+        this.setState('ready');
     }
-    this.emit('tick', this);
-    return true;
-  }
-
-  /** 목표 위치로 바로 점프 */
-  jumpTo(exIndex, setIndex = 0) {
-    const movedExercise = clamp(exIndex, 0, this.day.blocks.length - 1) !== this.exIndex;
-    this.exIndex = clamp(exIndex, 0, this.day.blocks.length - 1);
-    this.setIndex = clamp(setIndex, 0, this.entry.sets.length - 1);
-    this.tempo = this.block.tempo ?? settings().tempo;
-    if (movedExercise) this._userRest = null;
-    this._applySetRest();
-    this.rep = 0;
-    this.state = 'ready';
-    this.emit('state', this.state);
-    this.emit('tick', this);
-  }
-
-  finishWorkout() {
-    this.state = 'done';
-    this.session.endedAt = Date.now();
-    cue.allDone();
-    this.stop();
-    this.emit('state', this.state);
-    this.emit('done', this.session);
-  }
-
-  /** 중간에 그만두기 — 여기까지 한 것은 저장됩니다 */
-  abort() {
-    this.session.endedAt = Date.now();
-    this.stop();
-    this.emit('done', this.session);
-  }
+    finishSet(actualReps = null) {
+        if (this.state !== 'counting')
+            return false;
+        this.rep = actualReps == null ? this.rep : finite(actualReps, 0, 600, '실제 수행', { integer: true });
+        // Counting is not sensing: actual performance is confirmed on the review screen.
+        this.setState('review');
+        this.audio.cue.setDone();
+        return true;
+    }
+    recordSet({ reps = this.rep, rir = null, weight = this.setRec?.weight ?? null } = {}) {
+        if (this.state !== 'review' || !this.setRec || this.setRec.done)
+            return false;
+        const clean = { reps: finite(reps, 0, 600, '실제 수행', { integer: true }), rir: finite(rir, 0, 10, '여유 횟수', { nullable: true, integer: true }), weight: finite(weight, 0, 1500, '실제 무게', { nullable: true }) };
+        const rec = this.setRec;
+        Object.assign(rec, clean);
+        rec.done = true;
+        rec.confirmed = true;
+        rec.at = this.clock();
+        rec.tempo = this.tempo;
+        rec.rest = this.rest;
+        rec.skipped = false;
+        this.changed();
+        if (!this.peekNext())
+            this.finishWorkout();
+        else {
+            this.setState('setdone');
+            if (this.config.autoStartRest)
+                this.beginRest();
+        }
+        return true;
+    }
+    manualCount(delta) {
+        if (this.state !== 'counting' || this.countMode !== 'manual')
+            return;
+        this.rep = clamp(this.rep + delta, 0, 600);
+        if (delta > 0)
+            this.audio.speakCount(this.rep);
+        this.emit('tick', this);
+        this.changed();
+    }
+    beginRest(seconds = null) {
+        if (!['ready', 'setdone'].includes(this.state))
+            return false;
+        const current = this.currentTarget(), next = this.state === 'ready' ? current : this.peekNext();
+        if (!next) {
+            this.finishWorkout();
+            return false;
+        }
+        const descriptor = x => ({ entryId: x.entryId, setId: x.setId, warmup: x.rec.warmup, planRest: x.rec.planRest });
+        const policy = this.state === 'ready' ? { reason: 'pre', rest: this.rest, setup: 0, target: current.setId } :
+            transitionTiming(descriptor(current), descriptor(next), { settings: this.config, blockRest: this.rest });
+        this.transition = { ...policy, targetEntryId: next.entryId, targetSetId: next.setId };
+        const duration = seconds == null ? policy.rest : finite(seconds, 0, 900, '휴식 시간');
+        this.deadline = this.clock() + duration * 1000;
+        this.restWarned = false;
+        this.setState(policy.reason === 'exercise' ? 'exercise_rest' : 'resting');
+        this.audio.cue.restStart();
+        if (duration === 0)
+            this.finishRest();
+        return true;
+    }
+    finishRest() {
+        if (!REST_STATES.has(this.state) || !this.transition)
+            return;
+        const t = this.transition;
+        if (this.state === 'exercise_rest' && t.setup > 0) {
+            this.deadline = this.clock() + t.setup * 1000;
+            this.setState('exercise_setup');
+            this.audio.cue.nextEx(this.findSet(t.targetEntryId, t.targetSetId)?.entry.name || '');
+            return;
+        }
+        const target = this.findSet(t.targetEntryId, t.targetSetId);
+        if (!target || target.rec.done || target.rec.skipped) {
+            this.transition = null;
+            this.advance();
+            return;
+        }
+        this.exIndex = target.exIndex;
+        this.setIndex = target.setIndex;
+        this.rep = 0;
+        this.syncCurrent();
+        this.transition = null;
+        this.setState('ready');
+        const auto = t.reason === 'pre' ? false : t.reason === 'exercise' ? this.config.autoNextExercise : this.config.autoAdvance;
+        if (auto)
+            this.beginSet();
+        else
+            this.audio.cue.restDone();
+    }
+    skipRest() { this.finishRest(); }
+    adjustRest(delta) {
+        if (!this.isResting)
+            return;
+        finite(delta, -900, 900, '시간 조정');
+        this.deadline = Math.max(this.clock(), Math.min(this.clock() + 900000, this.deadline + delta * 1000));
+        this.restWarned = false;
+        this.emit('tick', this);
+        this.changed();
+    }
+    setRest(seconds) {
+        this.rest = finite(seconds, 0, 900, '이 운동 본세트 휴식');
+        if (this.entry)
+            this.entry.rest = this.rest;
+        this.changed();
+        this.emit('tick', this);
+    }
+    setTempo(seconds) {
+        if (this.measure === 'duration')
+            throw new Error('시간 운동은 실제 1초 간격으로 측정해요.');
+        this.tempo = finite(seconds, this.config.tempoMin, this.config.tempoMax, '카운트 간격');
+        this.phaseTempo = null;
+        if (this.entry) {
+            this.entry.tempo = this.tempo;
+            this.entry.phaseTempo = null;
+        }
+        if (this.state === 'counting')
+            this.nextRepAt = this.lastRepAt + this.tempo * 1000;
+        this.changed();
+        this.emit('tick', this);
+    }
+    setCountMode(mode) {
+        if (!['auto', 'manual'].includes(mode))
+            throw new Error('카운트 방식 오류');
+        if (!['ready', 'paused'].includes(this.state))
+            throw new Error('준비 또는 일시정지 상태에서 바꿔 주세요.');
+        this.countMode = mode;
+        if (this.entry)
+            this.entry.countMode = mode;
+        this.changed();
+        this.emit('state', this.state);
+    }
+    setPhaseTempo(phases) {
+        if (!Array.isArray(phases) || phases.length !== 3)
+            throw new Error('내리기·정지·올리기 세 값을 넣어 주세요.');
+        phases = phases.map(x => finite(x, 0, 8, '동작 구간'));
+        const total = phases.reduce((a, b) => a + b, 0);
+        finite(total, 0.4, 12, '전체 동작 시간');
+        if (phases[0] + phases[2] < 0.4)
+            throw new Error('움직이는 시간은 0.4초 이상이어야 해요.');
+        this.phaseTempo = phases;
+        this.tempo = total;
+        this.entry.phaseTempo = phases;
+        this.entry.tempo = total;
+        if (this.state === 'counting')
+            this.nextRepAt = this.lastRepAt + total * 1000;
+        this.changed();
+        this.emit('state', this.state);
+    }
+    pause(reason = '일시정지') {
+        if (this.state === 'paused' || this.state === 'done')
+            return false;
+        const snapshot = this.snapshot().runtime;
+        this.pausedInfo = { ...snapshot, state: this.state, pausedAt: this.clock(), reason };
+        this.setState('paused');
+        return true;
+    }
+    resume() {
+        if (this.state !== 'paused' || !this.pausedInfo)
+            return false;
+        const info = this.pausedInfo;
+        this.session.pausedMs = (this.session.pausedMs || 0) + Math.max(0, this.clock() - info.pausedAt);
+        this.deadline = this.clock() + (info.remaining || 0);
+        this.nextRepAt = this.clock() + (info.nextRepRemaining ?? this.tempo * 1000);
+        this.lastRepAt = this.nextRepAt - this.tempo * 1000;
+        this.pausedInfo = null;
+        this.setState(info.state || 'ready');
+        if (info.completionRemaining != null && this.state === 'counting')
+            this.completeAt = this.clock() + info.completionRemaining;
+        return true;
+    }
+    advance() {
+        const next = this.peekNext();
+        if (!next) {
+            this.finishWorkout();
+            return;
+        }
+        this.exIndex = next.exIndex;
+        this.setIndex = next.setIndex;
+        this.rep = 0;
+        this.transition = null;
+        this.syncCurrent();
+        this.setState('ready');
+    }
+    skipSet() {
+        if (!['ready', 'paused'].includes(this.state))
+            return false;
+        const rec = this.setRec;
+        if (!rec || rec.done)
+            return false;
+        rec.skipped = true;
+        rec.done = false;
+        this.pausedInfo = null;
+        this.advance();
+        return true;
+    }
+    skipExercise() {
+        if (!['ready', 'paused'].includes(this.state))
+            return false;
+        this.entry?.sets.forEach(s => {
+            if (!s.done)
+                s.skipped = true;
+        });
+        this.pausedInfo = null;
+        this.advance();
+        return true;
+    }
+    jumpTo(exIndex, setIndex = 0) {
+        const entry = this.session.entries[exIndex], rec = entry?.sets[setIndex];
+        if (!rec)
+            throw new Error('세트가 없습니다.');
+        if (rec.done)
+            throw new Error('완료 기록은 기록 탭에서 수정해 주세요.');
+        this.exIndex = exIndex;
+        this.setIndex = setIndex;
+        rec.skipped = false;
+        this.rep = 0;
+        this.transition = null;
+        this.pausedInfo = null;
+        this.syncCurrent();
+        this.setState('ready');
+    }
+    goBack() {
+        for (let i = this.exIndex; i >= 0; i--) {
+            for (let j = i === this.exIndex ? this.setIndex - 1 : this.session.entries[i].sets.length - 1; j >= 0; j--) {
+                if (!this.session.entries[i].sets[j].done) {
+                    this.jumpTo(i, j);
+                    return;
+                }
+            }
+        }
+        throw new Error('앞에 미완료 세트가 없어요. 완료 기록은 기록 탭에서 수정해 주세요.');
+    }
+    editSet(entryId, setId, patch, scope = 'one') {
+        const target = this.findSet(entryId, setId);
+        if (!target)
+            throw new Error('수정할 세트가 없습니다.');
+        if (target.rec.done)
+            throw new Error('이미 완료한 세트는 여기서 덮어쓰지 않습니다.');
+        if (!['one', 'same-kind'].includes(scope))
+            throw new Error('적용 범위가 올바르지 않습니다.');
+        const clean = {};
+        if (Object.hasOwn(patch, 'weight'))
+            clean.weight = finite(patch.weight, 0, 1500, '무게', { nullable: true });
+        if (Object.hasOwn(patch, 'targetReps'))
+            clean.targetReps = finite(patch.targetReps, 1, 600, '목표', { integer: true });
+        const targets = scope === 'one' ? [target.rec] : target.entry.sets.slice(target.setIndex).filter(s => !s.done && !s.skipped && s.warmup === target.rec.warmup);
+        targets.forEach(s => Object.assign(s, clean, { recommendation: { source: 'manual', requiresConfirmation: false, note: '직접 입력한 목표' } }));
+        this.changed();
+        this.emit('state', this.state);
+        return targets.map(s => s.id);
+    }
+    setWeight(kg) {
+        const t = this.currentTarget();
+        if (t)
+            this.editSet(t.entryId, t.setId, { weight: kg }, 'same-kind');
+    }
+    setTargetReps(n) {
+        const t = this.currentTarget();
+        if (t)
+            this.editSet(t.entryId, t.setId, { targetReps: n }, 'same-kind');
+    }
+    setNextWeight(kg) {
+        const t = this.peekNext();
+        if (t)
+            this.editSet(t.entryId, t.setId, { weight: kg }, 'same-kind');
+    }
+    setNextTargetReps(n) {
+        const t = this.peekNext();
+        if (t)
+            this.editSet(t.entryId, t.setId, { targetReps: n }, 'same-kind');
+    }
+    addSetAfter(entryId, setId) {
+        // Public operations use stable IDs; legacy numeric indices remain supported for callers.
+        if (typeof entryId === 'number') {
+            const e = this.session.entries[entryId];
+            setId = e?.sets[setId]?.id;
+            entryId = e?.id;
+        }
+        const t = this.findSet(entryId, setId);
+        if (!t)
+            throw new Error('복사할 세트가 없습니다.');
+        if (t.entry.sets.length >= 50)
+            throw new Error('한 종목에 최대 50세트까지 추가할 수 있어요.');
+        const rec = { ...clone(t.rec), id: uid('set'), reps: null, done: false, confirmed: false, skipped: false, rir: null, at: null };
+        t.entry.sets.splice(t.setIndex + 1, 0, rec);
+        if (t.exIndex === this.exIndex && t.setIndex < this.setIndex)
+            this.setIndex++;
+        this.changed();
+        this.emit('state', this.state);
+        return rec.id;
+    }
+    moveExercise(from, to) {
+        if (!['ready', 'paused'].includes(this.state))
+            throw new Error('준비 또는 일시정지 상태에서 순서를 바꿔 주세요.');
+        const n = this.session.entries.length;
+        if (from === to || from < 0 || from >= n || to < 0 || to >= n)
+            return false;
+        const currentId = this.entry?.id || null;
+        const [entry] = this.session.entries.splice(from, 1);
+        this.session.entries.splice(to, 0, entry);
+        if (Array.isArray(this.planSnapshot?.blocks) && this.planSnapshot.blocks.length === n) {
+            const [block] = this.planSnapshot.blocks.splice(from, 1);
+            this.planSnapshot.blocks.splice(to, 0, block);
+        }
+        const moved = currentId ? this.session.entries.findIndex(e => e.id === currentId) : -1;
+        this.exIndex = moved >= 0 ? moved : clamp(to, 0, n - 1);
+        this.transition = null;
+        this.changed();
+        this.emit('state', this.state);
+        this.emit('tick', this);
+        return true;
+    }
+    removeSetAt(entryId, setId) {
+        if (typeof entryId === 'number') {
+            const e = this.session.entries[entryId];
+            setId = e?.sets[setId]?.id;
+            entryId = e?.id;
+        }
+        const t = this.findSet(entryId, setId);
+        if (!t || t.entry.sets.length <= 1 || t.rec.done)
+            return false;
+        t.entry.sets.splice(t.setIndex, 1);
+        if (t.exIndex === this.exIndex) {
+            if (t.setIndex < this.setIndex)
+                this.setIndex--;
+            this.setIndex = Math.min(this.setIndex, t.entry.sets.length - 1);
+        }
+        this.rep = 0;
+        this.pausedInfo = null;
+        this.transition = null;
+        if (this.setRec?.done || this.setRec?.skipped) {
+            const next = this.firstPending();
+            if (next) {
+                this.exIndex = next.exIndex;
+                this.setIndex = next.setIndex;
+                this.syncCurrent();
+            }
+            else {
+                this.finishWorkout();
+                return true;
+            }
+        }
+        this.setState('ready');
+        return true;
+    }
+    preparedPatterns() { return new Set(this.session.entries.filter(e => e.sets.some(s => s.done)).map(e => e.pattern).filter(Boolean)); }
+    addExercise(ex, opt = {}) {
+        const b = this.blockFactory(ex, { ...opt, preparedPatterns: this.preparedPatterns() });
+        if (!b)
+            throw new Error('추가할 종목이 없습니다.');
+        const entry = this.entryFromBlock(b), at = this.session.entries.length ? this.exIndex + 1 : 0;
+        this.session.entries.splice(at, 0, entry);
+        if (this.session.entries.length === 1)
+            this.syncCurrent();
+        this.changed();
+        this.emit('state', this.state);
+        return entry.id;
+    }
+    substituteExercise(ex) {
+        if (!['ready', 'paused'].includes(this.state) || !this.entry)
+            throw new Error('준비 또는 일시정지 상태에서 바꿔 주세요.');
+        const old = this.entry, completed = old.sets.filter(s => s.done || s.skipped), pending = old.sets.filter(s => !s.done && !s.skipped);
+        const workCount = Math.max(1, pending.filter(s => !s.warmup).length);
+        const b = this.blockFactory(ex, { sets: workCount, preparedPatterns: this.preparedPatterns() });
+        if (!b)
+            throw new Error('대체 종목을 만들지 못했습니다.');
+        const fresh = this.entryFromBlock(b);
+        if (completed.length) {
+            old.sets = completed;
+            this.session.entries.splice(this.exIndex + 1, 0, fresh);
+            this.exIndex++;
+        }
+        else
+            this.session.entries[this.exIndex] = fresh;
+        this.setIndex = 0;
+        this.rep = 0;
+        this.transition = null;
+        this.pausedInfo = null;
+        this.syncCurrent();
+        this.setState('ready');
+    }
+    finishWorkout() {
+        if (this.state === 'done')
+            return;
+        if (this.state === 'paused' && this.pausedInfo)
+            this.session.pausedMs = (this.session.pausedMs || 0) + Math.max(0, this.clock() - this.pausedInfo.pausedAt);
+        this.session.endedAt = this.clock();
+        this.session.status = !this.session.stopReason && this.session.entries.every(e => e.sets.every(s => s.done)) ? 'completed' : 'partial';
+        this.setState('done');
+        this.stop();
+        this.audio.cue.allDone();
+        this.emit('done', clone(this.session));
+    }
+    abort(reason = '직접 종료') {
+        if (this.state === 'done')
+            return;
+        this.session.stopReason = reason;
+        this.finishWorkout();
+        this.session.status = 'partial';
+    }
 }
-
-/** 총 볼륨 (무게 × 횟수 × 세트) */
-export function sessionVolume(session) {
-  let v = 0;
-  for (const e of session.entries || []) {
-    for (const s of e.sets || []) {
-      if (s.done && s.weight && s.reps) v += s.weight * s.reps;
+/** Recorded-load volume, not physiological workload; warmups and timed sets excluded by default. */
+export function sessionVolume(session, { includeWarmup = false, confirmedOnly = false } = {}) {
+    let volume = 0;
+    for (const e of session.entries || []) {
+        if (e.measure === 'duration' || e.exerciseId === 'plank')
+            continue;
+        for (const st of e.sets || []) {
+            if (st.done && (includeWarmup || !st.warmup) && (!confirmedOnly || st.confirmed) && Number.isFinite(st.weight) && Number.isFinite(st.reps))
+                volume += st.weight * st.reps;
+        }
     }
-  }
-  return v;
+    return volume;
 }
-
-export function sessionSetCount(session) {
-  return (session.entries || []).reduce((a, e) => a + (e.sets || []).filter(s => s.done).length, 0);
-}
+export function sessionSetCount(session, { includeWarmup = false } = {}) { return (session.entries || []).reduce((n, e) => n + (e.sets || []).filter(s => s.done && (includeWarmup || !s.warmup)).length, 0); }
