@@ -1,77 +1,46 @@
-/* 오프라인 지원 — 앱 자체 파일만 캐시하고, 표지·검색 요청은 항상 네트워크로.
- *
- * 네트워크 우선(network-first) 전략을 쓴다. 온라인 상태에서는 매번 네트워크로
- * 최신 파일을 받아와 화면에 쓰고 캐시도 그걸로 갱신하며, 오프라인일 때만
- * 마지막으로 받아 둔 캐시로 대체한다.
- *
- * 예전에는 캐시 우선(cache-first) 전략이었는데, 그러면 sw.js 자신의 내용이
- * 바뀌지 않는 한 브라우저가 새 서비스워커를 설치하지 않고, 그러면 코드를
- * 아무리 새로 배포해도 이미 앱을 열어 둔 사용자에게는 반영되지 않는 문제가
- * 있었다(설정 화면에 새로 추가한 항목이 안 보이는 식으로 나타났다).
- * 네트워크 우선으로 바꾸면 이 문제 자체가 사라지므로, CACHE 이름을 앞으로
- * 계속 올려야 할 필요도 없다.
- */
-const CACHE = 'bookshelf-v2';
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './assets/css/app.css',
-  './assets/js/util.js',
-  './assets/js/store.js',
-  './assets/js/api.js',
-  './assets/js/xlsx.js',
-  './assets/js/stats.js',
-  './assets/js/ui.js',
-  './assets/js/views.js',
-  './assets/js/app.js',
-  './assets/icons/icon.svg',
-  './assets/icons/icon-180.png',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png'
-];
-
-self.addEventListener('install', function (e) {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(function (c) { return c.addAll(ASSETS); })
-      .then(function () { return self.skipWaiting(); })
-  );
-});
-
-self.addEventListener('activate', function (e) {
-  e.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(keys.filter(function (k) { return k !== CACHE; })
-        .map(function (k) { return caches.delete(k); }));
-    }).then(function () { return self.clients.claim(); })
-  );
-});
-
-self.addEventListener('fetch', function (e) {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-
-  const url = new URL(req.url);
-  // 외부(표지 이미지·메타데이터 API·카카오 프록시)는 캐시를 거치지 않는다
-  if (url.origin !== self.location.origin) return;
-
-  // cache: 'no-store' 로 브라우저의 일반 HTTP 캐시(Cache-Control 등)를 우회한다.
-  // 이걸 빼면 GitHub Pages 등이 정적 파일에 붙이는 max-age 때문에, 서버에
-  // 새 파일을 올려도 브라우저가 로컬 HTTP 캐시에 있는 예전 응답을 그대로
-  // 돌려줘서 fetch() 자체가 네트워크까지 가지 않는 경우가 있다(실제로 겪은
-  // 문제 — 재배포해도 화면이 안 바뀌는 원인이었다).
-  e.respondWith(
-    fetch(req, { cache: 'no-store' }).then(function (res) {
-      if (res && res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put(req, copy); });
-      }
-      return res;
-    }).catch(function () {
-      return caches.match(req).then(function (hit) {
-        return hit || caches.match('./index.html');
-      });
-    })
-  );
+/* Book-only app cache. CacheStorage is origin-wide: never clear another app. */
+const BUILD='reading1-20260910-fix1';
+const SCOPE=self.registration.scope;
+let scopeHash=2166136261;for(const ch of new URL(SCOPE).pathname)scopeHash=Math.imul(scopeHash^ch.charCodeAt(0),16777619)>>>0;
+const PREFIX='bookshelf-reading-'+scopeHash.toString(16)+'-';
+const CACHE=PREFIX+BUILD;
+const ASSETS=['./index.html','./manifest.webmanifest','./assets/css/app.css',
+  './assets/js/domain.js','./assets/js/storage.js','./assets/js/repository.js','./assets/js/platform.js','./assets/js/api.js','./assets/js/exports.js','./assets/js/ui.js','./assets/js/views-books.js','./assets/js/views-notes.js','./assets/js/views-settings.js','./assets/js/app.js',
+  './assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-512.png'];
+const URLS=new Set(ASSETS.map(p=>new URL(p,SCOPE).href));
+self.addEventListener('install',event=>{event.waitUntil((async()=>{
+  const cache=await caches.open(CACHE);
+  // Fail the whole install when any core dependency is missing.
+  await Promise.all(ASSETS.map(async path=>{const req=new Request(new URL(path,SCOPE),{cache:'no-store'});const res=await fetch(req);if(!res.ok)throw new Error('Precache failed');await cache.put(req,res);}));
+  if(!self.registration.active)await self.skipWaiting();
+})());});
+self.addEventListener('message',event=>{if(event.data?.type==='ACTIVATE_UPDATE')event.waitUntil(self.skipWaiting());});
+self.addEventListener('activate',event=>{event.waitUntil((async()=>{
+  await Promise.all((await caches.keys()).filter(k=>k.startsWith(PREFIX)&&k!==CACHE).map(k=>caches.delete(k)));
+  // Legacy cache belongs only to the known reading scope; no global deletion.
+  if(new URL(SCOPE).pathname.endsWith('/reading/'))await caches.delete('bookshelf-v2');
+  await self.clients.claim();
+})());});
+self.addEventListener('fetch',event=>{
+  const req=event.request,url=new URL(req.url);
+  if(req.method!=='GET'||url.origin!==self.location.origin||!url.href.startsWith(SCOPE))return;
+  const isNav=req.mode==='navigate';
+  if(isNav && ![new URL(SCOPE).pathname,new URL('./index.html',SCOPE).pathname].includes(url.pathname))return;
+  const canonical=new URL(url.href);canonical.search='';canonical.hash='';
+  if(!isNav&&!URLS.has(canonical.href))return;
+  const cacheKey=isNav?new URL('./index.html',SCOPE).href:canonical.href;
+  event.respondWith((async()=>{
+    const cache=await caches.open(CACHE),hit=await cache.match(cacheKey);
+    let timer;
+    const network=(async()=>{const res=await fetch(req,{cache:'no-store'});if(!res.ok)throw new Error('HTTP '+res.status);const copy=res.clone();await cache.put(cacheKey,copy);return res;})();
+    // Keep a late network/cache write alive, even if a cached page won the race.
+    event.waitUntil(network.then(()=>{},()=>{}));
+    try{
+      if(!hit)return await network;
+      return await Promise.race([network,new Promise(resolve=>{timer=setTimeout(()=>resolve(hit),2500);})]);
+    }catch{
+      if(hit)return hit;
+      return new Response(isNav?'오프라인 파일이 아직 준비되지 않았어요. 인터넷에 연결한 뒤 다시 열어 주세요.':'Offline resource unavailable',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8'}});
+    }finally{clearTimeout(timer);}
+  })());
 });
