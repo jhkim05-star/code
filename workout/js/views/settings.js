@@ -99,18 +99,22 @@ export function renderSettings(root, params, { signal } = {}) {
     }
     function dataCard(s) {
         const days = s.lastBackupAt ? dayDistance(ymd(new Date(s.lastBackupAt))) : null;
-        return h('.card', null, h('h3', null, '데이터·백업'), h('p.hint', null, `기록 ${sessions().length}회 · 계획 ${Object.keys(plans()).length}주 · 저장 중량 기준 kg`), field('화면 표시·입력 단위', select(s.unit, [['kg', 'kg'], ['lb', 'lb']], v => { setSetting('unit', v); draw(); }), '기록은 내부 kg로 유지하고 표시·입력 때 변환해요.'), h('p.hint', { class: days == null || days > 30 ? 'warning' : '' }, days == null ? '아직 백업 내보내기를 요청한 적이 없어요.' : `마지막 내보내기 요청: ${days}일 전. 파일 저장 완료 여부는 기기의 파일 앱에서 확인해 주세요.`), h('.btn-row', null, h('button', { onclick: () => { download(`운동일지-백업-${todayYmd()}.json`, JSON.stringify(exportAll(), null, 2)); setSetting('lastBackupAt', new Date().toISOString()); toast('백업 다운로드를 요청했어요. 파일이 저장됐는지 확인해 주세요.'); draw(); } }, '백업 내보내기'), h('button', { onclick: () => doImport(draw, () => !closed) }, '백업 불러오기')), h('p.hint', null, '제공자 API 키는 브라우저에 입력·저장하지 않아요. 프록시 접속 토큰도 이 탭을 닫으면 사라지고 JSON 백업에 넣지 않습니다.'), h('button.btn-block.btn-ghost', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구용 원본 내보내기'), h('button.btn-block.btn-ghost', { onclick: async () => {
+        const state = storageStatus();
+        const backupButton = state.readOnly
+            ? h('button', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구 원본 내보내기 · 민감 정보 포함')
+            : h('button', { onclick: () => { download(`운동일지-백업-${todayYmd()}.json`, JSON.stringify(exportAll(), null, 2)); setSetting('lastBackupAt', new Date().toISOString()); toast('백업 다운로드를 요청했어요. 파일이 저장됐는지 확인해 주세요.'); draw(); } }, '백업 내보내기');
+        return h('.card', null, h('h3', null, '데이터·백업'), h('p.hint', null, `기록 ${sessions().length}회 · 계획 ${Object.keys(plans()).length}주 · 저장 중량 기준 kg`), field('화면 표시·입력 단위', select(s.unit, [['kg', 'kg'], ['lb', 'lb']], v => { setSetting('unit', v); draw(); }), '기록은 내부 kg로 유지하고 표시·입력 때 변환해요.'), h('p.hint', { class: days == null || days > 30 ? 'warning' : '' }, days == null ? '아직 백업 내보내기를 요청한 적이 없어요.' : `마지막 내보내기 요청: ${days}일 전. 파일 저장 완료 여부는 기기의 파일 앱에서 확인해 주세요.`), h('.btn-row', null, backupButton, h('button', { onclick: () => doImport(draw, () => !closed) }, '백업 불러오기')), h('p.hint', null, state.readOnly ? '현재 화면은 읽기 전용입니다. 일반 백업 대신 IndexedDB/localStorage 원본을 함께 내보냅니다.' : '제공자 API 키는 브라우저에 입력·저장하지 않아요. 프록시 접속 토큰도 이 탭을 닫으면 사라지고 JSON 백업에 넣지 않습니다.'), !state.readOnly ? h('button.btn-block.btn-ghost', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구용 원본 내보내기') : null, h('button.btn-block.btn-ghost', { onclick: async () => {
                 if (!navigator.storage?.persist)
                     return toast('이 브라우저는 저장소 보호 요청을 지원하지 않아요.');
                 const ok = await navigator.storage.persist();
                 toast(ok ? '자동 공간 정리에 대한 보호 요청이 허용됐어요. 수동 데이터 삭제는 막지 못합니다.' : '보호 요청이 허용되지 않았어요. 외부 백업을 유지해 주세요.', 6000);
-            } }, '저장소 보호 요청'), h('button.btn-block.btn-danger', { onclick: async () => {
+            } }, '저장소 보호 요청'), !state.readOnly ? h('button.btn-block.btn-danger', { onclick: async () => {
                 if (await confirmSheet({ title: '활성 기록·설정을 초기화할까요?', body: '현재 사용하는 기록과 설정을 비웁니다. 복구 사본과 구버전 저장소는 남아 있으므로 완전 삭제 기능은 아닙니다.', confirmText: '활성 데이터 초기화', danger: true })) {
                     await wipeAll();
                     setProxyToken('');
                     draw();
                 }
-            } }, '기록·설정 초기화 · 복구 사본 보존'));
+            } }, '기록·설정 초기화 · 복구 사본 보존') : null);
     }
     draw();
     signal?.addEventListener('abort', () => { closed = true; checkController?.abort(); }, { once: true });

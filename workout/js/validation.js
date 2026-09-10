@@ -238,7 +238,20 @@ export function validateSession(raw, { legacy = false, draft = false } = {}) {
         s.status = s.endedAt ? 'legacy' : 'partial';
     return s;
 }
-export function validateWeeklyPlan(raw, key) {
+function validatePlanSets(rawBlock, { legacy = false } = {}) {
+    if (Array.isArray(rawBlock.sets))
+        return array(rawBlock.sets, '계획 세트', 50).map(st => validateSet(st, false, legacy));
+    // The first workout release stored rule, AI, and user-edited plans as a
+    // block-level set count plus shared reps/weight. Only that documented
+    // legacy shape is expanded; unknown/corrupt shapes still fail closed.
+    if (!legacy || typeof rawBlock.sets !== 'number')
+        return array(rawBlock.sets, '계획 세트', 50);
+    const count = finite(rawBlock.sets, 1, 50, '계획 세트 수', { integer: true });
+    const reps = finite(rawBlock.reps, 1, 600, '계획 목표 횟수/초', { integer: true });
+    const weight = finite(rawBlock.weight, 0, 1500, '계획 세트 무게', { nullable: true });
+    return Array.from({ length: count }, () => validateSet({ reps, weight }, false, true));
+}
+export function validateWeeklyPlan(raw, key, { legacy = false } = {}) {
     const p = clone(object(raw, '주간 계획'));
     parseYmd(p.weekStart);
     if (key && p.weekStart !== key)
@@ -257,7 +270,12 @@ export function validateWeeklyPlan(raw, key) {
             b.rest = finite(b.rest ?? 90, 0, 900, '휴식');
             b.tempo = finite(b.tempo === 0 ? 3 : b.tempo ?? 3, 0.2, 12, '카운트 간격');
             validateExecutionFields(b);
-            b.sets = array(b.sets, '계획 세트', 50).map(st => validateSet(st));
+            const numericLegacySets = legacy && typeof rawBlock.sets === 'number';
+            b.sets = validatePlanSets(rawBlock, { legacy });
+            if (numericLegacySets) {
+                delete b.reps;
+                delete b.weight;
+            }
             if (!b.sets.length)
                 throw new Error('운동마다 세트가 한 개 이상 필요합니다.');
             return b;
@@ -277,7 +295,7 @@ export function validateData(raw, { legacy = false } = {}) {
     unique(data.sessions, '기록');
     data.sessions.sort((a, b) => a.startedAt - b.startedAt);
     object(data.plans ?? {}, '계획');
-    data.plans = Object.fromEntries(Object.entries(data.plans || {}).map(([key, p]) => [key, validateWeeklyPlan(p, key)]));
+    data.plans = Object.fromEntries(Object.entries(data.plans || {}).map(([key, p]) => [key, validateWeeklyPlan(p, key, { legacy })]));
     data.customExercises = array(data.customExercises ?? [], '사용자 종목', 400).map(rawEx => {
         const e = clone(object(rawEx, '사용자 종목'));
         e.id = text(e.id, 'ID', 160);
@@ -300,6 +318,29 @@ export function validateData(raw, { legacy = false } = {}) {
     if (data.draft)
         data.draft = validateDraft(data.draft, { legacy });
     return data;
+}
+/**
+ * Read-only recovery view for a legacy store with one or more invalid plans.
+ * Records, settings, custom exercises, and plans that validate independently
+ * remain visible; invalid raw plans are never guessed at or written back.
+ */
+export function validateLegacyDataForRecovery(raw) {
+    assertSafeTree(raw);
+    object(raw, '백업');
+    const rawPlans = object(raw.plans ?? {}, '계획');
+    const data = validateData({ ...clone(raw), plans: {} }, { legacy: true });
+    const errors = [];
+    for (const [key, plan] of Object.entries(rawPlans)) {
+        try {
+            data.plans[key] = validateWeeklyPlan(plan, key, { legacy: true });
+        }
+        catch (error) {
+            errors.push({ weekStart: key, message: error.message });
+        }
+    }
+    if (errors.length)
+        data.meta.legacyPlanRecovery = { invalidWeeks: errors };
+    return { data, errors };
 }
 export function parseBackup(input) {
     const raw = typeof input === 'string' ? JSON.parse(input) : input;

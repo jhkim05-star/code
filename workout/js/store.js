@@ -1,7 +1,7 @@
 /** Backward-compatible storage with a single, revisioned v2 snapshot and explicit errors. */
 import { DEFAULT_SETTINGS, emptyData } from './config.js';
 import { clone, uid, finite, LB_PER_KG } from './util.js';
-import { validateData, validateSettings, validateSession, validateWeeklyPlan, validateDraft, parseBackup } from './validation.js';
+import { validateData, validateSettings, validateSession, validateWeeklyPlan, validateDraft, validateLegacyDataForRecovery, parseBackup } from './validation.js';
 import { SnapshotWriter } from './persistence.js';
 export { DEFAULT_SETTINGS };
 const SNAPSHOT_KEY = 'wl:snapshot.v2';
@@ -236,6 +236,7 @@ export async function initStore() {
         local: { read: async () => localGet(SNAPSHOT_KEY), writeSync: value => localSet(SNAPSHOT_KEY, value) },
         database: { read: () => idbGet(DB_SNAPSHOT), write: idbWrite },
     });
+    let validatedLegacy = null;
     try {
         const latest = await writer.load();
         if (writer.readErrors.length)
@@ -260,20 +261,63 @@ export async function initStore() {
             }
             if (localRaw(SNAPSHOT_KEY) != null || await idbGet(DB_SNAPSHOT))
                 throw new Error('저장된 스냅샷을 해석하지 못했습니다. 원본은 그대로 보존됩니다.');
-            mem = found ? validateData({ ...emptyData(), ...Object.fromEntries(Object.entries(legacy).filter(([, v]) => v !== undefined)) }, { legacy: true }) : emptyData();
+            if (found) {
+                const candidate = { ...emptyData(), ...Object.fromEntries(Object.entries(legacy).filter(([, v]) => v !== undefined)) };
+                try {
+                    mem = validateData(candidate, { legacy: true });
+                    validatedLegacy = mem;
+                }
+                catch (error) {
+                    let recovery;
+                    try {
+                        recovery = validateLegacyDataForRecovery(candidate);
+                    }
+                    catch {
+                        throw error;
+                    }
+                    if (!recovery.errors.length)
+                        throw error;
+                    mem = recovery.data;
+                    validatedLegacy = mem;
+                    const weeks = recovery.errors.map(x => x.weekStart).join(', ');
+                    status = {
+                        ...status,
+                        state: 'error',
+                        readOnly: true,
+                        dirty: false,
+                        message: `자동 초기화하지 않았습니다. ${error.message} 기존 기록·설정과 검증된 계획은 읽기 전용으로 표시합니다. 문제 계획: ${weeks}. 구버전 원본은 그대로 보존되며 복구 원본 내보내기로 저장할 수 있습니다.`,
+                    };
+                }
+            }
+            else
+                mem = emptyData();
             if (conflict) {
                 mem.meta.legacyConflict = { local: localLegacy, database: dbLegacy };
                 status = { ...status, readOnly: true, state: 'conflict', message: '이전 IndexedDB와 localStorage가 다릅니다. 설정에서 복구 원본을 선택해 주세요.' };
             }
+            else if (found && !status.readOnly) {
+                // Commit the canonical v2 snapshot only after every legacy
+                // collection and every stored week validates successfully.
+                const result = await writer.save(mem);
+                status = {
+                    ...status,
+                    state: 'saved',
+                    dirty: false,
+                    revision: result.revision,
+                    message: result.database ? '기존 자료를 v2로 변환해 기기에 저장함' : '기존 자료를 v2로 변환함 · localStorage만 사용 중',
+                };
+            }
         }
-        if (!ownsLock)
+        if (!status.readOnly && !ownsLock)
             status = { ...status, readOnly: true, state: 'readonly', message: '다른 창에서 사용 중입니다. 이 창은 읽기 전용이에요.' };
-        else if (!status.readOnly)
+        else if (!status.readOnly && status.state !== 'saved')
             status = { ...status, state: 'saved', message: '기기 저장소 준비됨', revision: writer.revision };
     }
     catch (err) {
-        mem = emptyData();
-        status = { ...status, state: 'error', readOnly: true, message: `자동 초기화하지 않았습니다. ${err.message}` };
+        // A validated legacy model remains useful if the new snapshot write
+        // itself fails. Its source copies are never removed or replaced.
+        mem = validatedLegacy || emptyData();
+        status = { ...status, state: 'error', readOnly: true, dirty: false, message: `자동 초기화하지 않았습니다. ${err.message} 구버전 원본은 그대로 보존되며 복구 원본 내보내기로 저장할 수 있습니다.` };
     }
     ready = true;
     notify();
