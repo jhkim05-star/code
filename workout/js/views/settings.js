@@ -398,7 +398,7 @@ async function refreshApp() {
     const reg = await navigator.serviceWorker?.getRegistration();
     await reg?.update();
     const keys = await caches.keys();
-    await Promise.all(keys.map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k.startsWith('workout-log-')).map(k => caches.delete(k)));
   } catch { /* 캐시를 못 비워도 새로고침은 합니다 */ }
   location.reload();
 }
