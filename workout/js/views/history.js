@@ -1,308 +1,140 @@
-/** 운동 기록 — 지난 세션 목록과 상세 */
-
-import { h, mount, pageHead, empty, modal, confirmSheet, toast, field } from '../ui.js';
-import { sessions, getSession, saveSession, deleteSession, settings } from '../store.js';
+/** Actual records: manual entry never promotes a recommended weight into a completed set. */
+import { h, mount, pageHead, empty, modal, confirmSheet, toast, field, weightInput, numberInput } from '../ui.js';
+import { sessions, getSession, saveSession, deleteSession, settings, flush, customExercises } from '../store.js';
 import { sessionVolume, sessionSetCount } from '../runner.js';
-import { recommendWeight } from '../planner.js';
 import { pickExercise } from './exercisePicker.js';
-import { fmtDate, fmtDateShort, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy, uid } from '../util.js';
+import { fmtDate, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy, uid, finite, readWeightInput, fmtWeight } from '../util.js';
 import { go } from '../app.js';
-
-const now = new Date();
-let calYear = now.getFullYear();
-let calMonth = now.getMonth();   // 0-based
-
-export async function renderHistory(root) {
-  const all = [...sessions()].reverse();   // 최신이 위로
-
-  if (!all.length) {
-    mount(root,
-      pageHead('기록', '아직 비어 있습니다'),
-      empty('첫 운동을 마치면 여기에 쌓입니다.'),
-      h('button.btn-block.btn-primary', { onclick: () => addManualRecord() }, '＋ 지난 운동 기록 추가'),
-    );
-    return;
-  }
-
-  draw(root, all);
+let calendarDate = new Date();
+export function renderHistory(root) { draw(root); }
+function draw(root) {
+    const all = [...sessions()].sort((a, b) => b.startedAt - a.startedAt), byMonth = groupBy(all, s => s.date.slice(0, 7));
+    mount(root, pageHead('기록', `${all.length}회`, h('button.btn-sm', { onclick: () => addManualRecord() }, '기록 추가')), !all.length ? empty('첫 운동을 기록하면 여기에 쌓여요.') : calendarCard(root, all), ...[...byMonth].map(([month, list]) => h('.card', null, h('.card-head', null, h('h3', null, month.replace('-', '년 ') + '월'), h('small', null, `${list.length}회`)), ...list.map(s => sessionRow(s)))));
 }
-
-function draw(root, all) {
-  const byMonth = groupBy(all, s => s.date.slice(0, 7));
-
-  mount(root,
-    pageHead('기록', `${all.length}회`,
-      h('button.btn-sm', { onclick: () => addManualRecord() }, '＋ 기록 추가')),
-    calendarCard(root, all),
-    ...[...byMonth.entries()].map(([month, list]) => {
-      const [y, m] = month.split('-');
-      return h('.card', null,
-        h('.card-head', null,
-          h('.eyebrow', null, `${y}년 ${Number(m)}월`),
-          h('.num', { style: { fontSize: '12px', color: 'var(--ink-3)' } },
-            `${list.length}회 · ${comma(list.reduce((a, s) => a + sessionVolume(s), 0))}${settings().unit}`),
-        ),
-        ...list.map(s => sessionRow(s)),
-      );
-    }),
-  );
-}
-
-// ── 달력 ─────────────────────────────────────────────────────
 function calendarCard(root, all) {
-  const byDate = groupBy(all, s => s.date);
-  const today = todayYmd();
-
-  const first = new Date(calYear, calMonth, 1);
-  const startWeekday = first.getDay();
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-
-  const cells = [];
-  for (let i = 0; i < startWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-  const grid = h('.cal-grid', null,
-    ...DOW_KO.map((w, i) => h('.cal-dow', { style: i === 0 ? { color: 'var(--accent)' } : null }, w)),
-    ...cells.map((d) => {
-      if (!d) return h('.cal-cell.blank');   // 1일 앞의 빈 칸 (자리만 차지)
-      const date = ymd(new Date(calYear, calMonth, d));
-      const list = byDate.get(date) || [];
-      const isToday = date === today;
-      const isSun = new Date(calYear, calMonth, d).getDay() === 0;
-      return h(`.cal-cell${list.length ? '.has' : ''}${isToday ? '.today' : ''}`, {
-        onclick: () => {
-          if (!list.length) return;
-          if (list.length === 1) go('/session/' + list[0].id);
-          else openDayPicker(date, list);
-        },
-      },
-        h('span', { style: isSun ? { color: 'var(--accent)' } : null }, String(d)),
-        list.length ? h('i.cal-dot') : null,
-      );
-    }),
-  );
-
-  return h('.card', null,
-    h('.card-head', null,
-      h('button.btn-sm', { onclick: () => { shiftMonth(-1); draw(root, all); } }, '‹'),
-      h('h3', null, `${calYear}년 ${calMonth + 1}월`),
-      h('button.btn-sm', { onclick: () => { shiftMonth(1); draw(root, all); } }, '›'),
-    ),
-    grid,
-  );
+    const y = calendarDate.getFullYear(), m = calendarDate.getMonth(), byDate = groupBy(all, s => s.date), cells = [];
+    for (let i = 0; i < new Date(y, m, 1).getDay(); i++)
+        cells.push(h('span', { 'aria-hidden': 'true' }));
+    for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
+        const date = ymd(new Date(y, m, d)), list = byDate.get(date) || [];
+        cells.push(h('button.cal-cell', { class: [list.length ? 'has' : '', date === todayYmd() ? 'today' : ''].join(' '), disabled: !list.length, 'aria-label': `${fmtDate(date)} · 운동 기록 ${list.length}개`, onclick: () => {
+                if (list.length === 1) {
+                    go('/session/' + list[0].id);
+                    return;
+                }
+                modal(close => h('div', null, h('h3', null, fmtDate(date)), h('ul.picker', null, ...list.map(s => h('li', null, h('button', { onclick: () => { close(); go('/session/' + s.id); } }, s.title, h('small', null, `${sessionSetCount(s)}본세트`)))))));
+            } }, String(d), list.length ? h('span.cal-dot', { 'aria-hidden': 'true' }) : null));
+    }
+    return h('.card', null, h('.card-head', null, h('button.btn-sm', { 'aria-label': '지난달', onclick: () => { calendarDate = new Date(y, m - 1, 1); draw(root); } }, '‹'), h('h3', null, `${y}년 ${m + 1}월`), h('button.btn-sm', { 'aria-label': '다음달', onclick: () => { calendarDate = new Date(y, m + 1, 1); draw(root); } }, '›')), h('.cal-grid', null, ...DOW_KO.map(w => h('div.cal-dow', null, w)), ...cells));
 }
-
-function shiftMonth(delta) {
-  calMonth += delta;
-  if (calMonth < 0) { calMonth = 11; calYear -= 1; }
-  if (calMonth > 11) { calMonth = 0; calYear += 1; }
-}
-
-/**
- * 앱으로 실행하지 않은 운동도 기록으로 남길 수 있게 합니다 — 헬스장에서 종이에
- * 적었거나 나중에 생각난 지난 운동, 또는 계획/실행 없이 쉬는 날 갑자기 한
- * 운동도 날짜만 골라서 그대로 넣을 수 있습니다. 저장 후엔 세트별 무게·횟수를
- * 바로 다듬을 수 있도록 기록 상세(후편집) 화면으로 넘어갑니다.
- */
+function sessionRow(s) { return h('button.hrow', { onclick: () => go('/session/' + s.id) }, h('.hd', null, s.date.slice(5).replace('-', '/')), h('.hb', null, h('.ht', null, s.title), h('.hm', null, `${sessionSetCount(s)}본세트 · ${s.status === 'completed' ? '전체 실행 완료' : s.status === 'manual' ? '직접 기록' : s.status === 'legacy' ? '이전 기록' : '일부 진행'}`), h('.hm', null, s.entries.filter(e => e.sets.some(st => st.done)).map(e => e.name).slice(0, 4).join(' · ')))); }
 function addManualRecord() {
-  const chosen = [];   // { ex, sets, reps }
-  const dateInput = h('input', { type: 'date', value: todayYmd() });
-  const titleInput = h('input', { type: 'text', placeholder: '예: 가슴 · 삼두 (안 적으면 종목명으로)' });
-  const list = h('div');
-
-  const paintList = () => {
-    mount(list, chosen.length
-      ? chosen.map((c, i) => h('.switch', { style: { alignItems: 'center' } },
-          h('div', null,
-            h('.lbl', null, c.ex.name),
-            h('.sub', null, `${c.sets}세트 × ${c.reps}회`)),
-          h('button.btn-sm.btn-ghost', { onclick: () => { chosen.splice(i, 1); paintList(); } }, '✕'),
-        ))
-      : h('.hint', null, '아직 추가한 종목이 없습니다.'));
-  };
-  paintList();
-
-  modal((close) => h('div', null,
-    h('h3', null, '지난 운동 기록 추가'),
-    h('.hint', { style: { marginTop: '-10px', marginBottom: '14px' } },
-      '앱으로 실행하지 않은 운동도 날짜를 골라 그대로 기록해 둘 수 있습니다. 계획이 없던 날도 상관없습니다.'),
-    field('날짜', dateInput),
-    field('제목 (선택)', titleInput),
-    h('.lbl', { style: { fontSize: '12px', fontWeight: '700', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-3)', marginTop: '6px', marginBottom: '8px' } }, '종목'),
-    list,
-    h('button.btn-sm', {
-      style: { marginTop: '8px' },
-      onclick: () => pickExercise(null, (ex) => {
-        chosen.push({ ex, sets: ex.sets || 3, reps: ex.reps || 10 });
-        paintList();
-      }),
-    }, '＋ 종목 추가'),
-    h('button.btn-block.btn-primary', {
-      style: { marginTop: '16px' },
-      onclick: () => {
-        if (!dateInput.value) return toast('날짜를 골라 주세요');
-        if (!chosen.length) return toast('종목을 하나 이상 추가해 주세요');
-
-        const date = dateInput.value;
-        const startedAt = new Date(`${date}T12:00:00`).getTime();
-        const session = {
-          id: uid('ses'),
-          date,
-          title: titleInput.value.trim() || chosen.map(c => c.ex.name).slice(0, 2).join(' · '),
-          startedAt,
-          endedAt: startedAt + 60000,
-          comment: '',
-          entries: chosen.map((c) => {
-            const suggestion = recommendWeight(c.ex, { sessions: sessions() });
-            return {
-              exerciseId: c.ex.id, name: c.ex.name, group: c.ex.group, note: '',
-              sets: Array.from({ length: c.sets }, () => ({
-                targetReps: c.reps, reps: c.reps, weight: suggestion?.weight ?? null,
-                done: true, at: startedAt, tempo: c.ex.tempo ?? 3,
-              })),
-            };
-          }),
-        };
-        saveSession(session);
-        close();
-        toast('기록을 추가했습니다. 세트별 무게·횟수를 다듬어 보세요');
-        go('/session/' + session.id);
-      },
-    }, '기록 만들기'),
-  ));
+    const chosen = [], list = h('div'), dateInput = h('input', { type: 'date', value: todayYmd(), max: todayYmd() }), titleInput = h('input', { type: 'text', maxLength: 300, placeholder: '비워두면 종목 이름 사용' });
+    const paint = () => mount(list, ...chosen.map((row, i) => h('.card', null, h('.card-head', null, h('h3', null, row.ex.name), h('button.btn-sm', { 'aria-label': `${row.ex.name} 제거`, onclick: () => { chosen.splice(i, 1); paint(); } }, '삭제')), row.fields)));
+    modal(close => h('div', null, h('h3', null, '지난 운동 직접 기록'), h('p.hint', null, '실제로 한 횟수와 중량을 입력해 주세요. 추천값은 자동으로 채우지 않습니다. 시간은 모르면 미기록으로 남겨요.'), field('운동 날짜', dateInput), field('기록 제목', titleInput), list, h('button.btn-block', { onclick: () => pickExercise(null, ex => {
+            const setCount = numberInput(3, { min: 1, max: 20, label: '실제로 한 세트 수' }), reps = numberInput(null, { min: 0, max: 600, label: '각 세트의 실제 횟수/초' }), weight = weightInput(null, settings().unit);
+            const row = { ex, setCount, reps, weight };
+            row.fields = h('div', null, field('실제로 한 세트 수', setCount), field(ex.measure === 'duration' ? '각 세트 실제 유지(초)' : '각 세트 실제 횟수', reps), field(`실제 중량 (${settings().unit}) · 맨몸은 비워두기`, weight), h('p.hint', null, '세트마다 값이 달랐다면 저장 후 기록 상세에서 각각 고쳐 주세요.'));
+            chosen.push(row);
+            paint();
+        }, { equipmentOnly: false, includeAvoided: true }) }, '종목 추가'), h('button.btn-block.btn-primary', { style: { marginTop: '12px' }, onclick: async () => {
+            parseYmd(dateInput.value);
+            if (dateInput.value > todayYmd())
+                throw new Error('실제 기록에는 미래 날짜를 넣을 수 없어요.');
+            if (!chosen.length)
+                throw new Error('종목을 하나 이상 추가해 주세요.');
+            const date = dateInput.value, startedAt = new Date(date + 'T12:00:00').getTime();
+            const entries = chosen.map(row => {
+                const count = finite(row.setCount.value, 1, 20, '실제 세트 수', { integer: true }), reps = finite(row.reps.value, 0, 600, '실제 횟수/초', { integer: true }), weight = readWeightInput(row.weight, null, settings().unit);
+                return { id: uid('entry'), exerciseId: row.ex.id, name: row.ex.name, group: row.ex.group, equip: row.ex.equip, measure: row.ex.measure, loadBasis: row.ex.loadBasis,
+                    sets: Array.from({ length: count }, () => ({ id: uid('set'), targetReps: Math.max(1, reps), targetKnown: false, reps, weight, done: true, confirmed: true, rir: null, warmup: false, at: startedAt, tempo: row.ex.tempo, unit: 'kg' })) };
+            });
+            const record = { id: uid('ses'), date, title: titleInput.value.trim() || chosen.map(x => x.ex.name).slice(0, 2).join(' · '), startedAt, endedAt: null, comment: '', status: 'manual', entries };
+            saveSession(record);
+            await flush();
+            close();
+            go('/session/' + record.id);
+        } }, '실제 입력값으로 기록 저장')));
 }
-
-function openDayPicker(date, list) {
-  modal(() => h('div', null,
-    h('h3', null, fmtDate(date)),
-    h('ul.picker', null, ...list.map(s => h('li', { onclick: () => go('/session/' + s.id) },
-      h('span', null, s.title || '운동'),
-      h('small', null, `${sessionSetCount(s)}세트`),
-    ))),
-  ));
-}
-
-function sessionRow(s) {
-  const d = parseYmd(s.date);
-  const mins = Math.round(((s.endedAt || s.startedAt) - s.startedAt) / 60000);
-  const vol = sessionVolume(s);
-  const names = s.entries.filter(e => e.sets.some(x => x.done)).map(e => e.name);
-
-  return h('.hrow', { onclick: () => go('/session/' + s.id) },
-    h('.hd', null, `${d.getMonth() + 1}/${d.getDate()}`, h('div', { style: { fontSize: '10px' } }, DOW_KO[d.getDay()])),
-    h('.hb', null,
-      h('.ht', null, s.title || '운동'),
-      h('.hm', null,
-        `${sessionSetCount(s)}세트`,
-        mins ? ` · ${mins}분` : '',
-        vol ? ` · ${comma(vol)}${settings().unit}` : '',
-      ),
-      names.length ? h('.hm', { style: { marginTop: '3px' } }, names.slice(0, 4).join(', ') + (names.length > 4 ? ` 외 ${names.length - 4}` : '')) : null,
-    ),
-  );
-}
-
-export async function renderSessionDetail(root, [id]) {
-  const s = getSession(id);
-  if (!s) {
-    mount(root, pageHead('기록', ''), empty('그 기록을 찾을 수 없습니다.'));
-    return;
-  }
-  drawSession(root, s);
-}
-
-/** 기록 후편집 — 무게·횟수를 잘못 눌렀거나 깜빡한 세트를 지난 기록에서 바로 고칩니다 */
-function drawSession(root, s) {
-  const unit = settings().unit;
-  const mins = Math.round(((s.endedAt || s.startedAt) - s.startedAt) / 60000);
-  const redraw = () => drawSession(root, s);
-  const persist = () => { saveSession(s); redraw(); };
-
-  mount(root,
-    pageHead(s.title || '운동', fmtDate(s.date),
-      h('button.btn-sm', { onclick: () => history.back() }, '‹ 뒤로')),
-
-    h('.kpis', null,
-      h('.kpi', null, h('.v', null, String(mins)), h('.k', null, '분')),
-      h('.kpi', null, h('.v', null, String(sessionSetCount(s))), h('.k', null, '세트')),
-      h('.kpi', null, h('.v', null, comma(sessionVolume(s))), h('.k', null, `볼륨 ${unit}`)),
-    ),
-
-    h('.card', null,
-      h('.eyebrow', null, '메모'),
-      h('textarea', {
-        style: { marginTop: '8px' },
-        value: s.comment || '',
-        placeholder: '컨디션, 특이사항 등을 적어 두세요',
-        rows: 2,
-        onchange: (e) => { s.comment = e.target.value; saveSession(s); },
-      }),
-    ),
-
-    ...s.entries.map((e, ei) => {
-      const done = e.sets.filter(x => x.done);
-      if (!done.length) return null;
-      return h('.card', null,
-        h('.card-head', null,
-          h('h3', null, e.name),
-          h('.num', { style: { fontSize: '12px', color: 'var(--ink-3)' } },
-            `${comma(done.reduce((a, x) => a + (x.weight || 0) * (x.reps || 0), 0))}${unit}`),
-        ),
-        ...done.map((x) => {
-          const i = e.sets.indexOf(x);   // e.sets 안 실제 자리 — 지울 때 여기를 씁니다
-          return h('.switch', { style: { alignItems: 'center', padding: '6px 0' } },
-            h('span.num', { style: { flex: '0 0 24px', color: 'var(--ink-3)', fontSize: '12px' } },
-              `${done.indexOf(x) + 1}`),
-            h('div', { style: { flex: 1, display: 'flex', gap: '8px' } },
-              h('input', {
-                type: 'number', inputmode: 'decimal', step: '0.5', value: x.weight ?? '',
-                placeholder: '무게', style: { flex: 1 },
-                onchange: (ev) => { x.weight = ev.target.value === '' ? null : Number(ev.target.value); persist(); },
-              }),
-              h('input', {
-                type: 'number', inputmode: 'numeric', value: x.reps ?? '',
-                placeholder: '횟수', style: { flex: 1 },
-                onchange: (ev) => { x.reps = ev.target.value === '' ? null : Number(ev.target.value); persist(); },
-              }),
-            ),
-            h('button.btn-sm.btn-ghost', {
-              onclick: () => { e.sets.splice(i, 1); persist(); },
-            }, '✕'),
-          );
-        }),
-        h('.btn-row', { style: { marginTop: '8px' } },
-          h('button.btn-sm', {
-            onclick: () => {
-              const last = done.at(-1);
-              e.sets.push({
-                weight: last?.weight ?? null, reps: last?.reps ?? 8,
-                targetReps: last?.targetReps ?? last?.reps ?? 8,
-                done: true, at: Date.now(), tempo: last?.tempo,
-              });
-              persist();
-            },
-          }, '＋ 세트 추가'),
-          h('button.btn-sm.btn-danger', {
-            onclick: async () => {
-              if (await confirmSheet({ title: `${e.name} 기록을 지울까요?`, confirmText: '지우기', danger: true })) {
-                s.entries.splice(ei, 1);
-                persist();
-              }
-            },
-          }, '이 종목 기록 삭제'),
-        ),
-      );
-    }),
-
-    h('button.btn-block.btn-danger', {
-      style: { marginTop: '10px' },
-      onclick: async () => {
-        if (await confirmSheet({ title: '이 기록을 지울까요?', confirmText: '지우기', danger: true })) {
-          deleteSession(s.id);
-          toast('기록을 지웠습니다');
-          go('/history');
+export function renderSessionDetail(root, [id]) {
+    let undo = null;
+    const draw = () => {
+        const record = getSession(id);
+        if (!record) {
+            mount(root, pageHead('기록'), empty('그 기록을 찾을 수 없어요.'));
+            return;
         }
-      },
-    }, '이 기록 전체 지우기'),
-  );
+        const s = structuredClone(record), unit = settings().unit;
+        async function commit(next) { undo = structuredClone(getSession(id)); next.updatedAt = Date.now(); saveSession(next); await flush(); draw(); }
+        const unconfirmed = s.entries.flatMap(e => e.sets).filter(st => st.done && !st.confirmed).length;
+        mount(root, pageHead(s.title, fmtDate(s.date), h('button.btn-sm', { onclick: () => go('/history') }, '목록')), h('.kpis', null, kpi(String(sessionSetCount(s)), '본세트'), kpi(s.endedAt ? String(Math.round((s.endedAt - s.startedAt) / 60000)) : '—', '분'), kpi(comma(sessionVolume(s)), '기록 볼륨')), h('p.hint', null, '볼륨은 입력한 표기 중량 × 횟수의 참고값이에요. 웜업·시간 운동은 제외하고, 맨몸 부하나 양손 합계는 임의로 추정하지 않아요.'), undo ? h('button.btn-block', { onclick: async () => { const previous = undo; undo = null; saveSession(previous); await flush(); draw(); } }, '방금 수정 되돌리기') : null, unconfirmed ? h('.card', null, h('p.hint.warning', null, `${unconfirmed}세트가 이전 버전 또는 미확인 기록이에요. 아래 실제 수치를 검토한 뒤 확인해 주세요. 미확인 값은 증량 근거로 사용하지 않습니다.`), h('button', { onclick: async () => {
+                if (!await confirmSheet({ title: '표시된 실제 수행값이 맞나요?', body: '맞는 값만 확인하세요. 알 수 없는 값은 먼저 수정해 주세요.', confirmText: '검토한 실제 기록 확인' }))
+                    return;
+                s.entries.forEach(e => e.sets.forEach(st => {
+                    if (st.done && st.reps != null)
+                        st.confirmed = true;
+                }));
+                await commit(s);
+            } }, '검토한 실제 기록 확인')) : null, h('.card', null, field('운동 메모', h('textarea', { value: s.comment || '', maxLength: 20000, onchange: e => { s.comment = e.target.value; return commit(s); } }))), ...s.entries.map((entry, ei) => h('.card', null, h('.card-head', null, h('h3', null, entry.name), h('small', null, `${entry.sets.filter(st => st.done && !st.warmup).length}본세트`)), ...entry.sets.map((st, si) => {
+            const weight = weightInput(st.weight, unit), reps = numberInput(st.reps, { min: 0, max: 600, label: `${si + 1}세트 실제 횟수/초` });
+            weight.addEventListener('change', async () => {
+                try {
+                    st.weight = readWeightInput(weight, st.weight, unit);
+                    st.confirmed = false;
+                    await commit(s);
+                }
+                catch (e) {
+                    toast(e.message);
+                }
+            });
+            reps.addEventListener('change', async () => {
+                try {
+                    st.reps = finite(reps.value, 0, 600, '실제 수행', { nullable: true, integer: true });
+                    st.confirmed = false;
+                    await commit(s);
+                }
+                catch (e) {
+                    toast(e.message);
+                }
+            });
+            const rir = h('select', { 'aria-label': `${si + 1}세트 RIR`, onchange: e => { st.rir = e.target.value === '' ? null : Number(e.target.value); return commit(s); } }, h('option', { value: '', selected: st.rir == null }, 'RIR 미기록'), ...[0, 1, 2, 3, 4, 5].map(n => h('option', { value: n, selected: st.rir === n }, `RIR ${n}`)));
+            return h('div', null, h('.set-row', null, h('span', null, st.warmup ? '웜업' : `본 ${entry.sets.slice(0, si + 1).filter(x => !x.warmup).length}`), weight, reps, h('button.btn-sm', { 'aria-label': `${si + 1}세트 삭제`, onclick: async () => {
+                    if (!await confirmSheet({ title: '이 세트를 기록에서 지울까요?', confirmText: '삭제', danger: true }))
+                        return;
+                    entry.sets.splice(si, 1);
+                    await commit(s);
+                } }, '✕')), h('.row', null, h('small.grow', null, st.done ? (st.confirmed ? '실제 기록 확인됨' : '실제 기록 확인 필요') : '미완료·건너뜀'), rir, h('button.btn-sm', { onclick: async () => {
+                    if (st.reps == null)
+                        throw new Error('실제 횟수나 시간을 먼저 입력해 주세요.');
+                    st.done = true;
+                    st.skipped = false;
+                    st.confirmed = true;
+                    await commit(s);
+                } }, '확인')));
+        }), h('.btn-row', null, h('button.btn-sm', { onclick: () => manualSetSheet(entry, s, commit) }, '실제 세트 추가'), h('button.btn-sm.btn-danger', { onclick: async () => {
+                if (await confirmSheet({ title: `${entry.name} 기록을 삭제할까요?`, confirmText: '삭제', danger: true })) {
+                    s.entries.splice(ei, 1);
+                    await commit(s);
+                }
+            } }, '종목 기록 삭제')))), h('button.btn-block.btn-danger', { onclick: async () => {
+                if (await confirmSheet({ title: '이 운동 기록을 삭제할까요?', confirmText: '전체 기록 삭제', danger: true })) {
+                    deleteSession(id);
+                    await flush();
+                    go('/history');
+                }
+            } }, '이 운동 기록 전체 삭제'));
+    };
+    draw();
 }
+function manualSetSheet(entry, session, commit) {
+    modal(close => {
+        const weight = weightInput(null, settings().unit), reps = numberInput(null, { min: 0, max: 600, label: '실제 수행' });
+        return h('div', null, h('h3', null, '실제로 한 세트 추가'), field(`실제 중량 (${settings().unit})`, weight), field(entry.measure === 'duration' ? '실제 유지(초)' : '실제 횟수', reps), h('button.btn-block.btn-primary', { onclick: async () => {
+                const count = finite(reps.value, 0, 600, '실제 수행', { integer: true });
+                entry.sets.push({ id: uid('set'), targetReps: Math.max(1, count), targetKnown: false, reps: count, weight: readWeightInput(weight, null, settings().unit), rir: null, done: true, confirmed: true, warmup: false, at: session.startedAt });
+                await commit(session);
+                close();
+            } }, '실제 세트로 저장'));
+    });
+}
+const kpi = (v, k) => h('.kpi', null, h('.v', null, v), h('.k', null, k));

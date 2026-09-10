@@ -1,0 +1,23 @@
+name = "workout-ai-proxy"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://jhkim05-star.github.io"
+OPENAI_MODEL = "gpt-5.4-mini"
+CLAUDE_MODEL = "claude-sonnet-5"
+
+[[ratelimits]]
+name = "AI_RATE_LIMITER"
+namespace_id = "1003"
+[ratelimits.simple]
+limit = 3
+period = 60
+
+[observability]
+enabled = false
+
+# Set credentials as Secrets, never in this file:
+# npx wrangler secret put OPENAI_API_KEY
+# npx wrangler secret put ANTHROPIC_API_KEY   (only when using Claude)
+# npx wrangler secret put CLIENT_TOKEN       (random token with at least 32 characters)
