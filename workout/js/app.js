@@ -1,5 +1,5 @@
 /** Hash navigation with route-scoped cleanup and a persistent save-status surface. */
-import { initStore, subscribe, storageStatus, retrySave, exportAll } from './store.js';
+import { initStore, subscribe, storageStatus, retrySave, exportAll, exportRecoveryCopies } from './store.js';
 import { initVoice, unlockAudio, stopSpeaking } from './voice.js';
 import { h, mount, closeAllModals } from './ui.js';
 import { download } from './util.js';
@@ -60,7 +60,10 @@ async function route() {
 function paintStorage() {
     const s = storageStatus(), el = document.getElementById('storageStatus');
     el.dataset.state = s.state;
-    mount(el, s.message, s.dirty ? h('button', { onclick: () => retrySave() }, '저장 재시도') : null, (s.dirty || s.readOnly) ? h('button', { onclick: () => download('운동일지-복구용.json', JSON.stringify(exportAll(), null, 2)) }, '백업 내보내기') : null);
+    const backup = s.readOnly
+        ? h('button', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구 원본 내보내기 · 민감 정보 포함')
+        : s.dirty ? h('button', { onclick: () => download('운동일지-복구용.json', JSON.stringify(exportAll(), null, 2)) }, '백업 내보내기') : null;
+    mount(el, s.message, s.dirty && !s.readOnly ? h('button', { onclick: () => retrySave() }, '저장 재시도') : null, backup);
 }
 async function boot() {
     await initStore();
