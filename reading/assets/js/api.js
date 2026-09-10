@@ -22,6 +22,22 @@ export function fromKakao(d){
   return {title:plain(d?.title),authors:array(d?.authors).filter(x=>typeof x==='string'),translator:array(d?.translators).filter(x=>typeof x==='string').join(', '),publisher:plain(d?.publisher),publishedDate:txt(d?.datetime).slice(0,10),isbn:ids.find(x=>/^\d{13}$/.test(x))||ids[0]||'',pageCount:null,genre:'',origin:'',language:'',coverUrl:image(d?.thumbnail),description:plain(d?.contents),source:'카카오'};
 }
 export function fromOpenLibrary(d){return {title:plain(d?.title),authors:array(d?.author_name).filter(x=>typeof x==='string'),publisher:txt(array(d?.publisher)[0]),publishedDate:d?.first_publish_year?String(d.first_publish_year):'',isbn:txt(array(d?.isbn)[0]),pageCount:Number.isInteger(d?.number_of_pages_median)?d.number_of_pages_median:null,genre:genre(d?.subject),language:'',origin:'',coverUrl:Number.isInteger(d?.cover_i)?`https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg`:'',source:'Open Library'};}
+export function parseAladinAuthors(raw){
+  const authors=[],translators=[];
+  for(const part of plain(raw).split(',')){
+    const value=part.trim();if(!value)continue;
+    const match=/^(.*?)\s*\(([^)]*)\)\s*$/.exec(value),name=plain(match?.[1]??value),role=plain(match?.[2]??'');
+    if(!name)continue;
+    if(/\uc62e\uae34\uc774|\ubc88\uc5ed|\uc5ed\uc790/.test(role))translators.push(name);
+    else if(!role||/\uc9c0\uc740\uc774|\uc800\uc790|\uae00\uc4f4\uc774|\uae00|\uc6d0\uc791|\uc791\uac00|\uc500/.test(role))authors.push(name);
+    // 그림·사진·엮은이·감수·기획 등 저자가 아닌 역할은 서지 저자 목록에 넣지 않는다.
+  }
+  return {authors,translator:translators.join(', ')};
+}
+export function fromAladin(d){
+  const who=parseAladinAuthors(d?.author),pages=Number(d?.subInfo?.itemPage);
+  return {title:plain(d?.title),authors:who.authors,translator:who.translator,publisher:plain(d?.publisher),publishedDate:txt(d?.pubDate),isbn:txt(d?.isbn13||d?.isbn),pageCount:Number.isInteger(pages)&&pages>0?pages:null,genre:genre([d?.categoryName]),origin:'',language:'',coverUrl:image(d?.cover),description:plain(d?.description),source:'알라딘'};
+}
 function aladinJsonp(query,key,signal){
   return new Promise((resolve,reject)=>{
     const cb='__reading_'+Math.random().toString(36).slice(2),script=document.createElement('script');let settled=false;
@@ -32,13 +48,13 @@ function aladinJsonp(query,key,signal){
     if(signal?.aborted){abort();return;}signal?.addEventListener('abort',abort,{once:true});
     globalThis[cb]=data=>finish(null,data);script.onerror=()=>finish(new Error('알라딘 연결 실패'));
     const u=new URL('https://www.aladin.co.kr/ttb/api/ItemSearch.aspx');
-    for(const [k,v]of Object.entries({ttbkey:key,Query:query,QueryType:'Keyword',MaxResults:'12',SearchTarget:'Book',Cover:'Big',Version:'20131101',output:'js',Callback:cb}))u.searchParams.set(k,v);
+    for(const [k,v]of Object.entries({ttbkey:key,Query:query,QueryType:'Keyword',MaxResults:'12',SearchTarget:'Book',Cover:'Big',OptResult:'itemPage',Version:'20131101',output:'js',Callback:cb}))u.searchParams.set(k,v);
     script.src=u.href;script.referrerPolicy='no-referrer';document.head.append(script);
   });
 }
 async function fromAladinQuery(query,key,signal){
   const data=await aladinJsonp(query,key,signal);if(!data||data.errorCode||!Array.isArray(data.item))throw new Error('알라딘 응답 오류');
-  return data.item.map(d=>({title:plain(d.title),authors:plain(d.author).split(',').map(x=>x.replace(/\([^)]*\)/g,'').trim()).filter(Boolean),publisher:plain(d.publisher),publishedDate:txt(d.pubDate),isbn:txt(d.isbn13||d.isbn),pageCount:null,genre:genre([d.categoryName]),origin:'',coverUrl:image(d.cover),description:plain(d.description),source:'알라딘'}));
+  return data.item.map(fromAladin);
 }
 export async function searchBooks(query,settings={},signal){
   const q=String(query||'').trim();if(!q)return {items:[],warnings:[]};

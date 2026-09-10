@@ -38,14 +38,19 @@ const PROMPTS={
   practical:['핵심 주장이나 방법은 무엇인가요?','설득력 있었던 근거와 의문이 드는 점은 무엇인가요?','내 상황에서 기억하거나 적용할 것은 무엇인가요?']
 };
 export async function renderEditor(root,ctx,noteId){
-  const stored=ctx.repo.state.notes.find(n=>n.id===noteId);if(!stored){mount(root,empty('노트를 찾지 못했어요','목록에서 다시 선택해 주세요.'));return;}
-  let note=clone(stored),baseRev=stored.rev,dirty=false,generation=0,timer=null,chain=Promise.resolve(),disposed=false,composing=false;
+  const stored=ctx.repo.state.notes.find(n=>n.id===noteId),pending=ctx.pendingNote?.(noteId);
+  let recovered=null,draftError=null;try{recovered=await ctx.repo.adapter.draftGet(noteId);}catch(e){draftError=e;}
+  const seed=stored||pending||(!stored&&recovered?.baseRev===0?recovered.note:null);
+  if(!seed){mount(root,empty('노트를 찾지 못했어요','목록에서 다시 선택해 주세요.'));return;}
+  let note=clone(seed),baseRev=stored?.rev??0,dirty=false,generation=0,timer=null,chain=Promise.resolve(),disposed=false,composing=false;
   const book=ctx.repo.state.books.find(b=>b.id===note.bookId),reading=ctx.repo.state.readings.find(r=>r.id===note.readingId);
-  const status=h('span.save-status',{role:'status','aria-live':'polite'},'저장됨'),failure=h('div',{hidden:true}),notice=h('div',{hidden:true});
-  let recovered=null;try{recovered=await ctx.repo.adapter.draftGet(noteId);}catch(e){notice.hidden=false;notice.className='notice';notice.textContent='임시 글을 확인하지 못했어요. '+e.message;}
-  if(recovered?.note && recovered.baseRev===stored.rev && JSON.stringify(recovered.note)!==JSON.stringify(stored)){
+  const status=h('span.save-status',{role:'status','aria-live':'polite'},stored?'저장됨':'내용을 입력하면 저장돼요'),failure=h('div',{hidden:true}),notice=h('div',{hidden:true});
+  if(draftError){notice.hidden=false;notice.className='notice';notice.textContent='임시 글을 확인하지 못했어요. '+draftError.message;}
+  else if(stored&&recovered?.note && recovered.baseRev===stored.rev && JSON.stringify(recovered.note)!==JSON.stringify(stored)){
     note=clone(recovered.note);baseRev=stored.rev;dirty=true;generation++;notice.hidden=false;notice.className='notice';notice.textContent='저장되지 않았던 임시 글을 복구했어요. 내용을 확인한 뒤 저장해 주세요.';status.textContent='복구한 글 · 저장 필요';
-  }else if(recovered?.note && recovered.baseRev!==stored.rev){
+  }else if(!stored&&recovered?.note&&recovered.baseRev===0){
+    note=clone(recovered.note);dirty=true;generation++;notice.hidden=false;notice.className='notice';notice.textContent='저장되지 않았던 새 노트의 임시 글을 복구했어요.';status.textContent='복구한 글 · 저장 필요';
+  }else if(recovered?.note && recovered.baseRev!==baseRev){
     notice.hidden=false;notice.className='notice';notice.append('다른 수정본과 충돌하는 임시 글이 있어요. 현재 저장된 노트는 바꾸지 않았어요.',button('임시 글 내보내기',()=>exportFile('복구할_독서노트.md',noteMarkdown(recovered.note,book,reading),'text/markdown'),'small'));
   }
   function showError(err){status.textContent='저장 실패 · 글은 화면에 남아 있어요';status.className='save-status error';failure.hidden=false;mount(failure,h('p.error',{role:'alert'},err.message),h('div.button-row',{},button('다시 저장',()=>persist().catch(()=>{})),button('현재 글 파일로 보관',()=>exportFile('미저장_독서노트.md',noteMarkdown(note,book,reading),'text/markdown')),button('별도 노트로 저장',async()=>{try{const copy={...clone(note),id:uid('note'),rev:0,title:(note.title||'감상평')+' (복구 사본)',createdAt:nowIso()};const saved=await ctx.repo.saveNote(copy,0);dirty=false;ctx.setLeaveGuard(null);ctx.navigate('note/'+encodeURIComponent(saved.id));}catch(e){ctx.toast(e.message);}})) );}
@@ -57,9 +62,14 @@ export async function renderEditor(root,ctx,noteId){
       const snap=clone(note),gen=generation,rev=baseRev;
       status.textContent='저장 중…';status.className='save-status';
       try{
+        if(rev===0&&!noteHasContent(snap)){
+          await ctx.repo.adapter.draftDelete(note.id);ctx.discardPendingNote?.(note.id);
+          if(gen===generation){dirty=false;status.textContent='내용을 입력하면 저장돼요';}
+          failure.hidden=true;return !dirty;
+        }
         await ctx.repo.draft(snap,rev);
         const saved=await ctx.repo.saveNote(snap,rev);
-        baseRev=saved.rev;note.rev=saved.rev;note.updatedAt=saved.updatedAt;
+        baseRev=saved.rev;note.rev=saved.rev;note.updatedAt=saved.updatedAt;ctx.discardPendingNote?.(note.id);
         if(gen===generation){dirty=false;status.textContent='저장됨 · '+new Date(saved.updatedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});try{await ctx.repo.adapter.draftDelete(note.id);}catch{status.textContent='글은 저장됨 · 임시 글 정리 보류';}}
         else{status.textContent='새 입력 저장 대기…';timer=setTimeout(()=>persist().catch(()=>{}),600);}
         failure.hidden=true;return !dirty;
@@ -90,12 +100,13 @@ export async function renderEditor(root,ctx,noteId){
   const memos=ctx.repo.state.notes.filter(n=>n.bookId===note.bookId&&n.kind==='memo'&&n.id!==note.id&&noteHasContent(n));
   const side=h('aside.editor-side',{},h('div.card',{},h('p.eyebrow',{},'THIS BOOK'),h('h2',{},book.title),h('p.hint',{},book.authors.join(', ')),reading?.why?h('p.hint',{},'읽기 전 기대 · '+reading.why):null,reading?.oneLiner?h('p.one-liner',{},reading.oneLiner):null,button('책 기록 보기',()=>ctx.navigate('book/'+encodeURIComponent(book.id)),'inline-link')),note.kind==='review'&&memos.length?h('details',{open:true},h('summary',{},'읽으며 남긴 메모 '+memos.length+'개'),...memos.map(m=>h('div.card',{},h('p.hint',{},MEMO_TYPES[m.memoType]+(m.locator?' · '+m.locator:'')),h('p.prose',{},m.text||m.comment),button('내 생각에 가져오기',()=>{note.reflection+=(note.reflection?'\n\n':'')+(m.memoType==='quote'?`인용 (${m.locator||'위치 미상'})\n${m.text}\n\n내 생각: ${m.comment||''}`:m.text+(m.comment?'\n'+m.comment:''));fields.reflection.value=note.reflection;changed();},'inline-link small')))):null);
   const reference=h('details.editor-reference',{open:matchMedia('(min-width:700px)').matches},h('summary',{},'책 정보 · 참고할 메모'),side);
-  mount(root,head(note.kind==='review'?'생각을 정리하는 시간':'읽으며 남긴 메모',book.title),h('div.editor-top',{},button('‹ 읽기 화면',()=>ctx.navigate('note/'+encodeURIComponent(note.id)),'quiet'),status,button('저장',()=>persist().catch(()=>{}),'small')),notice,failure,title,h('p.hint',{style:{marginBottom:'22px'}},'입력을 멈추면 이 기기에 자동 저장해요. 정리 완료 표시는 별도예요.'),h('div.editor-layout',{},reference,body),h('div.button-row',{},button('초안으로 두기',async()=>{note.stage='draft';changed();try{await persist();ctx.navigate('note/'+encodeURIComponent(note.id));}catch{}}),button('정리 완료',async()=>{note.stage='complete';changed();try{await persist();ctx.navigate('note/'+encodeURIComponent(note.id));}catch{note.stage='draft';}},'primary')));
+  const destination=()=>baseRev>0?'note/'+encodeURIComponent(note.id):'book/'+encodeURIComponent(note.bookId);
+  mount(root,head(note.kind==='review'?'생각을 정리하는 시간':'읽으며 남긴 메모',book.title),h('div.editor-top',{},button('‹ 읽기 화면',()=>ctx.navigate(destination()),'quiet'),status,button('저장',()=>persist().catch(()=>{}),'small')),notice,failure,title,h('p.hint',{style:{marginBottom:'22px'}},'입력을 멈추면 이 기기에 자동 저장해요. 정리 완료 표시는 별도예요.'),h('div.editor-layout',{},reference,body),h('div.button-row',{},button('초안으로 두기',async()=>{note.stage='draft';changed();try{await persist();ctx.navigate(destination());}catch{}}),button('정리 완료',async()=>{note.stage='complete';changed();try{await persist();ctx.navigate(destination());}catch{note.stage='draft';}},'primary')));
   root.addEventListener('compositionstart',onCompStart);root.addEventListener('compositionend',onCompEnd);
   function onCompStart(){composing=true;clearTimeout(timer);}function onCompEnd(){composing=false;if(dirty)timer=setTimeout(()=>persist().catch(()=>{}),700);}
   const unload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};
   const hide=()=>{if(document.visibilityState==='hidden'&&dirty)persist().catch(()=>{});};
   addEventListener('beforeunload',unload);document.addEventListener('visibilitychange',hide);
   ctx.setLeaveGuard(async()=>{if(!dirty)return true;try{await persist();return !dirty;}catch{return false;}});
-  return()=>{disposed=true;clearTimeout(timer);removeEventListener('beforeunload',unload);document.removeEventListener('visibilitychange',hide);root.removeEventListener('compositionstart',onCompStart);root.removeEventListener('compositionend',onCompEnd);ctx.setLeaveGuard(null);};
+  return()=>{disposed=true;clearTimeout(timer);if(baseRev===0)ctx.discardPendingNote?.(note.id);removeEventListener('beforeunload',unload);document.removeEventListener('visibilitychange',hide);root.removeEventListener('compositionstart',onCompStart);root.removeEventListener('compositionend',onCompEnd);ctx.setLeaveGuard(null);};
 }

@@ -5,7 +5,7 @@ import { h,mount,button,icon,toast } from './ui.js';
 import { renderShelf,renderLibrary,renderBook,renderStats,bookForm } from './views-books.js';
 import { renderNotes,renderNote,renderEditor,noteChooser } from './views-notes.js';
 import { renderSettings } from './views-settings.js';
-const repo=new ReadingRepository(storageAdapter()),root=document.getElementById('main'),view={};
+const repo=new ReadingRepository(storageAdapter()),root=document.getElementById('main'),view={},pendingNotes=new Map();
 let routeToken=0,cleanup=null,leaveGuard=null,activePath='',routing=false;
 const getPath=()=>location.hash.slice(1)||'shelf';
 function shell(path,ctx){
@@ -27,12 +27,14 @@ async function route(skipGuard=false){
   const token=++routeToken;cleanup?.();cleanup=null;leaveGuard=null;
   activePath=path;
   const container=h('div'),ctx={repo,view,toast,navigate,refresh:()=>route(true),setLeaveGuard:fn=>{if(token===routeToken)leaveGuard=fn;},
+    pendingNote:id=>pendingNotes.get(id)||null,
+    discardPendingNote:id=>pendingNotes.delete(id),
     openReview:async(bookId,readingId)=>{
       const existing=repo.state.notes.find(n=>n.bookId===bookId&&n.readingId===(readingId||null)&&n.kind==='review');
       if(existing)return navigate('write/'+encodeURIComponent(existing.id));
-      const saved=await repo.saveNote(newNote(bookId,readingId||null,'review'),0);return navigate('write/'+encodeURIComponent(saved.id));
+      const note=newNote(bookId,readingId||null,'review');pendingNotes.set(note.id,note);return navigate('write/'+encodeURIComponent(note.id));
     },
-    openMemo:async(bookId,readingId)=>{const saved=await repo.saveNote(newNote(bookId,readingId||null,'memo'),0);return navigate('write/'+encodeURIComponent(saved.id));}
+    openMemo:async(bookId,readingId)=>{const note=newNote(bookId,readingId||null,'memo');pendingNotes.set(note.id,note);return navigate('write/'+encodeURIComponent(note.id));}
   };
   shell(path,ctx);mount(root,container);window.scrollTo(0,0);
   const [kind,encodedId]=path.split('/');let id;try{id=decodeURIComponent(encodedId||'');}catch{id='';}
