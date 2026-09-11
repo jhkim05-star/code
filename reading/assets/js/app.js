@@ -1,6 +1,6 @@
 import { ReadingRepository } from './repository.js';
 import { storageAdapter,nativeEnvironment,exportFile } from './platform.js';
-import { BUILD,newNote,readingsFor } from './domain.js';
+import { BUILD,coverColorValue,newNote,readingsFor } from './domain.js';
 import { h,mount,button,icon,toast } from './ui.js';
 import { renderShelf,renderLibrary,renderBook,renderStats } from './views-books.js';
 import { renderNotes,renderNote,renderEditor } from './views-notes.js';
@@ -12,6 +12,9 @@ function shell(path,ctx){
   const section=path.split('/')[0],selected=section==='note'||section==='write'?'notes':section==='book'?'library':section;
   document.body.dataset.theme=ctx.repo.state.settings.theme;
   document.body.dataset.background=ctx.repo.state.settings.background;
+  const paperColor=coverColorValue(ctx.repo.state.settings.paperBorderColor),ebookColor=coverColorValue(ctx.repo.state.settings.ebookBorderColor);
+  document.body.style.setProperty('--paper-border',paperColor||'var(--paper-contrast)');
+  document.body.style.setProperty('--ebook-border',ebookColor||'var(--accent)');
   mount(document.getElementById('tabs'),...Object.entries({shelf:'책꽂이',library:'책장',notes:'노트',stats:'통계',settings:'설정'}).map(([key,label])=>h('button',{type:'button',onclick:()=>ctx.navigate(key),'aria-current':key===selected?'page':null},icon(key),h('span',{},label))));
 }
 async function navigate(path){
