@@ -41,11 +41,16 @@ test('strict Minumsa collection rule requires publisher and explicit collection 
   assert.equal(suggestedCollection({publisher:'다른 출판사',title:'세계문학전집',tags:[]}), '');
 });
 
+test('Bookmory review labels normalize to the concise title',()=>{
+  const base={id:'n-imported',bookId:'b1',kind:'review',stage:'complete',reflection:'감상 내용',createdAt:stamp,updatedAt:stamp};
+  assert.equal(normalizeNote({...base,title:'Bookmory 감상'}).title,'감상');assert.equal(normalizeNote({...base,title:'북모리 감상'}).title,'감상');assert.equal(normalizeNote({...base,title:'나만의 감상'}).title,'나만의 감상');
+});
+
 test('installed app checks for updates and reloads after safe activation',async()=>{
   const app=await fs.readFile(new URL('../assets/js/app.js',import.meta.url),'utf8');
   const settings=await fs.readFile(new URL('../assets/js/views-settings.js',import.meta.url),'utf8');
   assert.match(app,/updateViaCache:'none'/);assert.match(app,/visibilitychange/);assert.match(app,/pageshow/);assert.match(app,/reg\.update\(\)/);assert.match(app,/controllerchange[^]*location\.reload\(\)/);
-  assert.match(settings,/앱 업데이트/);assert.match(settings,/최신 버전 확인/);
+  assert.doesNotMatch(app,/update-button|document\.body\.append\(btn\)/);assert.match(app,/reading:apply-update/);assert.match(settings,/앱 업데이트/);assert.match(settings,/최신 버전 확인/);assert.match(settings,/새 버전 적용/);assert.match(settings,/apply-update/);
 });
 
 test('collections, series and normalized authors group without an extra route',()=>{
@@ -83,7 +88,7 @@ test('explicit wipe starts with empty records, clears drafts and remains atomic 
 test('UI source has five tabs, no shared header, theme tokens and non-color cover layers',async()=>{
   const [app,index,css,books,notes,settings]=await Promise.all(['../assets/js/app.js','../index.html','../assets/css/app.css','../assets/js/views-books.js','../assets/js/views-notes.js','../assets/js/views-settings.js'].map(path=>fs.readFile(new URL(path,import.meta.url),'utf8')));
   for(const route of ["shelf:'책꽂이'","library:'책장'","notes:'노트'","stats:'통계'","settings:'설정'"])assert.match(app,new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
-  assert.doesNotMatch(index,/id="topbar"/);assert.match(index,/data-background="black"/);assert.doesNotMatch(app,/책꽂이.*·.*기록/);for(const theme of ['red','pink','blue','green','yellow'])assert.match(css,new RegExp(`data-theme=${theme}`));for(const background of ['black','beige','white'])assert.match(css,new RegExp(`data-background=${background}`));assert.match(css,/Malgun Gothic/);assert.match(css,/format-paper.*paper-contrast/s);assert.match(css,/format-paper.*paper-border/s);assert.match(css,/format-ebook.*border:3px double/s);assert.match(css,/format-ebook.*ebook-border/s);assert.match(css,/format-ebook:before/);assert.match(css,/format-audio.*border:2px dashed/s);assert.match(css,/rating-overlay/);assert.match(books,/cover\(b,false,r\)/);assert.match(books,/button\.chart-row/);assert.match(books,/statDetail/);assert.match(books,/기존 책 정보 다시 검색/);assert.match(books,/책유형/);assert.doesNotMatch(books,/달력상 기간/);assert.doesNotMatch(notes,/나에게 남은 것/);assert.doesNotMatch(notes,/takeaway/);assert.match(settings,/Bookmory Excel 불러오기/);assert.match(settings,/background-choice/);assert.match(settings,/책유형 테두리 색/);assert.match(settings,/paperBorderColor/);assert.match(settings,/ebookBorderColor/);assert.match(settings,/표지 자동 복구/);assert.match(settings,/repo\.updateCovers\(updates\)/);assert.doesNotMatch(settings,/알라딘 TTB 키/);assert.match(settings,/기존 기록 초기화/);assert.match(settings,/repo\.wipe\(\)/);
+  assert.doesNotMatch(index,/id="topbar"/);assert.match(index,/data-background="black"/);assert.doesNotMatch(app,/책꽂이.*·.*기록/);for(const theme of ['red','pink','blue','green','yellow'])assert.match(css,new RegExp(`data-theme=${theme}`));for(const background of ['black','beige','white'])assert.match(css,new RegExp(`data-background=${background}`));assert.match(css,/Malgun Gothic/);assert.match(css,/format-paper.*paper-contrast/s);assert.match(css,/format-paper.*paper-border/s);assert.match(css,/format-ebook.*border:3px double/s);assert.match(css,/format-ebook.*ebook-border/s);assert.match(css,/format-ebook:before/);assert.match(css,/format-audio.*border:2px dashed/s);assert.match(css,/rating-overlay/);assert.match(books,/cover\(b,false,r\)/);assert.match(books,/button\.chart-row/);assert.match(books,/statDetail/);assert.match(books,/기존 책 정보 다시 검색/);assert.match(books,/책유형/);assert.match(books,/collection-entry/);assert.match(books,/modal\('서재 컬렉션'/);assert.doesNotMatch(books,/section\.collection-panel/);assert.doesNotMatch(books,/달력상 기간/);assert.doesNotMatch(notes,/나에게 남은 것/);assert.doesNotMatch(notes,/takeaway/);assert.match(settings,/Bookmory Excel 불러오기/);assert.match(settings,/background-choice/);assert.match(settings,/책유형 테두리 색/);assert.match(settings,/paperBorderColor/);assert.match(settings,/ebookBorderColor/);assert.match(settings,/표지 자동 복구/);assert.match(settings,/repo\.updateCovers\(updates\)/);assert.doesNotMatch(settings,/알라딘 TTB 키/);assert.match(settings,/기존 기록 초기화/);assert.match(settings,/repo\.wipe\(\)/);
 });
 
 test('reading service worker remains scoped and does not mention workout caches',async()=>{

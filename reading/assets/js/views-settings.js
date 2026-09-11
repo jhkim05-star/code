@@ -6,7 +6,7 @@ import { exportFile } from './platform.js';
 import { coverCandidates } from './api.js';
 
 export function renderSettings(root,ctx){
-  const settings=ctx.repo.state.settings,proxy=input(settings.kakaoProxyUrl,{placeholder:'https://…workers.dev',spellcheck:false}),storageStatus=h('p.hint',{},'저장소 보호 상태 확인 중…'),updateStatus=h('p.hint',{role:'status'},'홈 화면 앱이 최신 버전인지 바로 확인할 수 있어요.'),coverStatus=h('p.hint',{role:'status'},ctx.view.coverRescueMessage||'ISBN이 있는 책 중 표지가 없거나 깨진 책을 안전하게 복구해요.');
+  const settings=ctx.repo.state.settings,proxy=input(settings.kakaoProxyUrl,{placeholder:'https://…workers.dev',spellcheck:false}),storageStatus=h('p.hint',{},'저장소 보호 상태 확인 중…'),updateStatus=h('p.hint',{role:'status'},'홈 화면 앱이 최신 버전인지 바로 확인할 수 있어요.'),updateApply=button('새 버전 적용',e=>task(e.currentTarget,()=>applyAppUpdate(updateStatus)),'primary wide apply-update'),coverStatus=h('p.hint',{role:'status'},ctx.view.coverRescueMessage||'ISBN이 있는 책 중 표지가 없거나 깨진 책을 안전하게 복구해요.');updateApply.hidden=true;
   const jsonFile=input('',{type:'file',accept:'application/json,.json','aria-label':'JSON 백업 선택'}),excelFile=input('',{type:'file',accept:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx','aria-label':'Bookmory Excel 선택'});jsonFile.hidden=true;excelFile.hidden=true;
   jsonFile.addEventListener('change',async()=>{const f=jsonFile.files[0];if(!f)return;jsonFile.value='';try{if(f.size>30000000)throw new Error('30MB 이하의 백업을 골라 주세요.');importPreview(ctx,parseBackup(await f.text()),'JSON 백업');}catch(e){ctx.toast(e.message);}});
   excelFile.addEventListener('change',async()=>{const f=excelFile.files[0];if(!f)return;excelFile.value='';try{const parsed=await parseBookmoryXlsx(f);parsed.state.settings={...ctx.repo.state.settings};importPreview(ctx,parsed,'Bookmory Excel');}catch(e){ctx.toast(e.message);}});
@@ -20,10 +20,14 @@ export function renderSettings(root,ctx){
   const resetSection=h('section.card.reset-card',{},h('h2.setting-title',{},'처음부터 시작하기'),h('p.hint',{},'책·독서 이력·노트와 작성 중인 임시 글을 모두 비웁니다. 필요한 기록은 먼저 JSON 전체 백업으로 보관해 주세요.'),button('기존 기록 초기화',()=>resetLibrary(ctx),'danger wide'));
   root.insertBefore(resetSection,root.querySelector('.build-label'));
   root.insertBefore(borderCard,root.querySelector('.import-card'));
+  updateStatus.closest('.card').append(updateApply);
+  const updateReady=()=>{updateStatus.textContent='새 버전이 준비됐어요.';updateApply.hidden=false;};addEventListener('reading:update-ready',updateReady);
   navigator.storage?.persisted?.().then(v=>{storageStatus.textContent=v?'저장소 보호 적용됨 · 별도 백업도 권장해요.':'브라우저나 기기 정리로 데이터가 지워질 수 있어요. JSON 백업을 보관해 주세요.';}).catch(()=>{storageStatus.textContent='저장소 보호 상태를 확인하지 못했어요.';});if(!navigator.storage?.persisted)storageStatus.textContent='이 환경은 저장소 보호 상태를 제공하지 않아요.';
+  return()=>removeEventListener('reading:update-ready',updateReady);
 }
 
-function checkAppUpdate(status){return new Promise(resolve=>{if(!('serviceWorker'in navigator)){status.textContent='이 환경에서는 앱 업데이트 확인을 지원하지 않아요.';resolve();return;}let settled=false;const done=message=>{if(settled)return;settled=true;clearTimeout(timer);status.textContent=message;resolve();};const timer=setTimeout(()=>done('업데이트 확인이 오래 걸리고 있어요. 인터넷 연결을 확인해 주세요.'),10000);dispatchEvent(new CustomEvent('reading:check-update',{detail:{done}}));});}
+function checkAppUpdate(status){return new Promise(resolve=>{const apply=status.closest('.card')?.querySelector('.apply-update');if(!('serviceWorker'in navigator)){status.textContent='이 환경에서는 앱 업데이트 확인을 지원하지 않아요.';resolve();return;}let settled=false;const done=(message,ready=false)=>{if(settled)return;settled=true;clearTimeout(timer);status.textContent=message;if(apply)apply.hidden=!ready;resolve();};const timer=setTimeout(()=>done('업데이트 확인이 오래 걸리고 있어요. 인터넷 연결을 확인해 주세요.'),10000);dispatchEvent(new CustomEvent('reading:check-update',{detail:{done}}));});}
+function applyAppUpdate(status){return new Promise(resolve=>{let settled=false;const done=message=>{if(settled)return;settled=true;clearTimeout(timer);status.textContent=message;resolve();};const timer=setTimeout(()=>done('업데이트 적용이 오래 걸리고 있어요. 앱을 다시 열어 주세요.'),10000);dispatchEvent(new CustomEvent('reading:apply-update',{detail:{done}}));});}
 
 function imageWorks(url,timeout=6500){return new Promise(resolve=>{if(!url){resolve(false);return;}const image=new Image();let settled=false;const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);image.onload=null;image.onerror=null;resolve(value);};const timer=setTimeout(()=>finish(false),timeout);image.referrerPolicy='no-referrer';image.onload=()=>finish(image.naturalWidth>2&&image.naturalHeight>2);image.onerror=()=>finish(false);image.src=url;});}
 

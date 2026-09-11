@@ -25,10 +25,10 @@ export function renderShelf(root,ctx){
 }
 
 function collectionPanel(ctx){
-  const groups=collectionGroups(ctx.repo.state),body=h('div'),control=h('div'),mode=ctx.view.collectionMode||'collections',labels={collections:'컬렉션',series:'시리즈',authors:'작가'};
+  const groups=collectionGroups(ctx.repo.state),labels={collections:'컬렉션',series:'시리즈',authors:'작가'};
   function showBooks(group){modal(group.label,close=>h('div',{},h('p.hint',{},`${group.books.length}권을 묶어 보고 있어요.`),h('div.collection-book-list',{},...group.books.map(b=>button(b.title,()=>{close();ctx.navigate('book/'+encodeURIComponent(b.id));},'wide')))));}
-  function paint(next=mode){ctx.view.collectionMode=next;mount(control,chips(labels,next,paint));const rows=groups[next];mount(body,rows.length?h('div.collection-grid',{},...rows.map(group=>{const b=button('',()=>showBooks(group),'collection-card');b.append(icon(next==='authors'?'notes':'collection'),h('span',{},group.label),h('strong',{},group.books.length+'권'));return b;})):h('p.hint',{},next==='collections'?'책 정보에서 컬렉션을 직접 지정할 수 있어요.':'두 권 이상 모이면 여기에 묶어 보여드려요.'));}
-  paint(mode);return h('section.collection-panel',{},h('div.section-head',{},h('div',{},h('p.eyebrow',{},'LIBRARY GROUPS'),h('h2',{},'서재 컬렉션')),h('span.count',{},'책장 안에서 탐색')),control,body);
+  function open(){modal('서재 컬렉션',close=>{const body=h('div'),control=h('div'),paint=next=>{ctx.view.collectionMode=next;mount(control,chips(labels,next,paint));const rows=groups[next];mount(body,rows.length?h('div.collection-grid',{},...rows.map(group=>{const b=button('',()=>{close();setTimeout(()=>showBooks(group));},'collection-card');b.append(icon(next==='authors'?'notes':'collection'),h('span',{},group.label),h('strong',{},group.books.length+'권'));return b;})):h('p.hint',{},next==='collections'?'책 정보에서 컬렉션을 직접 지정할 수 있어요.':'두 권 이상 모이면 여기에 묶어 보여드려요.'));};paint(ctx.view.collectionMode||'collections');return h('div',{},control,body);});}
+  const count=groups.collections.length+groups.series.length+groups.authors.length,entry=button('',open,'collection-entry wide');entry.append(icon('collection'),h('span',{},'서재 컬렉션'),h('strong',{},count?`${count}개 묶음`:'둘러보기'),h('span',{'aria-hidden':'true'},'›'));return entry;
 }
 
 export function renderLibrary(root,ctx){
