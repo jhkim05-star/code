@@ -40,7 +40,7 @@ export function cover(book,large=false,reading=null){
   const fallback=h('span.cover-fallback',{},book.title);
   const format=reading?.format||'paper',box=h('span.cover'+(large?'.large':'')+`.format-${format}`,{'data-format':format},fallback);
   if(book.coverUrl){const img=h('img',{src:book.coverUrl,alt:'',loading:'lazy',decoding:'async',referrerPolicy:'no-referrer'});img.addEventListener('load',()=>{fallback.hidden=true;});img.addEventListener('error',()=>{img.remove();fallback.hidden=false;});box.append(img);}
-  box.append(h('span.format-overlay',{'aria-hidden':'true'},icon(format),h('span',{},format==='paper'?'P':format==='ebook'?'E':'A')));
+  box.append(h('span.format-overlay',{'aria-hidden':'true'},icon(format)));
   if(reading?.rating)box.append(h('span.rating-overlay',{'aria-label':`별점 ${reading.rating.toFixed(1)}`},icon('star'),reading.rating.toFixed(1)));
   return box;
 }
