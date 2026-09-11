@@ -5,6 +5,7 @@ import { speakCount, cue, beep, stopSpeaking } from './voice.js';
 import { uid, todayYmd, clone, clamp, finite, displayWeight, inputWeight } from './util.js';
 import { transitionTiming } from './timing.js';
 import { validateSession, validateDraft } from './validation.js';
+import { isAssistanceExercise } from './exercises.js';
 let activeRunner = null;
 const REST_STATES = new Set(['resting', 'exercise_rest', 'exercise_setup']);
 export class Runner {
@@ -777,7 +778,7 @@ globalThis.addEventListener?.('workout:reset-start', () => activeRunner?.stop())
 export function sessionVolume(session, { includeWarmup = false, confirmedOnly = false } = {}) {
     let volume = 0;
     for (const e of session.entries || []) {
-        if (e.measure === 'duration' || e.exerciseId === 'plank')
+        if (e.measure === 'duration' || e.exerciseId === 'plank' || isAssistanceExercise(e))
             continue;
         for (const st of e.sets || []) {
             if (st.done && (includeWarmup || !st.warmup) && (!confirmedOnly || st.confirmed) && Number.isFinite(st.weight) && Number.isFinite(st.reps))

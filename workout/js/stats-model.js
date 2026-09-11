@@ -1,7 +1,8 @@
 /** Statistics deliberately separate warmups, timed exercises and recorded-load volume. */
 import { weekStartOf, ymd, parseYmd, addDays, dayDistance, todayYmd } from './util.js';
+import { isAssistanceExercise } from './exercises.js';
 export function workSetCount(s) { return (s.entries || []).reduce((n, e) => n + (e.sets || []).filter(st => st.done && !st.warmup).length, 0); }
-export function recordedVolume(s) { return (s.entries || []).filter(e => e.measure !== 'duration' && e.exerciseId !== 'plank').reduce((n, e) => n + (e.sets || []).filter(st => st.done && !st.warmup).reduce((a, st) => a + (Number.isFinite(st.weight) && Number.isFinite(st.reps) ? st.weight * st.reps : 0), 0), 0); }
+export function recordedVolume(s) { return (s.entries || []).filter(e => e.measure !== 'duration' && e.exerciseId !== 'plank' && !isAssistanceExercise(e)).reduce((n, e) => n + (e.sets || []).filter(st => st.done && !st.warmup).reduce((a, st) => a + (Number.isFinite(st.weight) && Number.isFinite(st.reps) ? st.weight * st.reps : 0), 0), 0); }
 export function totalTimedSeconds(all) { return all.reduce((n, s) => n + (s.entries || []).filter(e => e.measure === 'duration' || e.exerciseId === 'plank').reduce((a, e) => a + e.sets.filter(st => st.done && !st.warmup).reduce((b, st) => b + (st.reps || 0), 0), 0), 0); }
 export function periodKey(date, mode) { return mode === 'month' ? date.slice(0, 7) : ymd(weekStartOf(parseYmd(date))); }
 export function periodBuckets(all, mode = 'week', count = 12, today = todayYmd()) {
@@ -46,7 +47,7 @@ export function personalRecords(all) {
     for (const s of all)
         for (const e of s.entries || [])
             for (const st of e.sets || []) {
-                if (!st.done || st.warmup || e.measure === 'duration' || e.exerciseId === 'plank' || !Number.isFinite(st.weight) || st.weight <= 0 || !Number.isFinite(st.reps) || st.reps <= 0)
+                if (!st.done || st.warmup || e.measure === 'duration' || e.exerciseId === 'plank' || isAssistanceExercise(e) || !Number.isFinite(st.weight) || st.weight <= 0 || !Number.isFinite(st.reps) || st.reps <= 0)
                     continue;
                 const old = best.get(e.exerciseId);
                 if (!old || st.weight > old.weight || st.weight === old.weight && st.reps > old.reps)

@@ -4,6 +4,7 @@ import { sessions, getSession, saveSession, deleteSession, settings, flush, cust
 import { sessionVolume, sessionSetCount } from '../runner.js';
 import { pickExercise } from './exercisePicker.js';
 import { fmtDate, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy, uid, finite, readWeightInput, fmtWeight } from '../util.js';
+import { LOAD_LABELS, isAssistanceExercise } from '../exercises.js';
 import { go } from '../app.js';
 let calendarDate = new Date();
 export function renderHistory(root) { draw(root); }
@@ -34,7 +35,9 @@ function addManualRecord() {
     modal(close => h('div', null, h('h3', null, '지난 운동 직접 기록'), h('p.hint', null, '실제로 한 횟수와 중량을 입력해 주세요. 추천값은 자동으로 채우지 않습니다. 시간은 모르면 미기록으로 남겨요.'), field('운동 날짜', dateInput), field('기록 제목', titleInput), list, h('button.btn-block', { onclick: () => pickExercise(null, ex => {
             const setCount = numberInput(3, { min: 1, max: 20, label: '실제로 한 세트 수' }), reps = numberInput(null, { min: 0, max: 600, label: '각 세트의 실제 횟수/초' }), weight = weightInput(null, settings().unit);
             const row = { ex, setCount, reps, weight };
-            row.fields = h('div', null, field('실제로 한 세트 수', setCount), field(ex.measure === 'duration' ? '각 세트 실제 유지(초)' : '각 세트 실제 횟수', reps), field(`실제 중량 (${settings().unit}) · 맨몸은 비워두기`, weight), h('p.hint', null, '세트마다 값이 달랐다면 저장 후 기록 상세에서 각각 고쳐 주세요.'));
+            const loadName = isAssistanceExercise(ex) ? '보조중량' : '실제 중량';
+            weight.setAttribute('aria-label', `${loadName} (${settings().unit})`);
+            row.fields = h('div', null, field('실제로 한 세트 수', setCount), field(ex.measure === 'duration' ? '각 세트 실제 유지(초)' : '각 세트 실제 횟수', reps), field(`${loadName} (${settings().unit}) · 맨몸은 비워두기`, weight), h('p.hint', null, LOAD_LABELS[ex.loadBasis] || '세트마다 값이 달랐다면 저장 후 기록 상세에서 각각 고쳐 주세요.'));
             chosen.push(row);
             paint();
         }, { equipmentOnly: false, includeAvoided: true }) }, '종목 추가'), h('button.btn-block.btn-primary', { style: { marginTop: '12px' }, onclick: async () => {
@@ -67,7 +70,7 @@ export function renderSessionDetail(root, [id]) {
         const s = structuredClone(record), unit = settings().unit;
         async function commit(next) { undo = structuredClone(getSession(id)); next.updatedAt = Date.now(); saveSession(next); await flush(); draw(); }
         const unconfirmed = s.entries.flatMap(e => e.sets).filter(st => st.done && !st.confirmed).length;
-        mount(root, pageHead(s.title, fmtDate(s.date), h('button.btn-sm', { onclick: () => go('/history') }, '목록')), h('.kpis', null, kpi(String(sessionSetCount(s)), '본세트'), kpi(s.endedAt ? String(Math.round((s.endedAt - s.startedAt) / 60000)) : '—', '분'), kpi(comma(sessionVolume(s)), '기록 볼륨')), h('p.hint', null, '볼륨은 입력한 표기 중량 × 횟수의 참고값이에요. 웜업·시간 운동은 제외하고, 맨몸 부하나 양손 합계는 임의로 추정하지 않아요.'), undo ? h('button.btn-block', { onclick: async () => { const previous = undo; undo = null; saveSession(previous); await flush(); draw(); } }, '방금 수정 되돌리기') : null, unconfirmed ? h('.card', null, h('p.hint.warning', null, `${unconfirmed}세트가 이전 버전 또는 미확인 기록이에요. 아래 실제 수치를 검토한 뒤 확인해 주세요. 미확인 값은 증량 근거로 사용하지 않습니다.`), h('button', { onclick: async () => {
+        mount(root, pageHead(s.title, fmtDate(s.date), h('button.btn-sm', { onclick: () => go('/history') }, '목록')), h('.kpis', null, kpi(String(sessionSetCount(s)), '본세트'), kpi(s.endedAt ? String(Math.round((s.endedAt - s.startedAt) / 60000)) : '—', '분'), kpi(comma(sessionVolume(s)), '기록 볼륨')), h('p.hint', null, '볼륨은 일반 중량 × 횟수의 참고값이에요. 웜업·시간 운동과 낮을수록 실제 부하가 커지는 보조중량은 제외합니다.'), undo ? h('button.btn-block', { onclick: async () => { const previous = undo; undo = null; saveSession(previous); await flush(); draw(); } }, '방금 수정 되돌리기') : null, unconfirmed ? h('.card', null, h('p.hint.warning', null, `${unconfirmed}세트가 이전 버전 또는 미확인 기록이에요. 아래 실제 수치를 검토한 뒤 확인해 주세요. 미확인 값은 증량 근거로 사용하지 않습니다.`), h('button', { onclick: async () => {
                 if (!await confirmSheet({ title: '표시된 실제 수행값이 맞나요?', body: '맞는 값만 확인하세요. 알 수 없는 값은 먼저 수정해 주세요.', confirmText: '검토한 실제 기록 확인' }))
                     return;
                 s.entries.forEach(e => e.sets.forEach(st => {
@@ -112,7 +115,7 @@ export function renderSessionDetail(root, [id]) {
                     st.confirmationSource = 'manual';
                     await commit(s);
                 } }, '확인')));
-        }), h('.btn-row', null, h('button.btn-sm', { onclick: () => manualSetSheet(entry, s, commit) }, '실제 세트 추가'), h('button.btn-sm.btn-danger', { onclick: async () => {
+        }), h('p.hint', null, LOAD_LABELS[isAssistanceExercise(entry) ? 'assistance' : entry.loadBasis] || ''), h('.btn-row', null, h('button.btn-sm', { onclick: () => manualSetSheet(entry, s, commit) }, '실제 세트 추가'), h('button.btn-sm.btn-danger', { onclick: async () => {
                 if (await confirmSheet({ title: `${entry.name} 기록을 삭제할까요?`, confirmText: '삭제', danger: true })) {
                     s.entries.splice(ei, 1);
                     await commit(s);
@@ -130,7 +133,9 @@ export function renderSessionDetail(root, [id]) {
 function manualSetSheet(entry, session, commit) {
     modal(close => {
         const weight = weightInput(null, settings().unit), reps = numberInput(null, { min: 0, max: 600, label: '실제 수행' });
-        return h('div', null, h('h3', null, '실제로 한 세트 추가'), field(`실제 중량 (${settings().unit})`, weight), field(entry.measure === 'duration' ? '실제 유지(초)' : '실제 횟수', reps), h('button.btn-block.btn-primary', { onclick: async () => {
+        const loadName = isAssistanceExercise(entry) ? '보조중량' : '실제 중량';
+        weight.setAttribute('aria-label', `${loadName} (${settings().unit})`);
+        return h('div', null, h('h3', null, '실제로 한 세트 추가'), field(`${loadName} (${settings().unit})`, weight, LOAD_LABELS[isAssistanceExercise(entry) ? 'assistance' : entry.loadBasis]), field(entry.measure === 'duration' ? '실제 유지(초)' : '실제 횟수', reps), h('button.btn-block.btn-primary', { onclick: async () => {
                 const count = finite(reps.value, 0, 600, '실제 수행', { integer: true });
                 entry.sets.push({ id: uid('set'), targetReps: Math.max(1, count), targetKnown: false, reps: count, weight: readWeightInput(weight, null, settings().unit), rir: null, done: true, confirmed: true, confirmationSource: 'manual', warmup: false, at: session.startedAt });
                 await commit(session);

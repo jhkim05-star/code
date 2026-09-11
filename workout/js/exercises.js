@@ -164,14 +164,35 @@ const patternMap = Object.fromEntries(Object.entries(PATTERNS).flatMap(([p, ids]
 const groupPattern = { chest: 'press_h', back: 'pull_h', delt_f: 'press_v', delt_sr: 'raise', biceps: 'curl', triceps: 'ext', thighs: 'squat', glutes: 'hinge', calves: 'calf', core: 'core' };
 export const patternOf = ex => ex?.pattern || patternMap[ex?.id] || groupPattern[ex?.group] || 'other';
 const isolationPull = new Set(['straight_pull', 'db_pullover', 'face_pull', 'upright_row', 'smith_upright']);
+const MACHINE_MOVEMENT_META = {
+    machine_incline_press: { pattern: 'press_h', compound: true, secondary: ['delt_f', 'triceps'], warmupEligible: true, loadBasis: 'stack' },
+    machine_seated_row: { pattern: 'pull_h', compound: true, secondary: ['biceps', 'delt_sr'], warmupEligible: true, loadBasis: 'stack' },
+    high_row: { pattern: 'pull_h', compound: true, secondary: ['delt_sr', 'biceps'], warmupEligible: true, loadBasis: 'stack' },
+    assist_pullup: { pattern: 'pull_v', compound: true, secondary: ['biceps'], warmupEligible: false, loadBasis: 'assistance' },
+    assist_dip: { pattern: 'press_h', compound: true, secondary: ['chest', 'delt_f'], warmupEligible: false, loadBasis: 'assistance' },
+    machine_biceps: { pattern: 'curl', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    machine_triceps: { pattern: 'ext', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    seated_leg_curl: { pattern: 'knee_flexion', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    hip_adduction: { pattern: 'adduction', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    machine_hip_thrust: { pattern: 'hinge', compound: true, secondary: ['thighs'], warmupEligible: true, loadBasis: 'stack' },
+    machine_glute_kickback: { pattern: 'kickback', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    machine_ab_crunch: { pattern: 'trunk_flexion', compound: false, secondary: [], warmupEligible: false, loadBasis: 'stack' },
+    machine_back_extension: { pattern: 'trunk_extension', compound: false, secondary: ['glutes', 'thighs'], warmupEligible: false, loadBasis: 'stack' },
+};
+const ASSISTANCE_IDS = new Set(['assist_pullup', 'assist_dip']);
+export function isAssistanceExercise(exercise) {
+    return !!exercise && (exercise.loadBasis === 'assistance' || ASSISTANCE_IDS.has(exercise.exerciseId || exercise.id));
+}
+export const LOAD_BASES = ['total', 'per_hand', 'stack', 'assistance', 'bodyweight', 'added'];
 export function enrichExercise(ex) {
-    const pattern = patternOf(ex);
-    const compound = ex.compound ?? (['press_h', 'press_v', 'pull_h', 'pull_v', 'hinge', 'squat', 'lunge'].includes(pattern) && !isolationPull.has(ex.id));
+    const explicit = MACHINE_MOVEMENT_META[ex.id] || {};
+    const pattern = explicit.pattern || patternOf(ex);
+    const compound = explicit.compound ?? ex.compound ?? (['press_h', 'press_v', 'pull_h', 'pull_v', 'hinge', 'squat', 'lunge'].includes(pattern) && !isolationPull.has(ex.id));
     const bodyweight = ['맨몸', '철봉'].includes(ex.equip) || ['bodyweight', 'added'].includes(ex.loadBasis) || ex.id === 'ab_rollout';
-    const secondary = ex.secondary || (pattern === 'press_h' ? ['delt_f', 'triceps'] : pattern === 'press_v' ? ['triceps'] : ['pull_h', 'pull_v'].includes(pattern) ? ['biceps'] : ['squat', 'lunge'].includes(pattern) ? ['glutes'] : pattern === 'hinge' ? ['thighs', 'glutes'] : []).filter(g => g !== ex.group);
+    const secondary = (explicit.secondary ?? ex.secondary ?? (pattern === 'press_h' ? ['delt_f', 'triceps'] : pattern === 'press_v' ? ['triceps'] : ['pull_h', 'pull_v'].includes(pattern) ? ['biceps'] : ['squat', 'lunge'].includes(pattern) ? ['glutes'] : pattern === 'hinge' ? ['thighs', 'glutes'] : [])).filter(g => g !== ex.group);
     const singleDumbbell = ['goblet_squat', 'oh_ext', 'db_pullover'].includes(ex.id);
-    const loadBasis = ex.loadBasis || (bodyweight ? 'bodyweight' : ex.equip === '덤벨' && !singleDumbbell ? 'per_hand' : ['케이블', '머신'].includes(ex.equip) ? 'stack' : 'total');
-    return { ...ex, machineIds: ex.machineIds || machineMap[ex.id] || [], pattern, compound, secondary, bodyweight, loadBasis, measure: ex.measure || (ex.id === 'plank' ? 'duration' : 'reps'), warmupEligible: ex.warmupEligible ?? (compound && !bodyweight) };
+    const loadBasis = explicit.loadBasis || ex.loadBasis || (bodyweight ? 'bodyweight' : ex.equip === '덤벨' && !singleDumbbell ? 'per_hand' : ['케이블', '머신'].includes(ex.equip) ? 'stack' : 'total');
+    return { ...ex, machineIds: ex.machineIds || machineMap[ex.id] || [], pattern, compound, secondary, bodyweight, loadBasis, measure: ex.measure || (ex.id === 'plank' ? 'duration' : 'reps'), warmupEligible: explicit.warmupEligible ?? ex.warmupEligible ?? (compound && !bodyweight) };
 }
 export const EXERCISES = ROWS.trim().split('\n').map(line => {
     const [id, name, group, tier, sets, reps, rest, equip, tempo] = line.split('|');
@@ -204,4 +225,4 @@ export function equipmentReadiness(plan = {}) {
 export function byGroup(group, custom = [], planOrEquipment = null, avoid = [], opt = {}) {
     return allExercises(custom).filter(x => x.group === group && exerciseAllowed(x, planOrEquipment, opt) && !avoid.includes(x.id)).sort((a, b) => Number(!!a.bodyweight) - Number(!!b.bodyweight) || a.tier - b.tier);
 }
-export const LOAD_LABELS = { per_hand: '한쪽 덤벨', total: '기록 총중량', stack: '머신·케이블 표기', bodyweight: '맨몸·추가 중량 없음', added: '추가 중량' };
+export const LOAD_LABELS = { per_hand: '한쪽 덤벨', total: '기록 총중량', stack: '머신·케이블 표기', assistance: '보조중량 · 낮을수록 실제 부하 증가', bodyweight: '맨몸·추가 중량 없음', added: '추가 중량' };

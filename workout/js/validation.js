@@ -1,7 +1,7 @@
 /** All imports are validated in a temporary copy before live state is replaced. */
 import { DEFAULT_SETTINGS, GROUP_IDS } from './config.js';
 import { parseYmd, finite, uid, clone } from './util.js';
-import { EQUIPMENT, MACHINE_CATALOG } from './exercises.js';
+import { EQUIPMENT, MACHINE_CATALOG, LOAD_BASES, isAssistanceExercise } from './exercises.js';
 const dangerous = new Set(['__proto__', 'constructor', 'prototype']);
 const providerCredential = /^(apiKey|proxyToken|openaiKey|anthropicKey|apiToken|openaiApiKey|anthropicApiKey|openaiProxyToken|clientToken)$/i;
 function dropProviderCredentials(value) {
@@ -181,6 +181,17 @@ function validateExecutionFields(entry) {
     }
     if (entry.equip != null)
         text(entry.equip, '기구', 40);
+    if (isAssistanceExercise(entry)) {
+        entry.loadBasis = 'assistance';
+        // Recommendations are derived data. Drop a previously generated
+        // ordinary-load recommendation while preserving every recorded value.
+        if (entry.recommendation != null && entry.recommendation?.source !== 'manual')
+            entry.recommendation = null;
+        if (entry.overloadNote)
+            entry.overloadNote = '';
+    }
+    else if (entry.loadBasis != null && !LOAD_BASES.includes(entry.loadBasis))
+        throw new Error('중량 기록 방식이 올바르지 않습니다.');
     if (entry.secondary != null)
         array(entry.secondary, '보조 부위', 10).forEach(g => {
             if (!GROUP_IDS.includes(g))
@@ -243,6 +254,11 @@ export function validateSession(raw, { legacy = false, draft = false } = {}) {
         if (!['reps', 'duration'].includes(e.measure))
             throw new Error('운동 측정 방식이 올바르지 않습니다.');
         e.sets = array(e.sets, '기록 세트', 50).map(st => validateSet(st, true, legacy));
+        if (isAssistanceExercise(e))
+            e.sets.forEach(st => {
+                if (st.recommendation != null && st.recommendation?.source !== 'manual')
+                    st.recommendation = null;
+            });
         unique(e.sets, '세트');
         return e;
     });
@@ -291,6 +307,11 @@ export function validateWeeklyPlan(raw, key, { legacy = false } = {}) {
             validateExecutionFields(b);
             const numericLegacySets = legacy && typeof rawBlock.sets === 'number';
             b.sets = validatePlanSets(rawBlock, { legacy });
+            if (isAssistanceExercise(b))
+                b.sets.forEach(st => {
+                    if (st.recommendation != null && st.recommendation?.source !== 'manual')
+                        st.recommendation = null;
+                });
             if (numericLegacySets) {
                 delete b.reps;
                 delete b.weight;
@@ -322,6 +343,9 @@ export function validateData(raw, { legacy = false } = {}) {
         if (!GROUP_IDS.includes(e.group))
             throw new Error('사용자 종목 부위가 올바르지 않습니다.');
         e.equip = text(e.equip || '기타', '기구', 40);
+        e.loadBasis = e.loadBasis == null ? null : text(e.loadBasis, '중량 기록 방식', 40);
+        if (e.loadBasis != null && !LOAD_BASES.includes(e.loadBasis))
+            throw new Error('사용자 종목의 중량 기록 방식이 올바르지 않습니다.');
         e.requiredEquipment = e.requiredEquipment == null ? [] : array(e.requiredEquipment, '사용자 종목 필요 기구', 10).map(x => text(x, '필요 기구', 40));
         e.machineIds = e.machineIds == null ? [] : array(e.machineIds, '사용자 종목 필요 머신', 20).map(x => text(x, '머신 ID', 80));
         if (e.requiredEquipment.some(x => !EQUIPMENT.includes(x)) || e.machineIds.some(x => !MACHINE_CATALOG.some(m => m.id === x)))

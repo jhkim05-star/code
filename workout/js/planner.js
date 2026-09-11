@@ -77,6 +77,37 @@ function chooseExercises(group, count, { custom, plan, avoid, used, weekUsed, se
     }
     return out;
 }
+function directExerciseAllocation(groups, requested, quotas, { custom, plan, avoid }) {
+    const capacity = new Map(groups.map(group => [group, Math.min(quotas[group] || 0, byGroup(group, custom, plan, avoid).length)]));
+    const counts = new Map(groups.map(group => [group, 0]));
+    let allocated = 0, changed = true;
+    // Round-robin gives every selected part one exercise before assigning a
+    // second one. Capacity never exceeds its existing set quota, so requesting
+    // more exercises cannot create extra weekly work sets.
+    while (allocated < requested && changed) {
+        changed = false;
+        for (const group of groups) {
+            if (allocated >= requested)
+                break;
+            if (counts.get(group) >= capacity.get(group))
+                continue;
+            counts.set(group, counts.get(group) + 1);
+            allocated++;
+            changed = true;
+        }
+    }
+    const eligible = groups.filter(group => capacity.get(group) > 0);
+    const reasons = [];
+    if (requested < eligible.length)
+        reasons.push(`선택 부위 ${eligible.length}개를 모두 포함하려면 최소 ${eligible.length}종목이 필요하지만 ${requested}종목을 요청했어요.`);
+    if (allocated < requested) {
+        const noSets = groups.filter(group => !(quotas[group] > 0)).map(group => GROUP_NAME[group]);
+        const noCandidates = groups.filter(group => quotas[group] > 0 && capacity.get(group) === 0).map(group => GROUP_NAME[group]);
+        const details = [noSets.length ? `배분할 목표 세트가 없는 부위: ${noSets.join(', ')}` : '', noCandidates.length ? `선택 기구로 가능한 종목이 없는 부위: ${noCandidates.join(', ')}` : ''].filter(Boolean);
+        reasons.push(`기존 목표 세트를 늘리지 않고 배분할 수 있는 종목은 ${allocated}개예요.${details.length ? ' ' + details.join(' · ') : ''}`);
+    }
+    return { counts, allocated, reasons };
+}
 function repsFor(ex, p) {
     if (ex.measure === 'duration')
         return ex.reps;
@@ -130,8 +161,10 @@ export function analyzePlan(plan, s = settings()) {
         const time = estimateDaySeconds(day, s);
         if (time.total > s.plan.sessionMinutes * 60)
             warnings.push(`${day.date}: 최소 구성을 유지하면 시간 예산을 ${Math.ceil((time.total - s.plan.sessionMinutes * 60) / 60)}분 초과해요. 부위를 줄이거나 시간을 늘려 주세요.`);
-        if (day.blocks.length && s.plan.dailyExerciseCount != null && day.blocks.length !== s.plan.dailyExerciseCount)
-            warnings.push(`${day.date}: 요청 ${s.plan.dailyExerciseCount}종목 / 생성 ${day.blocks.length}종목 · 기구·부위·시간 조건에서 중복 없이 가능한 구성이에요.`);
+        if (day.blocks.length && s.plan.dailyExerciseCount != null && day.blocks.length !== s.plan.dailyExerciseCount) {
+            const source = plan.source === 'ai' ? 'AI가 반환한 수량' : plan.source === 'rule' ? '규칙 계획의 배분 또는 시간 조정 결과' : '저장된 계획의 수량';
+            warnings.push(`${day.date}: 요청 ${s.plan.dailyExerciseCount}종목 / 생성 ${day.blocks.length}종목 · ${source}이 달라요. 함께 표시된 구체적인 경고를 확인해 주세요.`);
+        }
         return { date: day.date, minutes: Math.ceil(time.total / 60), ...time };
     });
     const selected = new Set(Object.values(s.plan.week).flat());
@@ -164,16 +197,22 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
         const signature = [...groups].sort().join('+'), occurrence = signatures.get(signature) || 0;
         signatures.set(signature, occurrence + 1);
         const variant = occurrence % p.variantsPerGroup;
-        const used = new Set(), blocks = [], requestedCount = p.dailyExerciseCount ?? recommendExerciseCount(p.sessionMinutes);
+        const used = new Set(), blocks = [], requestedCount = p.dailyExerciseCount ?? recommendExerciseCount(p.sessionMinutes), quotas = {};
         for (const group of groups) {
             const appearance = groupAppearances[group] || 0;
             groupAppearances[group] = appearance + 1;
             const target = p.weeklyTargets[group] ?? 6, freq = frequencies[group];
-            const quota = Math.floor(target / freq) + (appearance < target % freq ? 1 : 0);
+            quotas[group] = Math.floor(target / freq) + (appearance < target % freq ? 1 : 0);
+        }
+        const directAllocation = p.dailyExerciseCount == null ? null : directExerciseAllocation(groups, requestedCount, quotas, { custom, plan: p, avoid });
+        if (directAllocation)
+            directAllocation.reasons.forEach(reason => warnings.push(`${date}: ${reason}`));
+        for (const group of groups) {
+            const quota = quotas[group];
             if (!quota)
                 continue;
             const perExercise = p.experience === 'beginner' ? 2 : 3;
-            const wanted = Math.min(3, Math.ceil(quota / perExercise), Math.max(0, requestedCount - blocks.length));
+            const wanted = directAllocation?.counts.get(group) ?? Math.min(3, Math.ceil(quota / perExercise), Math.max(0, requestedCount - blocks.length));
             const picked = chooseExercises(group, wanted, { custom, plan: p, avoid, used, weekUsed, seed, mainSeed, variant, alwaysSame: p.variantsPerGroup === 1 });
             if (picked.length < wanted)
                 warnings.push(`${date} ${GROUP_NAME[group]}: 가능한 ${picked.length}종목만 사용했어요. 중복으로 채우지 않았습니다.`);
@@ -193,9 +232,10 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
             }
         const suffix = p.variantsPerGroup > 1 ? ` (${String.fromCharCode(65 + variant)})` : '';
         const day = { id: uid('day'), date, dow, groupIds: groups, title: blocks.length ? groups.map(g => GROUP_NAME[g]).join(' · ') + suffix : '휴식', blocks };
+        const beforeTimeFit = day.blocks.length;
         fitTime(day, s);
         if (groups.length && day.blocks.length !== requestedCount) {
-            const reason = day.blocks.length < requestedCount ? '선택한 기구·부위와 시간 예산 안에서 중복 없이 만들 수 있는 수량' : '시간 예산에 맞춘 수량';
+            const reason = beforeTimeFit === requestedCount && day.blocks.length < requestedCount ? '시간 예산을 맞추는 과정에서 줄어든 수량' : directAllocation ? '기존 목표 세트와 실제 후보 안에서 배분 가능한 수량' : '선택한 기구·부위와 시간 예산 안에서 중복 없이 만들 수 있는 수량';
             warnings.push(`${date}: 요청 ${requestedCount}종목 / 생성 ${day.blocks.length}종목 · ${reason}입니다.`);
         }
         day.blocks.forEach(b => weekUsed.add(b.exerciseId));

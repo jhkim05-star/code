@@ -1,5 +1,5 @@
 /** Conservative suggestions with explicit provenance. Conversion ratios remain heuristics. */
-import { findExercise, enrichExercise } from './exercises.js';
+import { findExercise, enrichExercise, isAssistanceExercise } from './exercises.js';
 import { DEFAULT_SETTINGS } from './config.js';
 import { dayDistance, todayYmd, uid } from './util.js';
 export const BENCHMARKS = [
@@ -50,7 +50,7 @@ export function resolveBenchmarks(entered = {}, sessions = [], opt = {}) {
 }
 export function estimateWeight(exercise, marks, custom = [], plan = DEFAULT_SETTINGS.plan) {
     const ex = typeof exercise === 'string' ? findExercise(exercise, custom) : enrichExercise(exercise);
-    if (!ex || ex.bodyweight)
+    if (!ex || ex.bodyweight || isAssistanceExercise(ex))
         return null;
     const pair = ratioMap.get(ex.id);
     if (!pair)
@@ -67,7 +67,7 @@ export function estimateWeight(exercise, marks, custom = [], plan = DEFAULT_SETT
 }
 export function suggestFromHistory(exercise, sessions = [], { plan = DEFAULT_SETTINGS.plan, today = todayYmd(), targetReps = null } = {}) {
     const ex = typeof exercise === 'string' ? findExercise(exercise) : enrichExercise(exercise);
-    if (!ex || ex.bodyweight)
+    if (!ex || ex.bodyweight || isAssistanceExercise(ex))
         return null;
     for (const session of [...sessions].sort((a, b) => b.startedAt - a.startedAt)) {
         const entries = (session.entries || []).filter(e => e.exerciseId === ex.id);

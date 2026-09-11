@@ -5,7 +5,7 @@ import { makeBlock, analyzePlan, estimateDayMinutes } from '../planner.js';
 import { warmupSets } from '../weights.js';
 import { pickExercise } from './exercisePicker.js';
 import { openDayEditor } from './dayEditor.js';
-import { GROUP_NAME } from '../exercises.js';
+import { GROUP_NAME, LOAD_LABELS, isAssistanceExercise } from '../exercises.js';
 import { weekStartOf, ymd, addDays, parseYmd, todayYmd, fmtWeekRange, DOW_KO, mmss, fmtWeight, finite, readWeightInput, uid } from '../util.js';
 import { go } from '../app.js';
 const expanded = new Set();
@@ -58,7 +58,8 @@ function setSummary(b) {
     const work = workSets(b), warm = warmSets(b), unit = settings().unit;
     const rows = work.map(s => `${fmtWeight(s.weight, unit)} × ${s.reps}${b.measure === 'duration' ? '초' : '회'}`);
     const same = rows.every(x => x === rows[0]);
-    return `${warm.length ? '웜업 ' + warm.length + ' + ' : ''}${work.length}본세트 · ${same ? rows[0] || '' : rows.join(' / ')} · 휴식 ${mmss(b.rest)}`;
+    const basis = isAssistanceExercise(b) ? '보조중량' : LOAD_LABELS[b.loadBasis] || '';
+    return `${warm.length ? '웜업 ' + warm.length + ' + ' : ''}${work.length}본세트 · ${same ? rows[0] || '' : rows.join(' / ')}${basis ? ` · ${basis}` : ''} · 휴식 ${mmss(b.rest)}`;
 }
 function planEditor(key, plan, day) {
     const baseline = JSON.stringify(plan), copy = structuredClone(plan), draftDay = copy.days.find(d => d.id === day.id);
@@ -85,6 +86,7 @@ function editBlock(root, key, plan, day, index) {
         const box = h('div');
         const paint = () => mount(box, ...b.sets.map((st, i) => {
             const weight = weightInput(st.weight, s.unit), original = st.weight;
+            weight.setAttribute('aria-label', `${isAssistanceExercise(b) ? '보조중량' : '무게'} (${s.unit}) · ${i + 1}세트`);
             weight.addEventListener('change', () => {
                 try {
                     st.weight = readWeightInput(weight, original, s.unit);
@@ -104,7 +106,7 @@ function editBlock(root, key, plan, day, index) {
                 toast('계획을 저장했어요.');
             }
         }
-        return h('div', null, h('h3', null, b.name), h('p.hint', null, '목표 무게·횟수예요. 닫거나 취소하면 원래 계획은 바뀌지 않습니다.'), h('.set-row', null, h('span', null, '구분'), h('span', null, `무게(${s.unit})`), h('span', null, b.measure === 'duration' ? '초' : '회'), h('span')), box, h('.stack', null, h('button', { onclick: () => {
+        return h('div', null, h('h3', null, b.name), h('p.hint', null, LOAD_LABELS[isAssistanceExercise(b) ? 'assistance' : b.loadBasis] || '목표 무게·횟수예요. 닫거나 취소하면 원래 계획은 바뀌지 않습니다.'), h('.set-row', null, h('span', null, '구분'), h('span', null, `${isAssistanceExercise(b) ? '보조중량' : '무게'}(${s.unit})`), h('span', null, b.measure === 'duration' ? '초' : '회'), h('span')), box, h('.stack', null, h('button', { onclick: () => {
                 if (b.sets.length >= 50)
                     throw new Error('세트는 최대 50개예요.');
                 const last = workSets(b).at(-1);

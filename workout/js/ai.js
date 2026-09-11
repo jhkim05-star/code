@@ -1,6 +1,6 @@
 /** Shared OpenAI / Claude contract. Proxy credentials are not vendor API keys. */
 import { settings, sessions, customExercises, avoidExerciseIds, metadata } from './store.js';
-import { GROUPS, byGroup } from './exercises.js';
+import { GROUPS, byGroup, findExercise, isAssistanceExercise } from './exercises.js';
 import { validateCatalog, validatePlan, weekDates } from './ai-contract.js';
 const TOKEN_KEY = 'wl:aiProxyToken';
 let memoryToken = '';
@@ -23,12 +23,23 @@ export function setProxyToken(value) {
     catch { }
 }
 globalThis.addEventListener?.('workout:reset-start', () => setProxyToken(''));
-export function allowedCatalog() { const s = settings(); return validateCatalog(GROUPS.flatMap(g => byGroup(g.id, customExercises(), s.plan, avoidExerciseIds())).map(ex => ({ id: ex.id, name: ex.name, group: ex.group, equip: ex.equip }))); }
+export function allowedCatalog() { const s = settings(); return validateCatalog(GROUPS.flatMap(g => byGroup(g.id, customExercises(), s.plan, avoidExerciseIds())).map(ex => ({ id: ex.id, name: ex.name, group: ex.group, equip: ex.equip, loadBasis: ex.loadBasis }))); }
+export function serializeHistory(rawSessions, custom = []) {
+    return [...rawSessions].sort((a, b) => a.startedAt - b.startedAt).slice(-12).map(session => ({
+        date: session.date, status: session.status, stopReason: session.stopReason || '',
+        entries: session.entries.map(entry => {
+            const exercise = findExercise(entry.exerciseId, custom) || entry;
+            return { exerciseId: entry.exerciseId, name: entry.name,
+                loadBasis: isAssistanceExercise(entry) || isAssistanceExercise(exercise) ? 'assistance' : entry.loadBasis || exercise.loadBasis || '',
+                sets: entry.sets.filter(set => set.done && !set.warmup && set.confirmed).map(set => ({ weight: set.weight, reps: set.reps, targetReps: set.targetReps, rir: set.rir, confirmed: true })) };
+        }).filter(entry => entry.sets.length),
+    }));
+}
 export function requestContext(weekStart, request) {
     weekDates(weekStart);
     if (metadata().unitReviewRequired)
         throw new Error('기존 기록의 단위를 먼저 확인해 주세요.');
-    const s = settings(), history = [...sessions()].sort((a, b) => a.startedAt - b.startedAt).slice(-12).map(session => ({ date: session.date, status: session.status, stopReason: session.stopReason || '', entries: session.entries.map(e => ({ exerciseId: e.exerciseId, name: e.name, sets: e.sets.filter(st => st.done && !st.warmup && st.confirmed).map(st => ({ weight: st.weight, reps: st.reps, targetReps: st.targetReps, rir: st.rir, confirmed: true })) })).filter(e => e.sets.length) }));
+    const s = settings(), history = serializeHistory(sessions(), customExercises());
     return { provider: s.aiProvider, weekStart, request: String(request || '').trim().slice(0, 3000), catalog: allowedCatalog(),
         profile: { ...structuredClone(s.plan), unit: 'kg', timing: { countdownSec: s.countdownSec, exerciseRest: s.exerciseRest, exerciseSetup: s.exerciseSetup, warmupRest: s.warmupRest, warmupToWorkRest: s.warmupToWorkRest } }, history };
 }

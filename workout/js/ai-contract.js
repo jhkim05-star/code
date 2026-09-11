@@ -25,7 +25,10 @@ export function validateCatalog(catalog) {
         if (seen.has(id) || !GROUP_IDS.includes(x.group))
             throw new Error('중복 종목 ID 또는 알 수 없는 부위입니다.');
         seen.add(id);
-        return { id, name, group: x.group, equip: typeof x.equip === 'string' ? x.equip.slice(0, 40) : '' };
+        const loadBasis = typeof x.loadBasis === 'string' ? x.loadBasis.slice(0, 40) : '';
+        if (loadBasis && !['total', 'per_hand', 'stack', 'assistance', 'bodyweight', 'added'].includes(loadBasis))
+            throw new Error('종목 중량 기록 방식이 올바르지 않습니다.');
+        return { id, name, group: x.group, equip: typeof x.equip === 'string' ? x.equip.slice(0, 40) : '', loadBasis };
     });
 }
 export function planSchema(catalog, weekStart) {
