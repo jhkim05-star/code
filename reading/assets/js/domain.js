@@ -1,13 +1,14 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.3.1-pwa-refresh';
+export const BUILD = '3.3.2-default-proxy';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
 export const ORIGINS = { korean:'한국', japan:'일본', east:'동양', anglo:'영미', europe:'유럽', '':'미분류' };
 export const THEMES = { red:'빨강', pink:'분홍', blue:'파랑', green:'녹색', yellow:'노랑' };
 export const BACKGROUNDS = { black:'블랙', beige:'베이지', white:'화이트' };
+export const DEFAULT_BOOK_PROXY = 'https://bookshelf-kakao-proxy.jhkim05.workers.dev/';
 export const MEMO_TYPES = { thought: '생각', quote: '인상 깊은 문장', question: '질문', action: '해볼 일' };
 export const clone = x => structuredClone(x);
 export const uid = (prefix = 'id') => prefix + '_' + (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -51,7 +52,7 @@ function strings(x, label, max = 100) {
   if (!Array.isArray(x) || x.length > max) throw new Error(`${label} 목록 형식이 올바르지 않아요.`);
   return [...new Set(x.map(v=>text(v,label,2000).trim()).filter(Boolean))];
 }
-export function emptyState() { return { app: APP, version: VERSION, revision: 0, books: [], readings: [], notes: [], settings: { cols: 4, theme: 'pink', background: 'black', kakaoProxyUrl: '', aladinKey: '', lastBackupRequestedAt: '' }, updatedAt: nowIso() }; }
+export function emptyState() { return { app: APP, version: VERSION, revision: 0, books: [], readings: [], notes: [], settings: { cols: 4, theme: 'pink', background: 'black', kakaoProxyUrl: DEFAULT_BOOK_PROXY, aladinKey: '', lastBackupRequestedAt: '' }, updatedAt: nowIso() }; }
 export function isbnCoverUrl(value){
   const isbn=String(value||'').replace(/[\s-]/g,'');
   return /^(?:\d{9}[\dXx]|\d{13})$/.test(isbn)?`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-L.jpg?default=false`:'';
@@ -124,7 +125,7 @@ export function validateState(raw) {
     if(!books.has(n.bookId) || (n.readingId && reads.get(n.readingId)?.bookId !== n.bookId)) throw new Error('노트와 책의 연결이 올바르지 않아요.');
   }
   const s = raw.settings || {}; requireObject(s,'설정');
-  out.settings = { cols:s.cols === 3 ? 3 : 4, theme:Object.hasOwn(THEMES,s.theme)?s.theme:'pink', background:Object.hasOwn(BACKGROUNDS,s.background)?s.background:'black', kakaoProxyUrl:s.kakaoProxyUrl ? cleanUrl(s.kakaoProxyUrl) : '', aladinKey:text(s.aladinKey,'검색 키',500), lastBackupRequestedAt:text(s.lastBackupRequestedAt,'백업 시각',40) };
+  out.settings = { cols:s.cols === 3 ? 3 : 4, theme:Object.hasOwn(THEMES,s.theme)?s.theme:'pink', background:Object.hasOwn(BACKGROUNDS,s.background)?s.background:'black', kakaoProxyUrl:s.kakaoProxyUrl ? cleanUrl(s.kakaoProxyUrl) : DEFAULT_BOOK_PROXY, aladinKey:text(s.aladinKey,'검색 키',500), lastBackupRequestedAt:text(s.lastBackupRequestedAt,'백업 시각',40) };
   return out;
 }
 const oldNum = x => x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x);
@@ -135,7 +136,7 @@ export function migrateLegacy(raw) {
   out.settings.cols = raw.settings?.cols === 3 ? 3 : 4;
   out.settings.theme = Object.hasOwn(THEMES,raw.settings?.theme) ? raw.settings.theme : 'pink';
   out.settings.background = Object.hasOwn(BACKGROUNDS,raw.settings?.background) ? raw.settings.background : 'black';
-  out.settings.kakaoProxyUrl = raw.settings?.kakaoProxyUrl || '';
+  out.settings.kakaoProxyUrl = raw.settings?.kakaoProxyUrl || DEFAULT_BOOK_PROXY;
   out.settings.aladinKey = raw.settings?.aladinKey || '';
   out.settings.lastBackupRequestedAt = raw.settings?.lastBackupAt || '';
   for (const b of raw.books) {
