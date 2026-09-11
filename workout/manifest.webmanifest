@@ -3,9 +3,9 @@
   "lang":"ko", "start_url":"./index.html", "scope":"./", "display":"standalone", "orientation":"portrait",
   "background_color":"#070F1E", "theme_color":"#070F1E",
   "icons":[
-    {"src":"./icons/icon-180.png","sizes":"180x180","type":"image/png"},
-    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
-    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
-    {"src":"./icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+    {"src":"./icons/icon-m-performance-180.png","sizes":"180x180","type":"image/png"},
+    {"src":"./icons/icon-m-performance-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-m-performance-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-m-performance-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
   ]
 }
