@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#101115"/><stop offset="1" stop-color="#000"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ff7a92"/><stop offset="1" stop-color="#b0082e"/></linearGradient><linearGradient id="white" x2="0" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#bec3cd"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#6eb6ff"/><stop offset="1" stop-color="#004ebe"/></linearGradient></defs><rect width="180" height="180" fill="url(#bg)"/><rect x="30" y="44" width="32" height="104" rx="2" fill="url(#red)"/><rect x="70" y="32" width="32" height="116" rx="2" fill="url(#white)"/><rect x="110" y="56" width="32" height="92" rx="2" fill="url(#blue)"/><rect x="30" y="44" width="7" height="104" fill="#fff" opacity=".28"/><rect x="70" y="32" width="7" height="116" fill="#fff" opacity=".5"/><rect x="110" y="56" width="7" height="92" fill="#fff" opacity=".3"/><rect x="22" y="148" width="136" height="8" rx="2" fill="#464c5a"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="책등과 책갈피로 만든 책꽂이 아이콘">
+  <defs>
+    <linearGradient id="background" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2b222b"/>
+      <stop offset="1" stop-color="#0e0d11"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="188" y1="106" x2="318" y2="414" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffbfd0"/>
+      <stop offset="1" stop-color="#dd718f"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#background)"/>
+  <path d="M92 397h328" stroke="#f7f1ee" stroke-width="20" stroke-linecap="round" opacity=".9"/>
+  <rect x="112" y="145" width="70" height="244" rx="13" fill="#f4ece8"/>
+  <path d="M126 172h42M126 349h42" stroke="#2a232a" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+  <rect x="203" y="101" width="94" height="288" rx="15" fill="url(#accent)"/>
+  <path d="M230 101v116l20-16 20 16V101" fill="#34232d" opacity=".9"/>
+  <path d="M225 337h50" stroke="#3b2530" stroke-width="12" stroke-linecap="round" opacity=".65"/>
+  <path d="M320 161l65-17 62 232-65 17z" fill="#789bc1"/>
+  <path d="M342 182l25-7M388 348l25-7" stroke="#142234" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+  <path d="M101 94c92-34 218-38 316 0" fill="none" stroke="#f39ab5" stroke-width="8" stroke-linecap="round" opacity=".28"/>
+</svg>
