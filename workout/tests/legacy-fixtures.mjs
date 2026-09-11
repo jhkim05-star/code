@@ -82,7 +82,7 @@ export function legacyStorageEntries(data) {
         .map(key => [`wl:${key}`, JSON.stringify(data[key])]);
 }
 
-export function indexedDbStub(initial = []) {
+export function indexedDbStub(initial = [], { readMode = 'success', writeMode = 'success' } = {}) {
     const values = new Map(initial);
     const db = {
         objectStoreNames: { contains: () => true },
@@ -90,7 +90,7 @@ export function indexedDbStub(initial = []) {
         close: () => {},
         transaction: (_name, mode) => {
             let pending = 0;
-            let aborted = false;
+            let aborted = false, failed = false;
             const tx = {
                 oncomplete: null,
                 onerror: null,
@@ -106,10 +106,16 @@ export function indexedDbStub(initial = []) {
                         queueMicrotask(() => {
                             if (aborted)
                                 return;
+                            if (mode === 'readonly' && readMode === 'failure') {
+                                failed = true;
+                                request.onerror?.();
+                                tx.onerror?.();
+                                return;
+                            }
                             request.result = values.get(key);
                             request.onsuccess?.();
                             if (--pending === 0)
-                                queueMicrotask(() => !aborted && tx.oncomplete?.());
+                                queueMicrotask(() => !aborted && !failed && tx.oncomplete?.());
                         });
                         return request;
                     },
@@ -120,9 +126,14 @@ export function indexedDbStub(initial = []) {
                         queueMicrotask(() => {
                             if (aborted)
                                 return;
+                            if (writeMode === 'failure') {
+                                failed = true;
+                                tx.onerror?.();
+                                return;
+                            }
                             values.set(key, structuredClone(value));
                             if (--pending === 0)
-                                queueMicrotask(() => !aborted && tx.oncomplete?.());
+                                queueMicrotask(() => !aborted && !failed && tx.oncomplete?.());
                         });
                     },
                 }),
