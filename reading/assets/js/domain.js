@@ -1,7 +1,7 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.3.3-cover-colors';
+export const BUILD = '3.3.4-ui-cleanup';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
@@ -103,6 +103,7 @@ export function normalizeReading(r) {
 export function normalizeNote(n) {
   requireObject(n,'노트');
   const result = { id:id(n.id), bookId:id(n.bookId), readingId:n.readingId ? id(n.readingId) : null, kind:choice(n.kind,{review:1,memo:1},'review'), stage:choice(n.stage,{draft:1,complete:1},'draft'), template:choice(n.template,{general:1,fiction:1,practical:1},'general'), memoType:choice(n.memoType,MEMO_TYPES,'thought'), title:text(n.title,'노트 제목',2000), summary:text(n.summary), reflection:text(n.reflection), takeaway:text(n.takeaway), questions:text(n.questions), actions:text(n.actions), text:text(n.text), locator:text(n.locator,'위치',1000), comment:text(n.comment), legacyText:text(n.legacyText), tags:strings(n.tags,'태그',30), pinned:!!n.pinned, rev:number(n.rev ?? 0,0,Number.MAX_SAFE_INTEGER,true), createdAt:stamp(n.createdAt), updatedAt:stamp(n.updatedAt) };
+  if(result.kind==='review'&&/^(?:Bookmory|북모리) 감상$/.test(result.title.trim()))result.title='감상';
   if (result.stage === 'complete' && !noteHasContent(result)) throw new Error('내용을 하나 이상 적은 뒤 정리 완료로 표시해 주세요.');
   return result;
 }

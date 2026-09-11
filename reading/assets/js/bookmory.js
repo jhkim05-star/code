@@ -114,7 +114,7 @@ export async function parseBookmoryXlsx(input){
         const period=parsePeriod(periodValue),status=statusFrom(row[14],period),readingId=stableId('read',[bookId,String(n+1)],ids),stamp=stampFor(period,n+1);
         const reading=normalizeReading({id:readingId,bookId,status,startedAt:period.start,finishedAt:status==='finished'?period.end:'',format,rating:parseRating(ratingValue),readTime,createdAt:stamp,updatedAt:stamp});
         state.readings.push(reading);bookReadings.push(reading);
-        if(opinion){const noteId=stableId('note',[readingId,'opinion'],ids);state.notes.push(normalizeNote({id:noteId,bookId,readingId,kind:'review',stage:'complete',title:'Bookmory 감상',reflection:opinion,createdAt:stamp,updatedAt:stamp}));}
+        if(opinion){const noteId=stableId('note',[readingId,'opinion'],ids);state.notes.push(normalizeNote({id:noteId,bookId,readingId,kind:'review',stage:'complete',title:'감상',reflection:opinion,createdAt:stamp,updatedAt:stamp}));}
       }
       if(!bookReadings.length){const readingId=stableId('read',[bookId,'1'],ids),status=statusFrom(row[14],{start:'',end:''});state.readings.push(normalizeReading({id:readingId,bookId,status,format,createdAt:stampFor({},1),updatedAt:stampFor({},1)}));}
     }catch(error){throw new Error(`${rowNumber}행: ${error.message}`);}

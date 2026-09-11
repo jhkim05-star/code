@@ -63,12 +63,13 @@ async function boot(){
     try{
       const hadController=Boolean(navigator.serviceWorker.controller);
       const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
-      const showUpdate=()=>{if(!reg.waiting||document.querySelector('.update-button'))return;const btn=button('새 버전 적용',async()=>{if(leaveGuard&&!(await leaveGuard()))return;btn.disabled=true;reg.waiting?.postMessage({type:'ACTIVATE_UPDATE'});},'update-button small');document.body.append(btn);};
+      const showUpdate=()=>{if(reg.waiting)dispatchEvent(new CustomEvent('reading:update-ready'));};
       const checkUpdate=async()=>{await reg.update();showUpdate();};
       showUpdate();reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw?.addEventListener('statechange',()=>{if(sw.state==='installed')showUpdate();});});
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate().catch(()=>{});});
       addEventListener('pageshow',()=>checkUpdate().catch(()=>{}));
-      addEventListener('reading:check-update',event=>{checkUpdate().then(()=>event.detail?.done?.(reg.waiting?'새 버전이 준비됐어요. 아래의 적용 버튼을 눌러 주세요.':'현재 최신 버전을 사용 중이에요.')).catch(()=>event.detail?.done?.('업데이트를 확인하지 못했어요. 인터넷 연결을 확인해 주세요.'));});
+      addEventListener('reading:check-update',event=>{checkUpdate().then(()=>event.detail?.done?.(reg.waiting?'새 버전이 준비됐어요.':'현재 최신 버전을 사용 중이에요.',Boolean(reg.waiting))).catch(()=>event.detail?.done?.('업데이트를 확인하지 못했어요. 인터넷 연결을 확인해 주세요.',false));});
+      addEventListener('reading:apply-update',async event=>{if(!reg.waiting){event.detail?.done?.('적용할 새 버전이 없어요.');return;}if(leaveGuard&&!(await leaveGuard()))return;reg.waiting.postMessage({type:'ACTIVATE_UPDATE'});event.detail?.done?.('새 버전을 적용하고 있어요…');});
       let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing||!hadController)return;refreshing=true;location.reload();});
       checkUpdate().catch(()=>{});
     }catch(e){toast('오프라인 준비를 완료하지 못했어요. 인터넷 연결 후 다시 열어 주세요.');}
