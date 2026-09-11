@@ -3,7 +3,7 @@ import { clone,uid,nowIso,MEMO_TYPES,readingsFor,activeReading,noteHasContent,no
 import { noteMarkdown } from './exports.js';
 import { exportFile } from './platform.js';
 const nameOf=n=>n.title|| (n.kind==='review'?'감상평':MEMO_TYPES[n.memoType]);
-const excerpt=n=>n.summary||n.reflection||n.takeaway||n.text||n.legacyText||n.questions||n.actions||n.comment||'';
+const excerpt=n=>n.summary||n.reflection||n.text||n.legacyText||n.questions||n.actions||n.comment||'';
 const filterNames={all:'전체',review:'감상평',memo:'읽는 중 메모',draft:'초안',pinned:'고정'};
 export function noteChooser(ctx,kind='review'){
   const books=ctx.repo.state.books;
@@ -30,7 +30,7 @@ export function renderNote(root,ctx,noteId){
   const state=ctx.repo.state,n=state.notes.find(n=>n.id===noteId);if(!n){mount(root,empty('노트를 찾지 못했어요','다른 노트를 선택해 주세요.'));return;}
   const b=state.books.find(b=>b.id===n.bookId),r=state.readings.find(r=>r.id===n.readingId);
   const section=(key,label)=>n[key]?h('section.note-read-section',{},h('h2',{},label),h('p.prose'+(key==='text'&&n.memoType==='quote'?'.quote':''),{},n[key])):null;
-  mount(root,button('‹ 노트로',()=>ctx.navigate('notes'),'back'),head(nameOf(n),b?.title||'',button('수정',()=>ctx.navigate('write/'+encodeURIComponent(n.id)),'primary')),h('div.note-meta',{},n.stage==='complete'?'정리 완료':'초안',n.pinned?'· 고정':''),r?.oneLiner?h('p.one-liner',{},r.oneLiner):null,h('div.card',{style:{marginTop:'22px'}},section('summary','핵심 내용'),section('reflection','내 생각'),section('takeaway','나에게 남은 것'),section('questions','남은 질문'),section('actions','해볼 일'),section('text',n.memoType==='quote'?'인상 깊은 문장':'메모'),section('locator','페이지 · 장 · 위치'),section('comment','인용에 대한 내 생각'),section('legacyText','기존 독서록 · 원문 보존'),!noteHasContent(n)?h('p.hint',{},'아직 적은 내용이 없어요. 수정에서 한 줄 남겨보세요.'):null,n.tags.length?h('div.note-meta',{},...n.tags.map(t=>h('span.tag',{},'#'+t))):null),h('div.button-row',{},button(n.pinned?'고정 해제':'다시 볼 노트로 고정',e=>task(e.currentTarget,async()=>{await ctx.repo.saveNote({...n,pinned:!n.pinned},n.rev);ctx.refresh();})),button('Markdown 내보내기',e=>task(e.currentTarget,async()=>{await exportFile(`독서노트_${new Date().toISOString().slice(0,10)}.md`,noteMarkdown(n,b,r),'text/markdown;charset=utf-8');ctx.toast('파일 저장을 요청했어요. 파일 앱에서 확인해 주세요.');}))),button('이 책의 기록 보기',()=>ctx.navigate('book/'+encodeURIComponent(n.bookId)),'inline-link'),h('div.divider'),button('이 노트 삭제',async()=>{if(await confirm('노트를 삭제할까요?','책과 독서 이력은 그대로 남아요. 필요한 글은 먼저 내보내 주세요.','노트 삭제',true)){await ctx.repo.removeNote(n.id);ctx.navigate('notes');}},'quiet danger'));
+  mount(root,button('‹ 노트로',()=>ctx.navigate('notes'),'back'),head(nameOf(n),b?.title||'',button('수정',()=>ctx.navigate('write/'+encodeURIComponent(n.id)),'primary')),h('div.note-meta',{},n.stage==='complete'?'정리 완료':'초안',n.pinned?'· 고정':''),r?.oneLiner?h('p.one-liner',{},r.oneLiner):null,h('div.card',{style:{marginTop:'22px'}},section('summary','핵심 내용'),section('reflection','내 생각'),section('questions','남은 질문'),section('actions','해볼 일'),section('text',n.memoType==='quote'?'인상 깊은 문장':'메모'),section('locator','페이지 · 장 · 위치'),section('comment','인용에 대한 내 생각'),section('legacyText','기존 독서록 · 원문 보존'),!noteHasContent(n)?h('p.hint',{},'아직 적은 내용이 없어요. 수정에서 한 줄 남겨보세요.'):null,n.tags.length?h('div.note-meta',{},...n.tags.map(t=>h('span.tag',{},'#'+t))):null),h('div.button-row',{},button(n.pinned?'고정 해제':'다시 볼 노트로 고정',e=>task(e.currentTarget,async()=>{await ctx.repo.saveNote({...n,pinned:!n.pinned},n.rev);ctx.refresh();})),button('Markdown 내보내기',e=>task(e.currentTarget,async()=>{await exportFile(`독서노트_${new Date().toISOString().slice(0,10)}.md`,noteMarkdown(n,b,r),'text/markdown;charset=utf-8');ctx.toast('파일 저장을 요청했어요. 파일 앱에서 확인해 주세요.');}))),button('이 책의 기록 보기',()=>ctx.navigate('book/'+encodeURIComponent(n.bookId)),'inline-link'),h('div.divider'),button('이 노트 삭제',async()=>{if(await confirm('노트를 삭제할까요?','책과 독서 이력은 그대로 남아요. 필요한 글은 먼저 내보내 주세요.','노트 삭제',true)){await ctx.repo.removeNote(n.id);ctx.navigate('notes');}},'quiet danger'));
 }
 const PROMPTS={
   general:['이 책은 무엇을 말하고 있나요? 내 말로 짧게 적어보세요.','무엇에 공감했고, 무엇이 걸렸나요?','읽기 전과 비교해 무엇이 달라졌나요?'],
@@ -88,7 +88,7 @@ export async function renderEditor(root,ctx,noteId){
   const hintNodes=[],body=h('div');
   if(note.kind==='review'){
     body.append(field('질문 틀',template,'안내 질문만 바뀌고 작성한 글은 그대로 남아요.'));
-    ['summary','reflection','takeaway'].forEach((key,i)=>{const node=area(key,['핵심 내용','내 생각','나에게 남은 것'][i],PROMPTS[note.template][i]);hintNodes.push(node.querySelector('.hint'));body.append(node);});
+    ['summary','reflection'].forEach((key,i)=>{const node=area(key,['핵심 내용','내 생각'][i],PROMPTS[note.template][i]);hintNodes.push(node.querySelector('.hint'));body.append(node);});
     const details=h('details',{open:!!(note.questions||note.actions)},h('summary',{},'남은 질문 · 해볼 일 (선택)'),area('questions','남은 질문','아직 이해되지 않았거나 더 찾아보고 싶은 것은?'),area('actions','해볼 일','실제로 해볼 한 가지가 있다면?'));body.append(details);
   }else{
     const type=select(MEMO_TYPES,note.memoType,{'aria-label':'메모 종류',onchange:e=>{note.memoType=e.target.value;changed();}});
