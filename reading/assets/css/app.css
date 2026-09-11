@@ -14,3 +14,4 @@ body[data-background=white]{color-scheme:light;--bg:#f7f7f5;--bg-soft:#ededeb;--
 .chip{min-height:44px}
 .reset-card{border-color:color-mix(in srgb,var(--danger) 48%,var(--line))}
 h1:focus{outline:none}
+.cover.format-paper{border-color:var(--paper-border,var(--paper-contrast))}.cover.format-paper:after{border-left-color:color-mix(in srgb,var(--paper-border,var(--paper-contrast)) 72%,transparent)}.cover.format-ebook{border-color:var(--ebook-border,var(--accent))}.cover.format-ebook:before{background-image:radial-gradient(circle,var(--ebook-border,var(--accent)) 1px,transparent 1.2px)}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { DEFAULT_BOOK_PROXY,emptyState,normalizeBook,normalizeReading,normalizeNote,validateState,suggestedCollection,collectionGroups,statistics,clone } from '../assets/js/domain.js';
+import { COVER_COLORS,DEFAULT_BOOK_PROXY,coverColorValue,emptyState,normalizeBook,normalizeReading,normalizeNote,validateState,suggestedCollection,collectionGroups,statistics,clone } from '../assets/js/domain.js';
 import { parseBookmoryXlsx,bookmoryXlsx,bookmoryMatrix,BOOK_HEADERS,ROUND_HEADERS } from '../assets/js/bookmory.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
@@ -70,6 +70,12 @@ test('domestic book proxy is available in fresh and existing standalone storage'
   const custom=emptyState();custom.settings.kakaoProxyUrl='https://example.com/books';assert.equal(validateState(custom).settings.kakaoProxyUrl,'https://example.com/books');
 });
 
+test('paper and ebook border colors validate and persist independently',async()=>{
+  assert.equal(emptyState().settings.paperBorderColor,'auto');assert.equal(emptyState().settings.ebookBorderColor,'auto');assert.equal(COVER_COLORS.mint,'민트');assert.equal(coverColorValue('purple'),'#9b8cf2');
+  const old=emptyState();delete old.settings.paperBorderColor;delete old.settings.ebookBorderColor;assert.deepEqual([validateState(old).settings.paperBorderColor,validateState(old).settings.ebookBorderColor],['auto','auto']);
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();await repo.setting({paperBorderColor:'orange',ebookBorderColor:'blue'});assert.deepEqual([repo.state.settings.paperBorderColor,repo.state.settings.ebookBorderColor],['orange','blue']);assert.equal(validateState({...repo.state,settings:{...repo.state.settings,paperBorderColor:'unsafe'}}).settings.paperBorderColor,'auto');
+});
+
 test('explicit wipe starts with empty records, clears drafts and remains atomic on failure',async()=>{
   const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();await repo.createBook({title:'지울 책'});await repo.wipe();assert.deepEqual([repo.state.books.length,repo.state.readings.length,repo.state.notes.length],[0,0,0]);assert.equal(adapter.lastOptions.clearDrafts,true);await repo.createBook({title:'보존할 책'});const before=clone(repo.state);adapter.fail=true;await assert.rejects(repo.wipe());assert.deepEqual(repo.state,before);
 });
@@ -77,7 +83,7 @@ test('explicit wipe starts with empty records, clears drafts and remains atomic 
 test('UI source has five tabs, no shared header, theme tokens and non-color cover layers',async()=>{
   const [app,index,css,books,notes,settings]=await Promise.all(['../assets/js/app.js','../index.html','../assets/css/app.css','../assets/js/views-books.js','../assets/js/views-notes.js','../assets/js/views-settings.js'].map(path=>fs.readFile(new URL(path,import.meta.url),'utf8')));
   for(const route of ["shelf:'책꽂이'","library:'책장'","notes:'노트'","stats:'통계'","settings:'설정'"])assert.match(app,new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
-  assert.doesNotMatch(index,/id="topbar"/);assert.match(index,/data-background="black"/);assert.doesNotMatch(app,/책꽂이.*·.*기록/);for(const theme of ['red','pink','blue','green','yellow'])assert.match(css,new RegExp(`data-theme=${theme}`));for(const background of ['black','beige','white'])assert.match(css,new RegExp(`data-background=${background}`));assert.match(css,/Malgun Gothic/);assert.match(css,/format-paper.*paper-contrast/s);assert.match(css,/format-ebook.*border:3px double/s);assert.match(css,/format-ebook:before/);assert.match(css,/format-audio.*border:2px dashed/s);assert.match(css,/rating-overlay/);assert.match(books,/cover\(b,false,r\)/);assert.match(books,/button\.chart-row/);assert.match(books,/statDetail/);assert.match(books,/기존 책 정보 다시 검색/);assert.match(books,/책유형/);assert.doesNotMatch(books,/달력상 기간/);assert.doesNotMatch(notes,/나에게 남은 것/);assert.doesNotMatch(notes,/takeaway/);assert.match(settings,/Bookmory Excel 불러오기/);assert.match(settings,/background-choice/);assert.match(settings,/표지 자동 복구/);assert.match(settings,/repo\.updateCovers\(updates\)/);assert.doesNotMatch(settings,/알라딘 TTB 키/);assert.match(settings,/기존 기록 초기화/);assert.match(settings,/repo\.wipe\(\)/);
+  assert.doesNotMatch(index,/id="topbar"/);assert.match(index,/data-background="black"/);assert.doesNotMatch(app,/책꽂이.*·.*기록/);for(const theme of ['red','pink','blue','green','yellow'])assert.match(css,new RegExp(`data-theme=${theme}`));for(const background of ['black','beige','white'])assert.match(css,new RegExp(`data-background=${background}`));assert.match(css,/Malgun Gothic/);assert.match(css,/format-paper.*paper-contrast/s);assert.match(css,/format-paper.*paper-border/s);assert.match(css,/format-ebook.*border:3px double/s);assert.match(css,/format-ebook.*ebook-border/s);assert.match(css,/format-ebook:before/);assert.match(css,/format-audio.*border:2px dashed/s);assert.match(css,/rating-overlay/);assert.match(books,/cover\(b,false,r\)/);assert.match(books,/button\.chart-row/);assert.match(books,/statDetail/);assert.match(books,/기존 책 정보 다시 검색/);assert.match(books,/책유형/);assert.doesNotMatch(books,/달력상 기간/);assert.doesNotMatch(notes,/나에게 남은 것/);assert.doesNotMatch(notes,/takeaway/);assert.match(settings,/Bookmory Excel 불러오기/);assert.match(settings,/background-choice/);assert.match(settings,/책유형 테두리 색/);assert.match(settings,/paperBorderColor/);assert.match(settings,/ebookBorderColor/);assert.match(settings,/표지 자동 복구/);assert.match(settings,/repo\.updateCovers\(updates\)/);assert.doesNotMatch(settings,/알라딘 TTB 키/);assert.match(settings,/기존 기록 초기화/);assert.match(settings,/repo\.wipe\(\)/);
 });
 
 test('reading service worker remains scoped and does not mention workout caches',async()=>{
