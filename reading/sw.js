@@ -1,5 +1,5 @@
 /* Book-only app cache. CacheStorage is origin-wide: never clear another app. */
-const BUILD='reading3-20260911-bookmory1';
+const BUILD='reading31-20260911-library1';
 const SCOPE=self.registration.scope;
 let scopeHash=2166136261;for(const ch of new URL(SCOPE).pathname)scopeHash=Math.imul(scopeHash^ch.charCodeAt(0),16777619)>>>0;
 const PREFIX='bookshelf-reading-'+scopeHash.toString(16)+'-';
