@@ -1,7 +1,7 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.1.0-reading-library';
+export const BUILD = '3.2.0-reading-library';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
@@ -196,8 +196,8 @@ export function statistics(state){
   const authorMap=new Map();for(const {b}of pairs)for(const author of b.authors){const key=normalizeAuthor(author),entry=authorMap.get(key)||{label:author,value:0,bookIds:[]};entry.value++;entry.bookIds.push(b.id);authorMap.set(key,entry);}
   return {
     total:pairs.length,
-    years:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,4)),
-    months:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,7)).sort((a,b)=>a.label.localeCompare(b.label)).slice(-12),
+    years:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,4)).sort((a,b)=>b.label.localeCompare(a.label)),
+    months:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,7)).sort((a,b)=>b.label.localeCompare(a.label)).slice(0,12),
     ratings:countBy(pairs.filter(x=>x.r.rating),x=>x.r.rating,x=>`${Number(x).toFixed(1)}점`).sort((a,b)=>Number(a.label)-Number(b.label)),
     genres:countBy(pairs,x=>x.b.genre),
     origins:countBy(pairs,x=>x.b.origin,x=>ORIGINS[x]||ORIGINS['']),
