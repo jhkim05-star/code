@@ -1,5 +1,5 @@
 /** Product defaults, not individualized training prescriptions. Existing choices are migrated. */
-export const VERSION = '2.0.0-review2';
+export const VERSION = '2.0.1-reset-recovery';
 export const GROUP_IDS = ['chest', 'back', 'delt_f', 'delt_sr', 'biceps', 'triceps', 'thighs', 'glutes', 'calves', 'core'];
 export const DEFAULT_SETTINGS = {
     tempo: 3, tempoMin: 0.5, tempoMax: 6, countdownSec: 3, announceLastReps: 2,

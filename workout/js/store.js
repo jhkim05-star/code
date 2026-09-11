@@ -3,15 +3,17 @@ import { DEFAULT_SETTINGS, emptyData } from './config.js';
 import { clone, uid, finite, LB_PER_KG } from './util.js';
 import { validateData, validateSettings, validateSession, validateWeeklyPlan, validateDraft, validateLegacyDataForRecovery, parseBackup } from './validation.js';
 import { SnapshotWriter } from './persistence.js';
+import { CONTROL_CHANNEL, RESET_MARKER_KEY, blankResetData, readResetMarker, snapshotMatchesReset } from './reset.js';
 export { DEFAULT_SETTINGS };
 const SNAPSHOT_KEY = 'wl:snapshot.v2';
 const DB_SNAPSHOT = 'snapshot.v2';
 const LEGACY_KEYS = ['settings', 'plans', 'sessions', 'customExercises', 'meta'];
 const providerCredential = /^(apiKey|proxyToken|openaiKey|anthropicKey|apiToken|openaiApiKey|anthropicApiKey|openaiProxyToken|clientToken)$/i;
-let mem = emptyData(), db = null, writer = null, ready = false, lastSave = Promise.resolve();
+let mem = emptyData(), db = null, writer = null, ready = false, lastSave = Promise.resolve(), resetting = false;
 let status = { state: 'loading', message: '저장소 확인 중', readOnly: false, dirty: false, revision: 0 };
 const listeners = new Set();
-let releaseWriterLock = null, ownsWriterLock = false;
+let releaseWriterLock = null, ownsWriterLock = false, controlChannel = null, lifecycleInstalled = false;
+let dbOpenFailed = false, storeGeneration = null;
 export const storageStatus = () => ({ ...status });
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function notify() {
@@ -26,6 +28,7 @@ function notify() {
 }
 function openDB() {
     return new Promise(resolve => {
+        dbOpenFailed = false;
         if (!globalThis.indexedDB)
             return resolve(null);
         let req, settled = false;
@@ -38,7 +41,11 @@ function openDB() {
             clearTimeout(timer);
             resolve(value);
         };
-        const timer = setTimeout(() => finish(null), 2500);
+        const fail = () => {
+            dbOpenFailed = true;
+            finish(null);
+        };
+        const timer = setTimeout(fail, 2500);
         try {
             req = indexedDB.open('workout-log', 1);
             req.onupgradeneeded = () => {
@@ -46,11 +53,11 @@ function openDB() {
                     req.result.createObjectStore('kv');
             };
             req.onsuccess = () => finish(req.result);
-            req.onerror = () => finish(null);
-            req.onblocked = () => finish(null);
+            req.onerror = fail;
+            req.onblocked = fail;
         }
         catch {
-            finish(null);
+            fail();
         }
     });
 }
@@ -79,6 +86,31 @@ function idbGet(key) {
         }
     });
 }
+function idbGetStrict(key) {
+    return new Promise((resolve, reject) => {
+        if (!db)
+            return dbOpenFailed ? reject(new Error('IndexedDB를 열지 못했습니다.')) : resolve(undefined);
+        let settled = false;
+        const finish = (error, value) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            error ? reject(error) : resolve(value);
+        };
+        const timer = setTimeout(() => finish(new Error('IndexedDB 읽기 시간이 초과됐습니다.')), 2500);
+        try {
+            const tx = db.transaction('kv', 'readonly');
+            const r = tx.objectStore('kv').get(key);
+            r.onsuccess = () => finish(null, r.result);
+            r.onerror = () => finish(new Error('IndexedDB 저장본을 읽지 못했습니다.'));
+            tx.onabort = () => finish(new Error('IndexedDB 읽기가 중단됐습니다.'));
+        }
+        catch {
+            finish(new Error('IndexedDB 저장본을 읽지 못했습니다.'));
+        }
+    });
+}
 function idbWrite(snapshot) {
     return new Promise(resolve => {
         if (!db)
@@ -104,7 +136,15 @@ function idbWrite(snapshot) {
             const r = store.get(DB_SNAPSHOT);
             r.onsuccess = () => {
                 const current = r.result;
-                if (current && current.revision > snapshot.revision) {
+                const marker = readResetMarker();
+                const snapshotResetId = snapshot?.data?.meta?.resetId;
+                const currentResetId = current?.data?.meta?.resetId;
+                if (marker?.state === 'pending' || (marker?.state === 'complete' && snapshotResetId !== marker.id)) {
+                    tx.abort();
+                    return;
+                }
+                const sameGeneration = marker?.state !== 'complete' || currentResetId === snapshotResetId;
+                if (sameGeneration && current && current.revision > snapshot.revision) {
                     tx.abort();
                     return;
                 }
@@ -158,7 +198,7 @@ function localRaw(key) {
         return null;
     }
 }
-function localGet(key) { const raw = localRaw(key); return raw == null ? undefined : JSON.parse(raw); }
+function localGet(key) { const raw = localStorage.getItem(key); return raw == null ? undefined : JSON.parse(raw); }
 function localSet(key, value) { localStorage.setItem(key, JSON.stringify(value)); return true; }
 function scrubProviderCredentials(value) {
     if (!value || typeof value !== 'object')
@@ -225,24 +265,174 @@ async function acquireWriter() {
         }).catch(() => resolve(false));
     });
 }
+function closeConnections() {
+    try {
+        db?.close?.();
+    }
+    catch { }
+    db = null;
+    releaseWriterLock?.();
+    releaseWriterLock = null;
+    ownsWriterLock = false;
+}
+async function quiesceForReset(resetId) {
+    if (resetting)
+        return;
+    resetting = true;
+    status = { ...status, state: 'resetting', readOnly: true, dirty: false, message: '다른 화면에서 운동 데이터 새로 시작을 진행 중입니다. 이 창은 저장을 중단했습니다.' };
+    notify();
+    try {
+        globalThis.dispatchEvent?.(new Event('workout:reset-start'));
+    }
+    catch { }
+    await lastSave.catch(() => { });
+    closeConnections();
+    if (resetId)
+        mem.meta.pendingResetId = resetId;
+}
+function installLifecycleListeners() {
+    if (lifecycleInstalled || !globalThis.addEventListener)
+        return;
+    lifecycleInstalled = true;
+    addEventListener('storage', e => {
+        if (e.key === RESET_MARKER_KEY && e.newValue) {
+            let marker = null;
+            try {
+                marker = JSON.parse(e.newValue);
+            }
+            catch { }
+            if (marker?.id && (marker.state === 'pending' || marker.id !== storeGeneration?.id))
+                quiesceForReset(marker.id);
+            return;
+        }
+        if (e.key !== SNAPSHOT_KEY || !e.newValue)
+            return;
+        try {
+            const incoming = JSON.parse(e.newValue);
+            if (incoming.writer !== writer?.writer && incoming.revision >= writer?.revision && !status.readOnly) {
+                status = { ...status, readOnly: true, state: 'conflict', message: '다른 창에서 새 기록을 저장했습니다. 백업 후 이 창을 새로고침해 주세요.' };
+                notify();
+            }
+        }
+        catch { }
+    });
+    if (globalThis.document && globalThis.BroadcastChannel) {
+        try {
+            controlChannel = new BroadcastChannel(CONTROL_CHANNEL);
+            controlChannel.onmessage = event => {
+                if (event.data?.type === 'reset-request')
+                    quiesceForReset(event.data.resetId);
+            };
+        }
+        catch { }
+    }
+    addEventListener('pagehide', () => {
+        closeConnections();
+        controlChannel?.close?.();
+        controlChannel = null;
+    });
+    addEventListener('pageshow', async (e) => {
+        if (!e.persisted)
+            return;
+        if (readResetMarker()) {
+            status = { ...status, readOnly: true, state: 'resetting', message: '저장 상태가 바뀌었습니다. 최신 빈 운동일지를 열려면 새로고침해 주세요.' };
+            notify();
+            return;
+        }
+        const owns = await acquireWriter();
+        status.readOnly = !owns;
+        status.message = '화면 복원 후 최신 저장값 확인을 위해 새로고침해 주세요.';
+        status.readOnly = true;
+        notify();
+    });
+}
 export async function initStore() {
+    const resetMarker = readResetMarker();
+    storeGeneration = resetMarker?.state === 'complete'
+        ? { id: resetMarker.id, resetAt: resetMarker.completedAt || Date.now() }
+        : null;
+    if (resetMarker?.state === 'pending') {
+        resetting = true;
+        mem = emptyData();
+        mem.meta.pendingResetId = resetMarker.id;
+        status = { ...status, state: 'resetting', readOnly: true, dirty: false, message: '확인한 운동 데이터 초기화가 완료되지 않았습니다. 기존 운동 데이터 삭제 후 새로 시작에서 다시 시도해 주세요.' };
+        ready = true;
+        installLifecycleListeners();
+        notify();
+        return mem;
+    }
     const ownsLock = await acquireWriter();
     ownsWriterLock = ownsLock;
     db = await openDB();
     if (ownsLock)
         await purgeStoredProviderCredentials();
+    const snapshotReads = {
+        local: 'unread',
+        database: globalThis.indexedDB ? (dbOpenFailed ? 'error' : 'unread') : 'unavailable',
+    };
+    const acceptGeneration = (value, source) => {
+        if (value === undefined) {
+            snapshotReads[source] = 'missing';
+            return undefined;
+        }
+        if (resetMarker?.state === 'complete' && !snapshotMatchesReset(value, resetMarker)) {
+            snapshotReads[source] = 'mismatch';
+            return undefined;
+        }
+        snapshotReads[source] = 'current';
+        return value;
+    };
     writer = new SnapshotWriter({
         writer: uid('window'),
-        local: { read: async () => localGet(SNAPSHOT_KEY), writeSync: value => localSet(SNAPSHOT_KEY, value) },
-        database: { read: () => idbGet(DB_SNAPSHOT), write: idbWrite },
+        local: {
+            read: async () => {
+                try {
+                    return acceptGeneration(localGet(SNAPSHOT_KEY), 'local');
+                }
+                catch (error) {
+                    snapshotReads.local = 'error';
+                    throw error;
+                }
+            },
+            writeSync: value => localSet(SNAPSHOT_KEY, value),
+        },
+        database: {
+            read: async () => {
+                try {
+                    return acceptGeneration(await idbGetStrict(DB_SNAPSHOT), 'database');
+                }
+                catch (error) {
+                    snapshotReads.database = 'error';
+                    throw error;
+                }
+            },
+            write: idbWrite,
+        },
     });
     let validatedLegacy = null;
     try {
         const latest = await writer.load();
         if (writer.readErrors.length)
             throw new Error('저장소 사본을 읽지 못했습니다. 오래된 사본으로 자동 교체하지 않습니다. 원본 복구 파일을 먼저 내보내 주세요.');
-        if (latest)
+        if (latest) {
             mem = validateData(latest.data);
+            if (storeGeneration)
+                storeGeneration.resetAt = mem.meta.resetAt || storeGeneration.resetAt;
+        }
+        else if (resetMarker?.state === 'complete') {
+            mem = blankResetData(resetMarker.id, resetMarker.completedAt || Date.now());
+            const details = Object.entries(snapshotReads)
+                .filter(([, state]) => !['unavailable', 'unread'].includes(state))
+                .map(([source, state]) => `${source === 'local' ? 'localStorage' : 'IndexedDB'}: ${state === 'missing' ? '저장본 없음' : state === 'mismatch' ? '세대 불일치' : '읽기 실패'}`)
+                .join(', ');
+            status = {
+                ...status,
+                state: 'error',
+                readOnly: true,
+                dirty: false,
+                message: `현재 초기화 세대의 정상 저장본을 확보하지 못했습니다${details ? ` (${details})` : ''}. 자동으로 빈 스냅샷을 만들거나 원본을 덮어쓰지 않았습니다. 복구 원본을 내보낸 뒤 보호된 백업을 복구하거나, 사용자가 확인한 새로 시작을 다시 실행하세요.`,
+            };
+        }
         else {
             // Legacy copies carry no common revision. Keep both unchanged and surface a conflict rather than guessing.
             const legacy = {}, localLegacy = {}, dbLegacy = {};
@@ -295,7 +485,7 @@ export async function initStore() {
                 mem.meta.legacyConflict = { local: localLegacy, database: dbLegacy };
                 status = { ...status, readOnly: true, state: 'conflict', message: '이전 IndexedDB와 localStorage가 다릅니다. 설정에서 복구 원본을 선택해 주세요.' };
             }
-            else if (found && !status.readOnly) {
+            else if (found && !status.readOnly && ownsLock) {
                 // Commit the canonical v2 snapshot only after every legacy
                 // collection and every stored week validates successfully.
                 const result = await writer.save(mem);
@@ -316,58 +506,85 @@ export async function initStore() {
     catch (err) {
         // A validated legacy model remains useful if the new snapshot write
         // itself fails. Its source copies are never removed or replaced.
-        mem = validatedLegacy || emptyData();
-        status = { ...status, state: 'error', readOnly: true, dirty: false, message: `자동 초기화하지 않았습니다. ${err.message} 구버전 원본은 그대로 보존되며 복구 원본 내보내기로 저장할 수 있습니다.` };
+        mem = validatedLegacy || (storeGeneration ? blankResetData(storeGeneration.id, storeGeneration.resetAt) : emptyData());
+        status = { ...status, state: 'error', readOnly: true, dirty: false, message: `자동 초기화하지 않았습니다. ${err.message} 저장소 원본은 그대로 보존되며 복구 원본 내보내기로 저장할 수 있습니다.` };
     }
     ready = true;
     notify();
-    if (globalThis.addEventListener) {
-        addEventListener('storage', e => {
-            if (e.key !== SNAPSHOT_KEY || !e.newValue)
-                return;
-            try {
-                const incoming = JSON.parse(e.newValue);
-                if (incoming.writer !== writer.writer && incoming.revision >= writer.revision && !status.readOnly) {
-                    status = { ...status, readOnly: true, state: 'conflict', message: '다른 창에서 새 기록을 저장했습니다. 백업 후 이 창을 새로고침해 주세요.' };
-                    notify();
-                }
-            }
-            catch { }
-        });
-        addEventListener('pagehide', () => { releaseWriterLock?.(); releaseWriterLock = null; });
-        addEventListener('pageshow', async (e) => {
-            if (e.persisted) {
-                const owns = await acquireWriter();
-                status.readOnly = !owns;
-                status.message = '화면 복원 후 최신 저장값 확인을 위해 새로고침해 주세요.';
-                status.readOnly = true;
-                notify();
-            }
-        });
-    }
+    installLifecycleListeners();
     return mem;
 }
-function ensureWritable() {
-    if (status.readOnly)
-        throw new Error(status.message);
+function ensureGenerationCurrent() {
+    if (resetting)
+        throw new Error('운동 데이터 새로 시작을 진행 중이어서 이 창에서는 저장할 수 없습니다.');
+    const marker = readResetMarker();
+    const generationChanged = marker?.state === 'pending'
+        || (marker?.state === 'complete' && marker.id !== storeGeneration?.id)
+        || (storeGeneration && marker?.state !== 'complete');
+    if (generationChanged) {
+        quiesceForReset(marker?.id);
+        throw new Error('다른 화면에서 운동 데이터를 새로 시작했습니다. 이 창을 새로고침해 주세요.');
+    }
 }
-function persist() {
+function ensureWritable({ allowReadOnly = false } = {}) {
+    ensureGenerationCurrent();
+    if (status.readOnly && !allowReadOnly)
+        throw new Error(status.message);
+    if (!ownsWriterLock)
+        throw new Error('다른 창을 먼저 닫고 이 창을 새로고침해 주세요.');
+}
+function saveData(data) {
     if (!writer)
         return Promise.reject(new Error('저장소가 아직 준비되지 않았습니다.'));
     const requestedRevision = writer.revision + 1;
     status = { ...status, state: 'saving', dirty: true, message: '기기에 저장 중' };
     notify();
-    lastSave = writer.save(mem).then(result => {
-        if (requestedRevision === writer.revision)
+    lastSave = writer.save(data).then(result => {
+        if (!resetting && requestedRevision === writer.revision)
             status = { ...status, state: 'saved', dirty: false, revision: result.revision, message: result.database ? '기기에 저장됨' : '기기에 저장됨 · localStorage만 사용 중' };
         notify();
         return result;
-    }).catch(err => { status = { ...status, state: 'error', dirty: true, message: err.message }; notify(); throw err; });
+    }).catch(err => { if (!resetting) status = { ...status, state: 'error', dirty: true, message: err.message }; notify(); throw err; });
     // UI can await flush(); the event handler also reports the failure prominently.
     lastSave.catch(() => { });
     return lastSave;
 }
-function replaceMem(next) { ensureWritable(); mem = next; return persist(); }
+function persist() {
+    ensureWritable();
+    return saveData(mem);
+}
+function replacementForCurrentGeneration(value) {
+    const next = validateData(value);
+    delete next.meta.resetId;
+    delete next.meta.resetAt;
+    delete next.meta.pendingResetId;
+    if (storeGeneration) {
+        next.meta.resetId = storeGeneration.id;
+        next.meta.resetAt = storeGeneration.resetAt;
+    }
+    return next;
+}
+async function replaceMem(value, { allowReadOnly = false } = {}) {
+    ensureWritable({ allowReadOnly });
+    const next = replacementForCurrentGeneration(value);
+    const priorStatus = { ...status };
+    await lastSave;
+    ensureWritable({ allowReadOnly });
+    try {
+        const result = await saveData(next);
+        mem = next;
+        if (allowReadOnly) {
+            status = { ...status, readOnly: false, state: 'saved', dirty: false, revision: result.revision };
+        }
+        notify();
+        return result;
+    }
+    catch (error) {
+        status = { ...priorStatus, state: 'error', dirty: false, message: error.message };
+        notify();
+        throw error;
+    }
+}
 export async function flush() { await lastSave; return !status.dirty; }
 export async function retrySave() { ensureWritable(); return persist(); }
 export const settings = () => mem.settings;
@@ -511,8 +728,7 @@ export async function resolveLegacyConflict(which) {
         throw new Error('복구 원본이 없습니다.');
     const next = validateData({ ...emptyData(), ...c[which] }, { legacy: true });
     localSet('wl:legacy-copies.v1', c);
-    status.readOnly = false;
-    await replaceMem(next);
+    await replaceMem(next, { allowReadOnly: true });
 }
 export async function resolveLegacyUnits(unit) {
     ensureWritable();
@@ -564,6 +780,5 @@ export async function restoreProtectedBackup(raw) {
     catch {
         throw new Error('손상 원본 안전 사본을 만들 수 없습니다. 기기의 공간을 확보한 뒤 다시 시도해 주세요.');
     }
-    status = { ...status, readOnly: false };
-    await replaceMem(next);
+    await replaceMem(next, { allowReadOnly: true });
 }

@@ -30,7 +30,7 @@ export function renderSettings(root, params, { signal } = {}) {
                     await resolveLegacyConflict(which);
                     draw();
                 }
-            } }, label)))) : null, h('button.btn-block', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구용 원본 내보내기 · 민감 정보 포함'));
+            } }, label)))) : null, h('button.btn-block', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구용 원본 내보내기 · 민감 정보 포함'), state.readOnly ? h('button.btn-block.btn-danger', { onclick: () => location.assign('./reset.html') }, '기존 운동 데이터 삭제 후 새로 시작') : null);
     }
     function timingCard(s) {
         const timeField = (label, key, hint) => field(label, stepper({ value: s[key], min: 0, max: 900, step: 15, format: mmss, onchange: v => setSetting(key, v) }), hint);
