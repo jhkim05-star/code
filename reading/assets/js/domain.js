@@ -1,12 +1,13 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.0.0-reading-bookclub';
+export const BUILD = '3.1.0-reading-library';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
-export const ORIGINS = { korean:'한국', east:'동양', west:'서양', '':'미분류' };
+export const ORIGINS = { korean:'한국', japan:'일본', east:'동양', anglo:'영미', europe:'유럽', '':'미분류' };
 export const THEMES = { red:'빨강', pink:'분홍', blue:'파랑', green:'녹색', yellow:'노랑' };
+export const BACKGROUNDS = { black:'블랙', beige:'베이지', white:'화이트' };
 export const MEMO_TYPES = { thought: '생각', quote: '인상 깊은 문장', question: '질문', action: '해볼 일' };
 export const clone = x => structuredClone(x);
 export const uid = (prefix = 'id') => prefix + '_' + (globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -50,17 +51,39 @@ function strings(x, label, max = 100) {
   if (!Array.isArray(x) || x.length > max) throw new Error(`${label} 목록 형식이 올바르지 않아요.`);
   return [...new Set(x.map(v=>text(v,label,2000).trim()).filter(Boolean))];
 }
-export function emptyState() { return { app: APP, version: VERSION, revision: 0, books: [], readings: [], notes: [], settings: { cols: 4, theme: 'pink', kakaoProxyUrl: '', aladinKey: '', lastBackupRequestedAt: '' }, updatedAt: nowIso() }; }
+export function emptyState() { return { app: APP, version: VERSION, revision: 0, books: [], readings: [], notes: [], settings: { cols: 4, theme: 'pink', background: 'black', kakaoProxyUrl: '', aladinKey: '', lastBackupRequestedAt: '' }, updatedAt: nowIso() }; }
+export function isbnCoverUrl(value){
+  const isbn=String(value||'').replace(/[\s-]/g,'');
+  return /^(?:\d{9}[\dXx]|\d{13})$/.test(isbn)?`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-L.jpg?default=false`:'';
+}
+export function inferredClassification(book){
+  const tags=Array.isArray(book.tags)?book.tags:[],authors=Array.isArray(book.authors)?book.authors:[];
+  const evidence=[book.title,book.publisher,...authors,...tags].filter(Boolean).join(' ').normalize('NFKC').toLocaleLowerCase();
+  const genreRules=[
+    [/청소년|아동|어린이/,'아동/청소년'],[/사회정치|사회학|정치|사회비평|국제사회/,'사회/정치'],[/경제|경영|비즈니스/,'경제/경영'],[/자연과학|생명과학|천문학|과학/,'과학'],[/역사|문명사/,'역사'],[/철학|사상|인문/,'인문'],[/에세이|시집|시\/에세이/,'시/에세이'],[/소설|희곡|문학|미스터리|스릴러|sf|고전/,'소설']
+  ];
+  const originRules=[
+    [/일본소설|일본문학|일본작가|무라카미|히가시노|다카노 가즈아키|호시즈키|오기와라/,'japan'],
+    [/한국소설|한국문학|국내문학|손원평|이희영|김동식/,'korean'],
+    [/영미|영국문학|미국문학|캐나다문학|호주문학|마이클 샌델|재레드 다이아몬드|리처드 도킨스|칼 세이건|룰루 밀러/,'anglo'],
+    [/독일|프랑스|러시아|스페인|이탈리아|유럽|북유럽|서양고전/,'europe'],
+    [/중국|홍콩|대만|동양|아시아|찬호께이|류츠신|유발 하라리/,'east']
+  ];
+  return {genre:genreRules.find(([re])=>re.test(evidence))?.[1]||'기타',origin:originRules.find(([re])=>re.test(evidence))?.[1]||''};
+}
 export function normalizeBook(b) {
   requireObject(b,'책');
   const title = text(b.title,'제목',2000).trim(); if (!title) throw new Error('책 제목이 필요해요.');
-  const legacyOrigin=['domestic','foreign'].includes(b.origin)?b.origin:text(b.legacyOrigin,'이전 출처',40);
-  const origin=b.origin==='domestic'?'korean':b.origin==='foreign'?'':choice(b.origin,{korean:1,east:1,west:1},'');
   const tags=strings(b.tags,'태그',200);
+  const inferred=inferredClassification({...b,title,tags});
+  const legacyOrigin=['domestic','foreign','west'].includes(b.origin)?b.origin:text(b.legacyOrigin,'이전 출처',40);
+  const supported=Object.hasOwn(ORIGINS,b.origin)&&b.origin!==''?b.origin:'';
+  const origin=b.origin==='domestic'?'korean':supported||inferred.origin;
   let collection=text(b.collection,'컬렉션',500).trim();
   const candidate={title,publisher:text(b.publisher),collection,tags};
   if(!collection)collection=suggestedCollection(candidate);
-  return { id:id(b.id), title, subtitle:text(b.subtitle), authors:strings(b.authors,'저자'), translator:text(b.translator), illustrator:text(b.illustrator), narrator:text(b.narrator), publisher:candidate.publisher, publishedDate:text(b.publishedDate), isbn:text(b.isbn), pageCount:number(b.pageCount,0,1000000,true), genre:text(b.genre,'장르',200), language:text(b.language), origin, legacyOrigin, tags, collection, series:text(b.series,'시리즈',500).trim(), wishlisted:!!b.wishlisted, coverUrl:cleanUrl(b.coverUrl,{image:true}), description:text(b.description), source:text(b.source), createdAt:stamp(b.createdAt), updatedAt:stamp(b.updatedAt) };
+  const isbn=text(b.isbn),coverUrl=cleanUrl(b.coverUrl,{image:true})||isbnCoverUrl(isbn);
+  return { id:id(b.id), title, subtitle:text(b.subtitle), authors:strings(b.authors,'저자'), translator:text(b.translator), illustrator:text(b.illustrator), narrator:text(b.narrator), publisher:candidate.publisher, publishedDate:text(b.publishedDate), isbn, pageCount:number(b.pageCount,0,1000000,true), genre:text(b.genre,'장르',200).trim()||inferred.genre, language:text(b.language), origin, legacyOrigin, tags, collection, series:text(b.series,'시리즈',500).trim(), wishlisted:!!b.wishlisted, coverUrl, description:text(b.description), source:text(b.source), createdAt:stamp(b.createdAt), updatedAt:stamp(b.updatedAt) };
 }
 export function normalizeReading(r) {
   requireObject(r,'독서 이력');
@@ -99,7 +122,7 @@ export function validateState(raw) {
     if(!books.has(n.bookId) || (n.readingId && reads.get(n.readingId)?.bookId !== n.bookId)) throw new Error('노트와 책의 연결이 올바르지 않아요.');
   }
   const s = raw.settings || {}; requireObject(s,'설정');
-  out.settings = { cols:s.cols === 3 ? 3 : 4, theme:Object.hasOwn(THEMES,s.theme)?s.theme:'pink', kakaoProxyUrl:s.kakaoProxyUrl ? cleanUrl(s.kakaoProxyUrl) : '', aladinKey:text(s.aladinKey,'검색 키',500), lastBackupRequestedAt:text(s.lastBackupRequestedAt,'백업 시각',40) };
+  out.settings = { cols:s.cols === 3 ? 3 : 4, theme:Object.hasOwn(THEMES,s.theme)?s.theme:'pink', background:Object.hasOwn(BACKGROUNDS,s.background)?s.background:'black', kakaoProxyUrl:s.kakaoProxyUrl ? cleanUrl(s.kakaoProxyUrl) : '', aladinKey:text(s.aladinKey,'검색 키',500), lastBackupRequestedAt:text(s.lastBackupRequestedAt,'백업 시각',40) };
   return out;
 }
 const oldNum = x => x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x);
@@ -109,6 +132,7 @@ export function migrateLegacy(raw) {
   const out = emptyState(), warnings = [];
   out.settings.cols = raw.settings?.cols === 3 ? 3 : 4;
   out.settings.theme = Object.hasOwn(THEMES,raw.settings?.theme) ? raw.settings.theme : 'pink';
+  out.settings.background = Object.hasOwn(BACKGROUNDS,raw.settings?.background) ? raw.settings.background : 'black';
   out.settings.kakaoProxyUrl = raw.settings?.kakaoProxyUrl || '';
   out.settings.aladinKey = raw.settings?.aladinKey || '';
   out.settings.lastBackupRequestedAt = raw.settings?.lastBackupAt || '';
@@ -162,22 +186,22 @@ export function canonicalFinishedReadings(state){
   }
   return [...byBook.values()];
 }
-function countBy(values,label=x=>x||'미분류'){
-  const map=new Map();for(const value of values){const key=label(value);map.set(key,(map.get(key)||0)+1);}
-  return [...map].map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value||a.label.localeCompare(b.label,'ko'));
+function countBy(pairs,valueOf,label=x=>x||'미분류'){
+  const map=new Map();for(const pair of pairs){const key=label(valueOf(pair)),entry=map.get(key)||{label:key,value:0,bookIds:[]};entry.value++;entry.bookIds.push(pair.b.id);map.set(key,entry);}
+  return [...map.values()].sort((a,b)=>b.value-a.value||a.label.localeCompare(b.label,'ko'));
 }
 export function statistics(state){
   const readings=canonicalFinishedReadings(state),books=new Map(state.books.map(b=>[b.id,b]));
   const pairs=readings.map(r=>({r,b:books.get(r.bookId)})).filter(x=>x.b);
-  const authorMap=new Map();for(const {b}of pairs)for(const author of b.authors){const key=normalizeAuthor(author),entry=authorMap.get(key)||{label:author,value:0};entry.value++;authorMap.set(key,entry);}
+  const authorMap=new Map();for(const {b}of pairs)for(const author of b.authors){const key=normalizeAuthor(author),entry=authorMap.get(key)||{label:author,value:0,bookIds:[]};entry.value++;entry.bookIds.push(b.id);authorMap.set(key,entry);}
   return {
     total:pairs.length,
-    years:countBy(pairs.filter(x=>x.r.finishedAt).map(x=>x.r.finishedAt.slice(0,4))),
-    months:countBy(pairs.filter(x=>x.r.finishedAt).map(x=>x.r.finishedAt.slice(0,7))).sort((a,b)=>a.label.localeCompare(b.label)).slice(-12),
-    ratings:countBy(pairs.filter(x=>x.r.rating).map(x=>x.r.rating),x=>`${Number(x).toFixed(1)}점`).sort((a,b)=>Number(a.label)-Number(b.label)),
-    genres:countBy(pairs.map(x=>x.b.genre)),
-    origins:countBy(pairs.map(x=>ORIGINS[x.b.origin]||ORIGINS[''])),
-    formats:countBy(pairs.map(x=>FORMATS[x.r.format])),
+    years:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,4)),
+    months:countBy(pairs.filter(x=>x.r.finishedAt),x=>x.r.finishedAt.slice(0,7)).sort((a,b)=>a.label.localeCompare(b.label)).slice(-12),
+    ratings:countBy(pairs.filter(x=>x.r.rating),x=>x.r.rating,x=>`${Number(x).toFixed(1)}점`).sort((a,b)=>Number(a.label)-Number(b.label)),
+    genres:countBy(pairs,x=>x.b.genre),
+    origins:countBy(pairs,x=>x.b.origin,x=>ORIGINS[x]||ORIGINS['']),
+    formats:countBy(pairs,x=>x.r.format,x=>FORMATS[x]),
     authors:[...authorMap.values()].filter(x=>x.value>1).sort((a,b)=>b.value-a.value||a.label.localeCompare(b.label,'ko')),
   };
 }

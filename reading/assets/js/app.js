@@ -11,6 +11,7 @@ const getPath=()=>location.hash.slice(1)||'shelf';
 function shell(path,ctx){
   const section=path.split('/')[0],selected=section==='note'||section==='write'?'notes':section==='book'?'library':section;
   document.body.dataset.theme=ctx.repo.state.settings.theme;
+  document.body.dataset.background=ctx.repo.state.settings.background;
   mount(document.getElementById('tabs'),...Object.entries({shelf:'책꽂이',library:'책장',notes:'노트',stats:'통계',settings:'설정'}).map(([key,label])=>h('button',{type:'button',onclick:()=>ctx.navigate(key),'aria-current':key===selected?'page':null},icon(key),h('span',{},label))));
 }
 async function navigate(path){
