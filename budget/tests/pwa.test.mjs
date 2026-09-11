@@ -1,0 +1,6 @@
+import test from'node:test';import assert from'node:assert/strict';import{readFile}from'node:fs/promises';
+const read=path=>readFile(new URL(path,import.meta.url),'utf8');
+test('service worker has budget-only cache and request boundary',async()=>{const sw=await read('../sw.js');assert.match(sw,/budget-pwa-v1/);assert.match(sw,/\/budget\//);assert.doesNotMatch(sw,/reading-|workout-/);});
+test('manifest scope is isolated and share target avoids sensitive GET query strings',async()=>{const manifest=JSON.parse(await read('../manifest.webmanifest'));assert.equal(manifest.scope,'./');assert.equal(manifest.start_url,'./');assert.equal(manifest.share_target.method,'POST');assert.equal(manifest.share_target.enctype,'multipart/form-data');});
+test('mobile stylesheet keeps a one-column form at 420px',async()=>{const css=await read('../assets/css/app.css');assert.match(css,/@media\(max-width:420px\)/);assert.match(css,/\.form-grid\{grid-template-columns:1fr\}/);assert.match(css,/overflow-x:hidden/);});
+test('WebMCP exposes a read tool and the same transaction creation path',async()=>{const app=await read('../assets/js/app.js');assert.match(app,/name:'read_budget_summary'/);assert.match(app,/name:'create_budget_transaction'/);assert.match(app,/await repo\.addTransaction/);});
