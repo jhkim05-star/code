@@ -1,11 +1,10 @@
 {
-  "name":"책꽂이 · 기록","short_name":"책꽂이",
-  "description":"가벼운 독서 기록과 깊은 생각을 담는 나의 책꽂이",
+  "name":"책꽂이","short_name":"책꽂이",
+  "description":"책과 생각을 엮는 현대적인 개인 서재",
   "start_url":"./index.html","scope":"./","display":"standalone",
-  "background_color":"#101114","theme_color":"#101114","lang":"ko",
+  "background_color":"#111014","theme_color":"#111014","lang":"ko",
   "icons":[
-    {"src":"assets/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
-    {"src":"assets/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
-    {"src":"assets/icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+    {"src":"assets/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},
+    {"src":"assets/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"maskable"}
   ]
 }

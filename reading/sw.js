@@ -1,12 +1,12 @@
 /* Book-only app cache. CacheStorage is origin-wide: never clear another app. */
-const BUILD='reading1-20260910-fix1';
+const BUILD='reading3-20260911-bookmory1';
 const SCOPE=self.registration.scope;
 let scopeHash=2166136261;for(const ch of new URL(SCOPE).pathname)scopeHash=Math.imul(scopeHash^ch.charCodeAt(0),16777619)>>>0;
 const PREFIX='bookshelf-reading-'+scopeHash.toString(16)+'-';
 const CACHE=PREFIX+BUILD;
 const ASSETS=['./index.html','./manifest.webmanifest','./assets/css/app.css',
-  './assets/js/domain.js','./assets/js/storage.js','./assets/js/repository.js','./assets/js/platform.js','./assets/js/api.js','./assets/js/exports.js','./assets/js/ui.js','./assets/js/views-books.js','./assets/js/views-notes.js','./assets/js/views-settings.js','./assets/js/app.js',
-  './assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-512.png'];
+  './assets/js/domain.js','./assets/js/storage.js','./assets/js/repository.js','./assets/js/platform.js','./assets/js/api.js','./assets/js/bookmory.js','./assets/js/exports.js','./assets/js/ui.js','./assets/js/views-books.js','./assets/js/views-notes.js','./assets/js/views-settings.js','./assets/js/app.js',
+  './assets/icons/icon.svg'];
 const URLS=new Set(ASSETS.map(p=>new URL(p,SCOPE).href));
 self.addEventListener('install',event=>{event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
