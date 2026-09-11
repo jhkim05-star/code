@@ -45,6 +45,10 @@ export class ReadingRepository {
     });
   }
   editBook(bookId,patch){return this.transact(s=>{const i=s.books.findIndex(b=>b.id===bookId);if(i<0)throw new Error('책을 찾지 못했어요.');s.books[i]=normalizeBook({...s.books[i],...patch,id:bookId,updatedAt:nowIso()});});}
+  updateCovers(updates){
+    if(!Array.isArray(updates))return Promise.reject(new Error('표지 변경 목록 형식이 올바르지 않아요.'));
+    return this.transact(s=>{for(const update of updates){const i=s.books.findIndex(b=>b.id===update.bookId);if(i<0)continue;s.books[i]=normalizeBook({...s.books[i],coverUrl:update.coverUrl,coverFallbacks:update.coverFallbacks||[],coverSource:update.coverSource||'',coverCheckedAt:update.coverCheckedAt||nowIso(),updatedAt:nowIso()});}return updates.length;});
+  }
   editReading(readingId,patch){return this.transact(s=>{const i=s.readings.findIndex(r=>r.id===readingId);if(i<0)throw new Error('독서 이력을 찾지 못했어요.');s.readings[i]=normalizeReading({...s.readings[i],...patch,id:readingId,bookId:s.readings[i].bookId,updatedAt:nowIso()});});}
   reread(bookId,date){const r=newReading(bookId,{status:'reading',startedAt:date,startedTime:nowIso()});return this.transact(s=>{if(activeReading(s,bookId))throw new Error('진행 중인 읽기를 먼저 마쳐 주세요.');s.readings.push(r);return r.id;});}
   saveNote(note,expectedRev=0){

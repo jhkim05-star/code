@@ -4,7 +4,10 @@ name = "bookshelf-kakao-proxy"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# 카카오 REST API 키는 여기 적지 않는다. 배포 후 아래 명령으로 비밀로 등록한다.
+# API 키는 여기 적지 않는다. 배포 전 필요한 제공처의 키를 비밀로 등록한다.
+#   wrangler secret put NL_CERT_KEY
+#   wrangler secret put NAVER_CLIENT_ID
+#   wrangler secret put NAVER_CLIENT_SECRET
 #   wrangler secret put KAKAO_REST_API_KEY
 #
 # 남용 방지를 위해 출처를 자신의 GitHub Pages 주소로 좁히고 싶다면

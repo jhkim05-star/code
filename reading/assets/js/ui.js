@@ -39,7 +39,8 @@ export function confirm(title,message,yes='확인',danger=false){return new Prom
 export function cover(book,large=false,reading=null){
   const fallback=h('span.cover-fallback',{},book.title);
   const format=reading?.format||'paper',box=h('span.cover'+(large?'.large':'')+`.format-${format}`,{'data-format':format},fallback);
-  if(book.coverUrl){const img=h('img',{src:book.coverUrl,alt:'',loading:'lazy',decoding:'async',referrerPolicy:'no-referrer'});img.addEventListener('load',()=>{fallback.hidden=true;});img.addEventListener('error',()=>{img.remove();fallback.hidden=false;});box.append(img);}
+  const sources=[book.coverUrl,...(book.coverFallbacks||[])].filter((value,index,list)=>value&&list.indexOf(value)===index);
+  if(sources.length){let sourceIndex=0;const img=h('img',{src:sources[0],alt:'',loading:'lazy',decoding:'async',referrerPolicy:'no-referrer'});img.addEventListener('load',()=>{fallback.hidden=true;});img.addEventListener('error',()=>{sourceIndex++;if(sourceIndex<sources.length){img.src=sources[sourceIndex];return;}img.remove();fallback.hidden=false;});box.append(img);}
   box.append(h('span.format-overlay',{'aria-hidden':'true'},icon(format)));
   if(reading?.rating)box.append(h('span.rating-overlay',{'aria-label':`별점 ${reading.rating.toFixed(1)}`},icon('star'),reading.rating.toFixed(1)));
   return box;
