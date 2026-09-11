@@ -41,6 +41,13 @@ test('strict Minumsa collection rule requires publisher and explicit collection 
   assert.equal(suggestedCollection({publisher:'다른 출판사',title:'세계문학전집',tags:[]}), '');
 });
 
+test('installed app checks for updates and reloads after safe activation',async()=>{
+  const app=await fs.readFile(new URL('../assets/js/app.js',import.meta.url),'utf8');
+  const settings=await fs.readFile(new URL('../assets/js/views-settings.js',import.meta.url),'utf8');
+  assert.match(app,/updateViaCache:'none'/);assert.match(app,/visibilitychange/);assert.match(app,/pageshow/);assert.match(app,/reg\.update\(\)/);assert.match(app,/controllerchange[^]*location\.reload\(\)/);
+  assert.match(settings,/앱 업데이트/);assert.match(settings,/최신 버전 확인/);
+});
+
 test('collections, series and normalized authors group without an extra route',()=>{
   const state=emptyState();state.books.push(book('b1','첫 책',{authors:[' 한강 '],collection:'문학 모음',series:'연작'}),book('b2','둘째 책',{authors:['한강'],collection:'문학 모음',series:'연작'}));
   const groups=collectionGroups(validateState(state));assert.equal(groups.collections[0].books.length,2);assert.equal(groups.series[0].books.length,2);assert.equal(groups.authors[0].label.trim(),'한강');assert.equal(groups.authors[0].books.length,2);
