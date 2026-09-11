@@ -23,7 +23,7 @@ export function setProxyToken(value) {
     catch { }
 }
 globalThis.addEventListener?.('workout:reset-start', () => setProxyToken(''));
-export function allowedCatalog() { const s = settings(); return validateCatalog(GROUPS.flatMap(g => byGroup(g.id, customExercises(), s.plan.equipment, avoidExerciseIds())).map(ex => ({ id: ex.id, name: ex.name, group: ex.group, equip: ex.equip }))); }
+export function allowedCatalog() { const s = settings(); return validateCatalog(GROUPS.flatMap(g => byGroup(g.id, customExercises(), s.plan, avoidExerciseIds())).map(ex => ({ id: ex.id, name: ex.name, group: ex.group, equip: ex.equip }))); }
 export function requestContext(weekStart, request) {
     weekDates(weekStart);
     if (metadata().unitReviewRequired)

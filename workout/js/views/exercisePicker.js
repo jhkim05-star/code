@@ -8,7 +8,8 @@ export function pickExercise(initialGroup, onPick, opt = {}) {
         const search = h('input', { type: 'search', placeholder: '종목 이름 검색', 'aria-label': '종목 검색', oninput: () => paint() });
         function paint() {
             mount(chips, ...GROUPS.map(g => h('button.chip', { 'aria-pressed': g.id === group, onclick: () => { group = g.id; paint(); } }, g.name)));
-            const items = byGroup(group, customExercises(), opt.equipmentOnly === false ? null : settings().plan.equipment, opt.includeAvoided ? [] : avoidExerciseIds()).filter(e => e.name.includes(search.value.trim()));
+            const plan = opt.equipmentOnly === false ? false : settings().plan;
+            const items = byGroup(group, customExercises(), plan, opt.includeAvoided ? [] : avoidExerciseIds(), { manual: opt.manual !== false }).filter(e => e.name.includes(search.value.trim()));
             mount(list, items.length ? items.map(ex => h('li', null, h('button', { onclick: () => { close(); return onPick(ex); } }, h('span', null, ex.name), h('small', null, `${ex.equip} · ${ex.measure === 'duration' ? ex.reps + '초' : ex.reps + '회'}`)))) : h('li.empty', null, '가능한 종목이 없어요. 기구·제외 설정을 확인해 주세요.'));
         }
         paint();

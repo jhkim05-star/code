@@ -4,6 +4,7 @@ import { getPlan, savePlan, deletePlan, settings, sessions, flush, draft } from 
 import { makeBlock, analyzePlan, estimateDayMinutes } from '../planner.js';
 import { warmupSets } from '../weights.js';
 import { pickExercise } from './exercisePicker.js';
+import { openDayEditor } from './dayEditor.js';
 import { GROUP_NAME } from '../exercises.js';
 import { weekStartOf, ymd, addDays, parseYmd, todayYmd, fmtWeekRange, DOW_KO, mmss, fmtWeight, finite, readWeightInput, uid } from '../util.js';
 import { go } from '../app.js';
@@ -31,10 +32,27 @@ function dayCard(root, key, plan, day) {
     const body = h('div', { hidden: !expanded.has(day.date) });
     const badge = done ? '실행 완료' : partial ? '일부 진행' : isToday ? '오늘' : '';
     const header = h('button.day-head', { 'aria-expanded': !body.hidden, onclick: e => { body.hidden = !body.hidden; e.currentTarget.setAttribute('aria-expanded', String(!body.hidden)); body.hidden ? expanded.delete(day.date) : expanded.add(day.date); } }, h('.day-date', null, h('.d', null, d.getDate()), h('.w', null, DOW_KO[d.getDay()])), h('.day-title', null, h('.t', null, day.blocks.length ? day.title : '휴식'), day.blocks.length ? h('.m', null, `${day.blocks.length}종목 · ${day.blocks.reduce((n, b) => n + workSets(b).length, 0)}본세트 · 약 ${estimateDayMinutes(day)}분`) : h('.m', null, '필요하면 종목을 추가할 수 있어요.')), badge ? h('.day-badge', { class: done ? 'done' : '' }, badge) : null);
-    mount(body, h('ul.exlist', null, ...day.blocks.map((b, i) => h('li', null, h('button', { onclick: () => editBlock(root, key, plan, day, i) }, h('.idx', null, i + 1), h('.nm', null, b.name, h('small', null, GROUP_NAME[b.group]), h('.sr', null, setSummary(b))))))), h('.day-actions', null, h('.btn-row', null, h('button.btn-sm', { onclick: () => addBlock(root, key, plan, day) }, '종목 추가'), h('button.btn-sm.btn-primary', { onclick: () => go('/run/' + day.date) }, day.blocks.length ? (isToday ? '운동 시작' : '이 계획으로 오늘 운동') : '자유운동 시작'))));
+    mount(body, h('ul.exlist', null, ...day.blocks.map((b, i) => h('li', null, h('button', { onclick: () => editBlock(root, key, plan, day, i) }, h('.idx', null, i + 1), h('.nm', null, b.name, h('small', null, GROUP_NAME[b.group]), h('.sr', null, setSummary(b))))))), h('.day-actions', null, h('button.btn-block', { onclick: () => editWholeDay(root, key, plan, day, isToday) }, isToday ? '오늘 계획 편집' : '이 날 계획 편집'), h('.btn-row', { style: { marginTop: '8px' } }, h('button.btn-sm', { onclick: () => addBlock(root, key, plan, day) }, '빠르게 종목 추가'), h('button.btn-sm.btn-primary', { onclick: () => go('/run/' + day.date) }, day.blocks.length ? (isToday ? '운동 시작' : '이 계획으로 오늘 운동') : '자유운동 시작'))));
     if (!day.blocks.length)
         body.hidden = false;
     return h('.day', { class: (isToday ? 'today ' : '') + (!day.blocks.length ? 'rest' : '') }, header, body);
+}
+function editWholeDay(root, key, plan, day, isToday) {
+    const baseline = JSON.stringify(plan), active = draft()?.session?.plannedDate === day.date;
+    openDayEditor(day, { title: isToday ? '오늘 계획 편집' : '이 날 계획 편집', activeSession: active, onSave: async edited => {
+        if (JSON.stringify(getPlan(key)) !== baseline)
+            throw new Error('편집 중 저장된 계획이 바뀌었어요. 최신 계획을 다시 열어 주세요.');
+        const copy = structuredClone(plan), index = copy.days.findIndex(item => item.id === day.id || item.date === day.date);
+        if (index < 0)
+            throw new Error('편집할 날짜를 찾지 못했어요.');
+        copy.days[index] = edited;
+        copy.analysis = analyzePlan(copy);
+        savePlan(copy);
+        await flush();
+        expanded.add(day.date);
+        draw(root, key);
+        toast(active ? '저장된 날짜 계획만 바꿨어요. 진행 중 운동은 그대로입니다.' : '이 날짜 계획을 저장했어요.', 5000);
+    } });
 }
 function setSummary(b) {
     const work = workSets(b), warm = warmSets(b), unit = settings().unit;

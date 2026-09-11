@@ -125,7 +125,7 @@ function buildUi(root, r, alive, persistPlanOrder = () => {}) {
     const bar = h('i'), exBox = h('.run-ex'), big = h('span.big'), of = h('.of'), phase = h('.phase');
     const counter = h('.counter', null, big, of, phase), pips = h('.setgrid'), elapsed = h('.run-elapsed'), actions = h('.run-actions');
     const tools = h('.run-tools');
-    let finishButton = null;
+    let finishButton = null, reviewButton = null, reviewRestart = null, reviewHint = null;
     mount(root, h('.run', null, h('.run-top', null, h('button.btn-sm.btn-ghost', { onclick: () => quit(r) }, '그만하기'), h('span.eyebrow', null, '운동 실행'), h('button.btn-sm', { onclick: () => openList(r, persistPlanOrder) }, '목록·추가')), h('.run-progress', { 'aria-hidden': 'true' }, bar), exBox, counter, pips, elapsed, tools, actions));
     function sync() {
         if (!alive() || r.state === 'done')
@@ -159,6 +159,12 @@ function buildUi(root, r, alive, persistPlanOrder = () => {}) {
             counter.classList.add('review');
             big.textContent = '실제 수행 확인';
             of.textContent = '카운터의 숫자는 실제 수행을 감지한 값이 아니에요.';
+            if (reviewButton)
+                reviewButton.textContent = reviewLabel(r, !!r.reviewAuto);
+            if (reviewRestart)
+                reviewRestart.hidden = !!r.reviewAuto;
+            if (reviewHint)
+                reviewHint.textContent = r.reviewAuto ? '입력란을 누르거나 값을 바꾸면 이 세트의 자동 기록이 멈춥니다.' : '자동 기록이 멈췄어요. 직접 확인하거나 다시 5초를 시작할 수 있어요.';
         }
         else if (r.state === 'setdone') {
             counter.classList.add('paused');
@@ -177,7 +183,10 @@ function buildUi(root, r, alive, persistPlanOrder = () => {}) {
         mount(exBox, h('.set-context', null, h('span.pill', { class: rec.warmup ? 'warm' : '' }, setName(e, rec)), h('span.eyebrow', null, GROUP_NAME[e.group] || '')), h('h2', null, e.name), h('.run-load', null, `${fmtWeight(rec.weight, s.unit)} × ${rec.targetReps}${r.measure === 'duration' ? '초' : '회'}`), h('p.hint', null, LOAD_LABELS[e.loadBasis] || '기록 표기 중량'), r.state === 'ready' && (rec.recommendation?.note || e.recommendation?.note) ? h('p.hint', null, rec.recommendation?.note || e.recommendation.note) : null, next ? h('.run-next', null, `다음 · ${next.entry.name} · ${setName(next.entry, next.rec)} · ${fmtWeight(next.rec.weight, s.unit)} × ${next.rec.targetReps}${next.entry.measure === 'duration' ? '초' : '회'}`) : h('.run-next', null, '마지막 세트예요.'));
         mount(pips, ...e.sets.map((st, i) => h('button.setpip', { class: [st.done ? 'done' : '', st.warmup ? 'warm' : '', st.skipped ? 'skipped' : '', i === r.setIndex ? 'cur' : ''].join(' '), disabled: st.done, 'aria-label': `${setName(e, st)} ${st.done ? '완료' : st.skipped ? '건너뜀' : '이동'}`, onclick: () => { r.pause('세트 이동'); r.jumpTo(r.exIndex, i); } }, st.done ? '✓' : st.warmup ? 'W' : String(e.sets.slice(0, i + 1).filter(x => !x.warmup).length))));
         finishButton = null;
-        mount(actions, ...actionsFor(r, button => { finishButton = button; }));
+        reviewButton = null;
+        reviewRestart = null;
+        reviewHint = null;
+        mount(actions, ...actionsFor(r, button => { finishButton = button; }, (button, restart, hint) => { reviewButton = button; reviewRestart = restart; reviewHint = hint; }));
         const editNext = (r.isResting || (r.state === 'paused' && ['resting', 'exercise_rest', 'exercise_setup'].includes(r.pausedInfo?.state))) && r.transition?.reason !== 'pre';
         mount(tools, r.state === 'review' ? null : h('.btn-row', null, h('button.btn-sm', { onclick: () => editSet(r, editNext ? nextTarget(r) : r.currentTarget()) }, editNext ? '다음 세트 수정' : '무게·목표'), h('button.btn-sm', { onclick: () => controlSheet(r) }, '속도·휴식')));
         sync();
@@ -188,7 +197,7 @@ function buildUi(root, r, alive, persistPlanOrder = () => {}) {
     return { sync, rebuild, summary };
 }
 const kpi = (v, label) => h('.kpi', null, h('.v', null, v), h('.k', null, label));
-function actionsFor(r, setFinishButton) {
+function actionsFor(r, setFinishButton, setReviewButton) {
     if (r.state === 'ready')
         return [
             h('button.btn-block.btn-primary.btn-lg', { onclick: () => r.beginSet() }, '세트 시작'),
@@ -202,7 +211,7 @@ function actionsFor(r, setFinishButton) {
         return [r.countMode === 'manual' && r.measure !== 'duration' ? h('.btn-row', null, h('button', { onclick: () => r.manualCount(-1) }, '− 1회'), h('button.btn-primary', { onclick: () => r.manualCount(1) }, '＋ 1회')) : null, done, h('button', { onclick: () => r.pause() }, '일시정지')];
     }
     if (r.state === 'review')
-        return [reviewForm(r)];
+        return [reviewForm(r, setReviewButton)];
     if (r.state === 'paused')
         return [h('button.btn-primary.btn-lg', { onclick: () => r.resume() }, '이어하기'), ['countdown', 'counting', 'review'].includes(r.pausedInfo?.state) ? h('button', { onclick: () => { r.resume(); r.cancelSet(); } }, '현재 세트 시작 취소') : null];
     if (r.state === 'setdone')
@@ -215,14 +224,33 @@ function actionsFor(r, setFinishButton) {
         ];
     return [];
 }
-function reviewForm(r) {
-    const rec = r.setRec, s = settings();
-    const reps = numberInput(r.rep, { min: 0, max: 600, label: '실제 수행 횟수/초' }), weight = weightInput(rec.weight, s.unit);
-    const rir = h('select', { 'aria-label': '여유 횟수 RIR' }, h('option', { value: '' }, '모르겠어요 · 증량 보류'), ...[0, 1, 2, 3, 4, 5].map(n => h('option', { value: n }, `${n}${n === 5 ? '회 이상' : '회'} 더 가능`)));
-    return h('.review-card', null, h('.btn-row', null, field(r.measure === 'duration' ? '실제 유지(초)' : '실제 수행(회)', reps), field(`실제 무게 (${s.unit})`, weight)), field('여유 횟수(RIR) · 선택', rir), h('button.btn-block.btn-primary.btn-lg', { onclick: () => {
-            const kg = readWeightInput(weight, rec.weight, s.unit);
-            r.recordSet({ weight: kg, reps: finite(reps.value, 0, 600, '실제 수행', { integer: true }), rir: rir.value === '' ? null : Number(rir.value) });
-        } }, r.peekNext() ? (s.autoStartRest ? '확인하고 휴식' : '기록 확인') : '확인하고 운동 마치기'), h('button.btn-block.btn-ghost', { onclick: () => r.cancelSet() }, '완료 취소 · 다시 하기'));
+function reviewLabel(r, automatic = false) {
+    const manual = r.peekNext() ? (r.config.autoStartRest ? '확인하고 휴식' : '기록 확인') : '확인하고 운동 마치기';
+    return automatic ? `${manual} · ${Math.max(0, Math.ceil(r.reviewAutoLeft || r.config.reviewAutoAdvanceSec))}초` : manual;
+}
+function reviewForm(r, setReviewButton) {
+    const rec = r.setRec, s = settings(), d = r.reviewDraft || { reps: String(r.rep), weight: '', rir: '' };
+    const reps = h('input', { type: 'number', inputmode: 'numeric', min: 0, max: 600, value: d.reps, 'aria-label': '실제 수행 횟수/초' });
+    const weight = weightInput(rec.weight, s.unit);
+    weight.value = d.weight ?? weight.value;
+    const rir = h('select', { 'aria-label': '여유 횟수 RIR' }, h('option', { value: '', selected: d.rir === '' || d.rir == null }, '모르겠어요 · 증량 보류'), ...[0, 1, 2, 3, 4, 5].map(n => h('option', { value: n, selected: String(d.rir) === String(n) }, `${n}${n === 5 ? '회 이상' : '회'} 더 가능`)));
+    const bind = (input, key) => {
+        input.addEventListener('focus', () => r.cancelReviewAuto());
+        const patch = () => key === 'weight' ? { weight: input.value, weightTouched: true } : { [key]: input.value };
+        input.addEventListener('input', () => r.updateReviewDraft(patch()));
+        input.addEventListener('change', () => r.updateReviewDraft(patch()));
+    };
+    bind(reps, 'reps');
+    bind(weight, 'weight');
+    bind(rir, 'rir');
+    const expectedAuto = !!r.reviewAuto || r.config.reviewAutoAdvance;
+    const primary = h('button.btn-block.btn-primary.btn-lg', { onclick: () => r.recordReview('manual') }, reviewLabel(r, expectedAuto));
+    const restart = h('button.btn-block', { hidden: expectedAuto, onclick: () => r.startReviewAuto() }, `${r.config.reviewAutoAdvanceSec}초 자동 기록 다시 시작`);
+    const hint = h('p.hint', null, expectedAuto ? '입력란을 누르거나 값을 바꾸면 이 세트의 자동 기록이 멈춥니다.' : '자동 기록이 멈췄어요. 직접 확인하거나 다시 5초를 시작할 수 있어요.');
+    setReviewButton(primary, restart, hint);
+    return h('.review-card', null, hint, h('.btn-row', null, field(r.measure === 'duration' ? '실제 유지(초)' : '실제 수행(회)', reps), field(`실제 무게 (${s.unit})`, weight)), field('여유 횟수(RIR) · 선택', rir), primary,
+        r.config.reviewAutoAdvance ? restart : null,
+        h('button.btn-block.btn-ghost', { onclick: () => r.cancelSet() }, '완료 취소 · 다시 하기'));
 }
 function editSet(r, target) {
     if (!target || target.rec.done)

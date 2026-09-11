@@ -1,5 +1,5 @@
 /** Deterministic planning by weekly work-set budget; no silent duplicate fallback. */
-import { byGroup, GROUPS, GROUP_NAME, findExercise, enrichExercise, patternOf } from './exercises.js';
+import { byGroup, GROUPS, GROUP_NAME, findExercise, enrichExercise, patternOf, exerciseAllowed, equipmentReadiness } from './exercises.js';
 import { settings, rotation, customExercises, avoidExerciseIds, metadata } from './store.js';
 import { estimateWeight, resolveBenchmarks, warmupSets, suggestFromHistory } from './weights.js';
 import { weekStartOf, ymd, addDays, parseYmd, uid, rotate, clamp, dayDistance } from './util.js';
@@ -44,8 +44,8 @@ export function makeBlock(exercise, opt = {}) {
         note: opt.note || '', recommendation, overloadNote: recommendation?.note || '',
         sets: [...warm, ...Array.from({ length: sets }, () => ({ id: uid('set'), reps, weight, warmup: false, recommendation }))] };
 }
-function chooseExercises(group, count, { custom, equipment, avoid, used, weekUsed, seed, mainSeed, variant, alwaysSame }) {
-    const pool = byGroup(group, custom, equipment, avoid), out = [], patterns = new Set();
+function chooseExercises(group, count, { custom, plan, avoid, used, weekUsed, seed, mainSeed, variant, alwaysSame }) {
+    const pool = byGroup(group, custom, plan, avoid), out = [], patterns = new Set();
     for (let i = 0; i < count; i++) {
         const available = pool.filter(ex => !used.has(ex.id));
         if (!available.length)
@@ -121,12 +121,17 @@ export function analyzePlan(plan, s = settings()) {
             if (seen.has(b.exerciseId))
                 warnings.push(`${day.date}: 같은 종목이 중복됩니다.`);
             seen.add(b.exerciseId);
-            if (avoidExerciseIds().includes(b.exerciseId) || (s.plan.equipment.length && !s.plan.equipment.includes(b.equip)))
+            // A saved day may contain a bodyweight exercise that the user added
+            // manually. Keep enforcing real equipment and machine selections,
+            // but do not mislabel that supported manual choice as invalid.
+            if (avoidExerciseIds().includes(b.exerciseId) || !exerciseAllowed(ex, s.plan, { manual: true }))
                 warnings.push(`${day.date}: ${b.name}이 기구/제외 설정과 맞지 않습니다.`);
         }
         const time = estimateDaySeconds(day, s);
         if (time.total > s.plan.sessionMinutes * 60)
             warnings.push(`${day.date}: 최소 구성을 유지하면 시간 예산을 ${Math.ceil((time.total - s.plan.sessionMinutes * 60) / 60)}분 초과해요. 부위를 줄이거나 시간을 늘려 주세요.`);
+        if (day.blocks.length && s.plan.dailyExerciseCount != null && day.blocks.length !== s.plan.dailyExerciseCount)
+            warnings.push(`${day.date}: 요청 ${s.plan.dailyExerciseCount}종목 / 생성 ${day.blocks.length}종목 · 기구·부위·시간 조건에서 중복 없이 가능한 구성이에요.`);
         return { date: day.date, minutes: Math.ceil(time.total / 60), ...time };
     });
     const selected = new Set(Object.values(s.plan.week).flat());
@@ -145,6 +150,9 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
     if (metadata().unitReviewRequired)
         throw new Error('설정에서 기존 기록의 kg/lb를 먼저 확인해 주세요.');
     const base = settings(), p = { ...base.plan, ...opt.plan }, s = { ...base, plan: p }, custom = customExercises(), avoid = avoidExerciseIds();
+    const readiness = equipmentReadiness(p);
+    if (!readiness.ready || readiness.needsMachineReview)
+        throw new Error(readiness.message);
     const start = weekStartOf(typeof anyDay === 'string' ? parseYmd(anyDay) : anyDay), weekStart = ymd(start);
     const weekIndex = Math.floor(dayDistance(p.blockAnchor, weekStart) / 7), global = rotation().global || 0;
     const seed = weekIndex + global + (opt.reroll || 0), mainSeed = p.rotationMode === 'stable' ? Math.floor(weekIndex / p.stableWeeks) + global : seed;
@@ -156,7 +164,7 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
         const signature = [...groups].sort().join('+'), occurrence = signatures.get(signature) || 0;
         signatures.set(signature, occurrence + 1);
         const variant = occurrence % p.variantsPerGroup;
-        const used = new Set(), blocks = [];
+        const used = new Set(), blocks = [], requestedCount = p.dailyExerciseCount ?? recommendExerciseCount(p.sessionMinutes);
         for (const group of groups) {
             const appearance = groupAppearances[group] || 0;
             groupAppearances[group] = appearance + 1;
@@ -165,8 +173,8 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
             if (!quota)
                 continue;
             const perExercise = p.experience === 'beginner' ? 2 : 3;
-            const wanted = Math.min(3, Math.ceil(quota / perExercise));
-            const picked = chooseExercises(group, wanted, { custom, equipment: p.equipment, avoid, used, weekUsed, seed, mainSeed, variant, alwaysSame: p.variantsPerGroup === 1 });
+            const wanted = Math.min(3, Math.ceil(quota / perExercise), Math.max(0, requestedCount - blocks.length));
+            const picked = chooseExercises(group, wanted, { custom, plan: p, avoid, used, weekUsed, seed, mainSeed, variant, alwaysSame: p.variantsPerGroup === 1 });
             if (picked.length < wanted)
                 warnings.push(`${date} ${GROUP_NAME[group]}: 가능한 ${picked.length}종목만 사용했어요. 중복으로 채우지 않았습니다.`);
             picked.forEach((ex, j) => {
@@ -186,6 +194,10 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
         const suffix = p.variantsPerGroup > 1 ? ` (${String.fromCharCode(65 + variant)})` : '';
         const day = { id: uid('day'), date, dow, groupIds: groups, title: blocks.length ? groups.map(g => GROUP_NAME[g]).join(' · ') + suffix : '휴식', blocks };
         fitTime(day, s);
+        if (groups.length && day.blocks.length !== requestedCount) {
+            const reason = day.blocks.length < requestedCount ? '선택한 기구·부위와 시간 예산 안에서 중복 없이 만들 수 있는 수량' : '시간 예산에 맞춘 수량';
+            warnings.push(`${date}: 요청 ${requestedCount}종목 / 생성 ${day.blocks.length}종목 · ${reason}입니다.`);
+        }
         day.blocks.forEach(b => weekUsed.add(b.exerciseId));
         days.push(day);
     }
@@ -195,8 +207,13 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
 }
 export function normalizeAiPlan(raw, weekStart, history = []) {
     const s = settings(), custom = customExercises();
-    const allowed = GROUPS.flatMap(g => byGroup(g.id, custom, s.plan.equipment, avoidExerciseIds()));
+    const readiness = equipmentReadiness(s.plan);
+    if (!readiness.ready || readiness.needsMachineReview)
+        throw new Error(readiness.message);
+    const allowed = GROUPS.flatMap(g => byGroup(g.id, custom, s.plan, avoidExerciseIds()));
     const verified = validatePlan(raw, allowed, weekStart), prepared = new Set();
+    if (s.plan.dailyExerciseCount != null && verified.days.some(day => day.blocks.length > s.plan.dailyExerciseCount))
+        throw new Error(`AI 계획이 하루 요청 종목 수 ${s.plan.dailyExerciseCount}개를 초과했습니다.`);
     const days = verified.days.map(d => {
         prepared.clear();
         const blocks = d.blocks.map(b => {
@@ -212,6 +229,9 @@ export function normalizeAiPlan(raw, weekStart, history = []) {
         const planned = s.plan.week[d.dow] || [];
         if (d.groupIds.some(g => !planned.includes(g)) || planned.some(g => !d.groupIds.includes(g)))
             result.warnings.push(`${d.date}: 설정한 요일별 부위와 다른 구성이에요. 요청한 변경인지 확인해 주세요.`);
+        const requested = s.plan.dailyExerciseCount;
+        if (requested != null && planned.length && d.blocks.length !== requested)
+            result.warnings.push(`${d.date}: 요청 ${requested}종목 / 생성 ${d.blocks.length}종목 · AI 결과도 적용 전에 이 기기에서 다시 확인했어요.`);
     }
     result.analysis = analyzePlan(result, s);
     return result;
