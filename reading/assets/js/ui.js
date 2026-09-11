@@ -19,7 +19,7 @@ export function button(text,fn,kind='',props={}){return h('button'+(kind?'.'+kin
 export function input(value='',props={}){return h('input',{type:'text',value,...props});}
 export function select(options,value,props={}){return h('select',props,...Object.entries(options).map(([v,label])=>h('option',{value:v,selected:v===String(value)},label)));}
 export function textArea(value='',props={}){return h('textarea',{value,rows:4,...props});}
-export function empty(title,body,action=null){return h('div.empty',{},h('div.empty-mark',{'aria-hidden':'true'},'◯'),h('h2',{},title),h('p',{},body),action);}
+export function empty(title,body,action=null){return h('div.empty',{},h('div.empty-mark',{'aria-hidden':'true'},icon('bookmark')),h('h2',{},title),h('p',{},body),action);}
 export function head(title,subtitle='',action=null){return h('div.page-head',{},h('div',{},h('h1',{tabIndex:-1},title),subtitle?h('p.sub',{},subtitle):null),action);}
 let toastTimer;
 export function toast(message){const el=document.getElementById('toast');el.textContent=message;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{el.hidden=true;},3600);}
@@ -36,14 +36,28 @@ export function modal(title,build,{onClose}={}){
 export function confirm(title,message,yes='확인',danger=false){return new Promise(resolve=>{
   let answered=false;modal(title,close=>h('div',{},h('p',{},message),h('div.button-row',{},button('취소',()=>close()),button(yes,()=>{answered=true;close('confirm');resolve(true);},danger?'danger':'primary'))),{onClose:()=>{if(!answered)resolve(false);}});
 });}
-export function cover(book,large=false){
+export function cover(book,large=false,reading=null){
   const fallback=h('span.cover-fallback',{},book.title);
-  const box=h('span.cover'+(large?'.large':''),{},fallback);
+  const format=reading?.format||'paper',box=h('span.cover'+(large?'.large':'')+`.format-${format}`,{'data-format':format},fallback);
   if(book.coverUrl){const img=h('img',{src:book.coverUrl,alt:'',loading:'lazy',decoding:'async',referrerPolicy:'no-referrer'});img.addEventListener('load',()=>{fallback.hidden=true;});img.addEventListener('error',()=>{img.remove();fallback.hidden=false;});box.append(img);}
+  box.append(h('span.format-overlay',{'aria-hidden':'true'},icon(format),h('span',{},format==='paper'?'P':format==='ebook'?'E':'A')));
+  if(reading?.rating)box.append(h('span.rating-overlay',{'aria-label':`별점 ${reading.rating.toFixed(1)}`},icon('star'),reading.rating.toFixed(1)));
   return box;
 }
 export const chips=(options,current,change)=>h('div.chips',{},...Object.entries(options).map(([key,label])=>button(label,()=>change(key),'chip',{'aria-pressed':String(key===current)})));
 export function icon(name){
-  const paths={shelf:'M4 4v16M9 4v16M14 4v16M18 5l3 14',library:'M4 5h16v14H4zM8 5v14M12 5v14M16 5v14',notes:'M6 3h12v18H6zM9 8h6M9 12h6M9 16h3',settings:'M9 4h6l1 3 3 1v8l-3 1-1 3H9l-1-3-3-1V8l3-1zM9 12a3 3 0 106 0a3 3 0 10-6 0',search:'M16 16l5 5M18 10a8 8 0 11-16 0a8 8 0 1116 0',plus:'M12 4v16M4 12h16'};
+  const paths={
+    shelf:'M3.5 19.5h17M5 5.5h3.5v12H5zM10.5 4h4v13.5h-4zM16.5 6l2.8-.8 3 10.8-2.8.8zM11.5 4v5l1-1 1 1V4',
+    library:'M3.5 5.5h17v13h-17zM3.5 12h17M8 5.5v6.5M15.5 12v6.5M5.5 9h4M12.5 15.5h5',
+    notes:'M6 3.5h10l2 2v15H6zM9 9h6M9 13h6M9 17h3M15.5 3.5v3h3M4 18.5l1.5 2',
+    stats:'M4 19.5V11M9.5 19.5V6.5M15 19.5v-5M20.5 19.5V3.5M3 19.5h19M4 8l5.5-4 5.5 7 5.5-9',
+    settings:'M4 6h10M18 6h2M4 12h3M11 12h9M4 18h8M16 18h4M14 4v4M7 10v4M12 16v4',
+    search:'M15.5 15.5l5 5M18 10a8 8 0 11-16 0a8 8 0 1116 0',plus:'M12 4v16M4 12h16',
+    paper:'M3.5 5.5c3-1 5.5-.5 8.5 1.5v12c-3-2-5.5-2.5-8.5-1.5zM20.5 5.5c-3-1-5.5-.5-8.5 1.5v12c3-2 5.5-2.5 8.5-1.5z',
+    ebook:'M6 3.5h12v17H6zM9 6.5h6M9 17.5h6M10 20.5h4',
+    audio:'M4 14v-2a8 8 0 0116 0v2M4 13h3v6H5a1 1 0 01-1-1zM20 13h-3v6h2a1 1 0 001-1z',
+    star:'M12 3.5l2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9z',
+    bookmark:'M7 3.5h10v17l-5-3.5-5 3.5z',collection:'M4 5h12v14H4zM8 3h12v14M7 8h6M7 12h6'
+  };
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[name]||paths.notes);svg.append(path);return svg;
 }

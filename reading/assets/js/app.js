@@ -2,18 +2,16 @@ import { ReadingRepository } from './repository.js';
 import { storageAdapter,nativeEnvironment,exportFile } from './platform.js';
 import { BUILD,newNote,readingsFor } from './domain.js';
 import { h,mount,button,icon,toast } from './ui.js';
-import { renderShelf,renderLibrary,renderBook,renderStats,bookForm } from './views-books.js';
-import { renderNotes,renderNote,renderEditor,noteChooser } from './views-notes.js';
+import { renderShelf,renderLibrary,renderBook,renderStats } from './views-books.js';
+import { renderNotes,renderNote,renderEditor } from './views-notes.js';
 import { renderSettings } from './views-settings.js';
 const repo=new ReadingRepository(storageAdapter()),root=document.getElementById('main'),view={},pendingNotes=new Map();
 let routeToken=0,cleanup=null,leaveGuard=null,activePath='',routing=false;
 const getPath=()=>location.hash.slice(1)||'shelf';
 function shell(path,ctx){
-  const section=path.split('/')[0],selected=section==='note'||section==='write'?'notes':section==='stats'?'library':section;
-  mount(document.getElementById('topbar'),h('div.brand',{},h('span.brand-mark',{'aria-hidden':'true'}),'책꽂이',h('span.small-brand',{},'· 기록')),h('div.top-actions',{},button('',()=>ctx.navigate('settings'),'icon quiet',{'aria-label':'설정'}),button('',()=>selected==='notes'?noteChooser(ctx):bookForm(ctx),'icon primary',{'aria-label':selected==='notes'?'새 노트':'책 담기'})));
-  document.querySelector('[aria-label="설정"]').append(icon('settings'));
-  document.querySelector('.top-actions .primary').append(icon('plus'));
-  mount(document.getElementById('tabs'),...Object.entries({shelf:'책꽂이',library:'책장',notes:'노트'}).map(([key,label])=>h('button',{type:'button',onclick:()=>ctx.navigate(key),'aria-current':key===selected?'page':null},icon(key),h('span',{},label))));
+  const section=path.split('/')[0],selected=section==='note'||section==='write'?'notes':section==='book'?'library':section;
+  document.body.dataset.theme=ctx.repo.state.settings.theme;
+  mount(document.getElementById('tabs'),...Object.entries({shelf:'책꽂이',library:'책장',notes:'노트',stats:'통계',settings:'설정'}).map(([key,label])=>h('button',{type:'button',onclick:()=>ctx.navigate(key),'aria-current':key===selected?'page':null},icon(key),h('span',{},label))));
 }
 async function navigate(path){
   if(leaveGuard&&!(await leaveGuard()))return;
@@ -60,7 +58,7 @@ async function boot(){
   if('serviceWorker'in navigator&&!nativeEnvironment()&&['https:','http:'].includes(location.protocol)){
     try{
       const reg=await navigator.serviceWorker.register('./sw.js');
-      const update=()=>{if(reg.waiting){const btn=button('새 버전 준비됨 · 업데이트',async()=>{if(leaveGuard&&!(await leaveGuard()))return;reg.waiting.postMessage({type:'ACTIVATE_UPDATE'});},'small');document.getElementById('topbar').append(btn);}};
+      const update=()=>{if(reg.waiting){const btn=button('새 버전 적용',async()=>{if(leaveGuard&&!(await leaveGuard()))return;reg.waiting.postMessage({type:'ACTIVATE_UPDATE'});},'update-button small');document.body.append(btn);}};
       update();reg.addEventListener('updatefound',()=>{const sw=reg.installing;sw?.addEventListener('statechange',()=>{if(sw.state==='installed')update();});});
       let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true; /* Do not reload during a note edit. Next navigation uses current files. */toast('앱 업데이트가 준비됐어요. 작성 중인 글을 저장한 뒤 다시 열어 주세요.');});
     }catch(e){toast('오프라인 준비를 완료하지 못했어요. 인터넷 연결 후 다시 열어 주세요.');}
