@@ -1,5 +1,5 @@
 /** Versioned app-shell installation, network-first reads, and app-scoped cleanup only. */
-const CACHE = 'workout-log-v22-performance-flow';
+const CACHE = 'workout-log-v23-m-performance-icon';
 const PREFIX = 'workout-log-';
 const ROOT = new URL('./', self.location.href);
 const CORE = [
@@ -9,7 +9,12 @@ const CORE = [
     './js/views/planTab.js', './js/views/planPreview.js', './js/views/dayEditor.js', './js/views/machinePicker.js', './js/views/execTab.js', './js/views/exercisePicker.js', './js/views/run.js', './js/views/history.js', './js/views/stats.js', './js/views/settings.js',
     './audio/manifest.json',
 ];
-const OPTIONAL = ['./icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
+const OPTIONAL = [
+    './icons/icon-m-performance-180.png',
+    './icons/icon-m-performance-192.png',
+    './icons/icon-m-performance-512.png',
+    './icons/icon-m-performance-maskable-512.png'
+];
 const absolute = path => new URL(path, ROOT).href;
 async function fetchTimed(req, ms = 2500) {
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), ms);
