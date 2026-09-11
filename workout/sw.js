@@ -1,12 +1,12 @@
 /** Versioned app-shell installation, network-first reads, and app-scoped cleanup only. */
-const CACHE = 'workout-log-v20-reset-recovery';
+const CACHE = 'workout-log-v21-planning-ui';
 const PREFIX = 'workout-log-';
 const ROOT = new URL('./', self.location.href);
 const CORE = [
     './', './index.html', './reset.html', './manifest.webmanifest', './css/app.css',
     './js/app.js', './js/config.js', './js/util.js', './js/ui.js', './js/store.js', './js/validation.js', './js/persistence.js', './js/reset.js', './js/reset-page.js',
     './js/exercises.js', './js/weights.js', './js/timing.js', './js/planner.js', './js/runner.js', './js/voice.js', './js/ai.js', './js/ai-contract.js', './js/stats-model.js',
-    './js/views/planTab.js', './js/views/planPreview.js', './js/views/execTab.js', './js/views/exercisePicker.js', './js/views/run.js', './js/views/history.js', './js/views/stats.js', './js/views/settings.js',
+    './js/views/planTab.js', './js/views/planPreview.js', './js/views/dayEditor.js', './js/views/machinePicker.js', './js/views/execTab.js', './js/views/exercisePicker.js', './js/views/run.js', './js/views/history.js', './js/views/stats.js', './js/views/settings.js',
     './audio/manifest.json',
 ];
 const OPTIONAL = ['./icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];

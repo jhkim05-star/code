@@ -25,7 +25,10 @@ export function validateCatalog(catalog) {
         if (seen.has(id) || !GROUP_IDS.includes(x.group))
             throw new Error('중복 종목 ID 또는 알 수 없는 부위입니다.');
         seen.add(id);
-        return { id, name, group: x.group, equip: typeof x.equip === 'string' ? x.equip.slice(0, 40) : '' };
+        const loadBasis = typeof x.loadBasis === 'string' ? x.loadBasis.slice(0, 40) : '';
+        if (loadBasis && !['total', 'per_hand', 'stack', 'assistance', 'bodyweight', 'added'].includes(loadBasis))
+            throw new Error('종목 중량 기록 방식이 올바르지 않습니다.');
+        return { id, name, group: x.group, equip: typeof x.equip === 'string' ? x.equip.slice(0, 40) : '', loadBasis };
     });
 }
 export function planSchema(catalog, weekStart) {
@@ -35,7 +38,7 @@ export function planSchema(catalog, weekStart) {
             days: { type: 'array', minItems: 7, maxItems: 7, items: { type: 'object', additionalProperties: false,
                     required: ['date', 'type', 'title', 'blocks'], properties: {
                         date: { type: 'string', enum: dates }, type: { type: 'string', enum: ['rest', 'workout'] }, title: { type: 'string', maxLength: 160 },
-                        blocks: { type: 'array', maxItems: 10, items: { type: 'object', additionalProperties: false,
+                        blocks: { type: 'array', maxItems: 12, items: { type: 'object', additionalProperties: false,
                                 required: ['exerciseId', 'name', 'group', 'sets', 'reps', 'rest', 'note'], properties: {
                                     exerciseId: { type: 'string', enum: list.map(x => x.id) }, name: { type: 'string', maxLength: 160 },
                                     group: { type: 'string', enum: GROUP_IDS }, sets: { type: 'integer', minimum: 1, maximum: 8 },
@@ -64,7 +67,7 @@ export function validatePlan(raw, catalog, weekStart) {
         if (!['rest', 'workout'].includes(day.type))
             throw new Error('운동일 종류가 올바르지 않습니다.');
         boundedText(day.title, 160, '제목', false);
-        if (!Array.isArray(day.blocks) || day.blocks.length > 10 || (day.type === 'rest' && day.blocks.length) || (day.type === 'workout' && !day.blocks.length))
+        if (!Array.isArray(day.blocks) || day.blocks.length > 12 || (day.type === 'rest' && day.blocks.length) || (day.type === 'workout' && !day.blocks.length))
             throw new Error('휴식일/운동일과 종목 구성이 일치하지 않습니다.');
         const used = new Set();
         for (const b of day.blocks) {

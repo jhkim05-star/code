@@ -1,6 +1,7 @@
 /** All imports are validated in a temporary copy before live state is replaced. */
 import { DEFAULT_SETTINGS, GROUP_IDS } from './config.js';
 import { parseYmd, finite, uid, clone } from './util.js';
+import { EQUIPMENT, MACHINE_CATALOG, LOAD_BASES, isAssistanceExercise } from './exercises.js';
 const dangerous = new Set(['__proto__', 'constructor', 'prototype']);
 const providerCredential = /^(apiKey|proxyToken|openaiKey|anthropicKey|apiToken|openaiApiKey|anthropicApiKey|openaiProxyToken|clientToken)$/i;
 function dropProviderCredentials(value) {
@@ -94,9 +95,10 @@ export function validateSettings(raw, { legacy = false } = {}) {
     s.countdownSec = finite(s.countdownSec, 0, 15, '준비 카운트다운', { integer: true });
     s.restWarnSec = finite(s.restWarnSec, 0, 60, '휴식 알림', { integer: true });
     s.announceLastReps = finite(s.announceLastReps, 0, 10, '마지막 횟수 알림', { integer: true });
-    for (const k of ['autoStartRest', 'autoAdvance', 'autoNextExercise', 'voiceEnabled', 'beepEnabled', 'keepAwake'])
+    for (const k of ['autoStartRest', 'autoAdvance', 'autoNextExercise', 'reviewAutoAdvance', 'voiceEnabled', 'beepEnabled', 'keepAwake'])
         if (typeof s[k] !== 'boolean')
             throw new Error(`${k} 설정은 켜짐/꺼짐이어야 합니다.`);
+    s.reviewAutoAdvanceSec = finite(s.reviewAutoAdvanceSec, 1, 15, '세트 확인 자동 기록 시간', { integer: true });
     for (const [k, min, max] of [['voiceRate', 0.5, 2], ['voicePitch', 0.5, 2], ['voiceVolume', 0, 1]])
         s[k] = finite(s[k], min, max, k);
     if (!['kg', 'lb'].includes(s.unit) || !['auto', 'manual'].includes(s.countMode))
@@ -110,6 +112,7 @@ export function validateSettings(raw, { legacy = false } = {}) {
             throw new Error('움직이는 구간 합은 0.4초 이상, 전체는 12초 이내로 정해 주세요.');
     }
     s.plan.sessionMinutes = finite(s.plan.sessionMinutes, 20, 150, '운동시간', { integer: true });
+    s.plan.dailyExerciseCount = s.plan.dailyExerciseCount == null ? null : finite(s.plan.dailyExerciseCount, 1, 12, '하루 종목 수', { integer: true });
     s.plan.variantsPerGroup = finite(s.plan.variantsPerGroup, 1, 3, '종목 구성 수', { integer: true });
     s.plan.stableWeeks = finite(s.plan.stableWeeks, 1, 12, '주요 종목 유지 기간', { integer: true });
     parseYmd(s.plan.blockAnchor);
@@ -134,7 +137,19 @@ export function validateSettings(raw, { legacy = false } = {}) {
         finite(v, 0.1, 50, '기구 증량 단위');
     for (const v of Object.values(s.plan.minimumLoads))
         finite(v, 0, 100, '기구 최소 무게');
-    array(s.plan.equipment, '기구 목록', 20).forEach(x => text(x, '기구', 40));
+    const rawEquipment = array(s.plan.equipment, '기구 목록', 20).map(x => text(x, '기구', 40));
+    const oldBroadEquipment = rawEquipment.filter(x => !EQUIPMENT.includes(x));
+    s.plan.equipment = [...new Set(rawEquipment.filter(x => EQUIPMENT.includes(x)))];
+    if (oldBroadEquipment.some(x => ['머신', '원판', '기타'].includes(x)))
+        s.plan.equipmentReviewRequired = true;
+    if (typeof s.plan.equipmentReviewRequired !== 'boolean')
+        throw new Error('기구 확인 상태가 올바르지 않습니다.');
+    const machineIds = new Set(MACHINE_CATALOG.map(x => x.id));
+    s.plan.machineIds = [...new Set(array(s.plan.machineIds, '머신 목록', 100).map(x => text(x, '머신 ID', 80)))];
+    if (s.plan.machineIds.some(x => !machineIds.has(x)))
+        throw new Error('알 수 없는 머신이 선택돼 있습니다.');
+    if (s.plan.machineIds.length)
+        s.plan.equipmentReviewRequired = false;
     array(s.avoidExerciseIds, '제외 종목', 500).forEach(x => text(x, '종목 ID', 160));
     for (const k of ['aiProxyUrl', 'openaiProxyUrl', 'voiceURI'])
         text(s[k], k, 2048);
@@ -166,6 +181,17 @@ function validateExecutionFields(entry) {
     }
     if (entry.equip != null)
         text(entry.equip, '기구', 40);
+    if (isAssistanceExercise(entry)) {
+        entry.loadBasis = 'assistance';
+        // Recommendations are derived data. Drop a previously generated
+        // ordinary-load recommendation while preserving every recorded value.
+        if (entry.recommendation != null && entry.recommendation?.source !== 'manual')
+            entry.recommendation = null;
+        if (entry.overloadNote)
+            entry.overloadNote = '';
+    }
+    else if (entry.loadBasis != null && !LOAD_BASES.includes(entry.loadBasis))
+        throw new Error('중량 기록 방식이 올바르지 않습니다.');
     if (entry.secondary != null)
         array(entry.secondary, '보조 부위', 10).forEach(g => {
             if (!GROUP_IDS.includes(g))
@@ -187,6 +213,10 @@ function validateSet(raw, session = false, legacy = false) {
             st.confirmed = false;
         if (st.done && st.confirmed && st.reps == null)
             throw new Error('확인한 완료 세트에는 실제 수행값이 필요합니다.');
+        if (st.confirmationSource != null && !['manual', 'auto'].includes(st.confirmationSource))
+            throw new Error('세트 확인 방식이 올바르지 않습니다.');
+        if (st.confirmationSource === 'auto')
+            st.confirmed = false;
         st.rir = finite(st.rir, 0, 10, '여유 횟수', { nullable: true, integer: true });
         st.unit = 'kg';
     }
@@ -224,6 +254,11 @@ export function validateSession(raw, { legacy = false, draft = false } = {}) {
         if (!['reps', 'duration'].includes(e.measure))
             throw new Error('운동 측정 방식이 올바르지 않습니다.');
         e.sets = array(e.sets, '기록 세트', 50).map(st => validateSet(st, true, legacy));
+        if (isAssistanceExercise(e))
+            e.sets.forEach(st => {
+                if (st.recommendation != null && st.recommendation?.source !== 'manual')
+                    st.recommendation = null;
+            });
         unique(e.sets, '세트');
         return e;
     });
@@ -272,6 +307,11 @@ export function validateWeeklyPlan(raw, key, { legacy = false } = {}) {
             validateExecutionFields(b);
             const numericLegacySets = legacy && typeof rawBlock.sets === 'number';
             b.sets = validatePlanSets(rawBlock, { legacy });
+            if (isAssistanceExercise(b))
+                b.sets.forEach(st => {
+                    if (st.recommendation != null && st.recommendation?.source !== 'manual')
+                        st.recommendation = null;
+                });
             if (numericLegacySets) {
                 delete b.reps;
                 delete b.weight;
@@ -303,6 +343,13 @@ export function validateData(raw, { legacy = false } = {}) {
         if (!GROUP_IDS.includes(e.group))
             throw new Error('사용자 종목 부위가 올바르지 않습니다.');
         e.equip = text(e.equip || '기타', '기구', 40);
+        e.loadBasis = e.loadBasis == null ? null : text(e.loadBasis, '중량 기록 방식', 40);
+        if (e.loadBasis != null && !LOAD_BASES.includes(e.loadBasis))
+            throw new Error('사용자 종목의 중량 기록 방식이 올바르지 않습니다.');
+        e.requiredEquipment = e.requiredEquipment == null ? [] : array(e.requiredEquipment, '사용자 종목 필요 기구', 10).map(x => text(x, '필요 기구', 40));
+        e.machineIds = e.machineIds == null ? [] : array(e.machineIds, '사용자 종목 필요 머신', 20).map(x => text(x, '머신 ID', 80));
+        if (e.requiredEquipment.some(x => !EQUIPMENT.includes(x)) || e.machineIds.some(x => !MACHINE_CATALOG.some(m => m.id === x)))
+            throw new Error('사용자 종목의 필요 기구가 올바르지 않습니다.');
         for (const [k, min, max] of [['sets', 1, 20], ['reps', 1, 600], ['rest', 0, 900], ['tier', 1, 3]])
             e[k] = finite(e[k] ?? (k === 'tier' ? 2 : 10), min, max, k, { integer: true });
         e.tempo = finite(e.tempo ?? 3, 0.2, 12, '카운트 간격');
@@ -367,6 +414,16 @@ export function validateDraft(raw, { legacy = false } = {}) {
         for (const key of ['remaining', 'nextRepRemaining', 'completionRemaining'])
             if (r[key] != null)
                 finite(r[key], 0, 900000, key);
+        if (r.reviewDraft != null) {
+            const d = object(r.reviewDraft, '세트 확인 입력');
+            for (const key of ['entryId', 'setId'])
+                text(d[key], '세트 확인 대상', 160);
+            for (const key of ['reps', 'weight', 'rir'])
+                if (d[key] != null && typeof d[key] !== 'string' && typeof d[key] !== 'number')
+                    throw new Error('세트 확인 입력이 올바르지 않습니다.');
+            if (d.weightTouched != null && typeof d.weightTouched !== 'boolean')
+                throw new Error('세트 무게 편집 상태가 올바르지 않습니다.');
+        }
         if (r.countMode != null && !['auto', 'manual'].includes(r.countMode))
             throw new Error('진행 중 카운트 방식 오류');
         for (const key of ['savedAt', 'pausedAt'])

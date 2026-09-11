@@ -2,9 +2,10 @@
 import { settings, sessions } from './store.js';
 import { makeBlock } from './planner.js';
 import { speakCount, cue, beep, stopSpeaking } from './voice.js';
-import { uid, todayYmd, clone, clamp, finite } from './util.js';
+import { uid, todayYmd, clone, clamp, finite, displayWeight, inputWeight } from './util.js';
 import { transitionTiming } from './timing.js';
 import { validateSession, validateDraft } from './validation.js';
+import { isAssistanceExercise } from './exercises.js';
 let activeRunner = null;
 const REST_STATES = new Set(['resting', 'exercise_rest', 'exercise_setup']);
 export class Runner {
@@ -33,6 +34,9 @@ export class Runner {
         this.transition = null;
         this.pausedInfo = null;
         this.restWarned = false;
+        this.reviewGeneration = 0;
+        this.reviewAuto = null;
+        this.reviewDraft = null;
         this.session = { id: uid('ses'), date: todayYmd(), plannedDate: day.date, weekStart: opt.weekStart || null, dayId: day.id || null,
             title: day.title || '운동', startedAt: this.clock(), endedAt: null, pausedMs: 0, comment: '', status: 'draft', schema: 2,
             entries: (day.blocks || []).map(b => this.entryFromBlock(b)) };
@@ -42,7 +46,7 @@ export class Runner {
         return { ...clone(b), id: uid('entry'), sets: (b.sets || []).map(st => ({
                 ...clone(st), id: uid('set'), targetReps: st.reps, reps: null, weight: st.weight ?? null,
                 planRest: st.rest ?? null, rest: st.rest ?? b.rest ?? this.config.restDefault,
-                warmup: !!st.warmup, done: false, confirmed: false, skipped: false, rir: null, at: null,
+                warmup: !!st.warmup, done: false, confirmed: false, confirmationSource: null, skipped: false, rir: null, at: null,
                 tempo: b.tempo ?? this.config.tempo, unit: 'kg',
             })) };
     }
@@ -61,6 +65,9 @@ export class Runner {
         runner.tempo = saved.tempo || runner.tempo;
         runner.countMode = saved.countMode || runner.config.countMode;
         runner.transition = clone(saved.transition || null);
+        runner.reviewDraft = clone(saved.reviewDraft || null);
+        runner.reviewAuto = null;
+        runner.reviewGeneration++;
         const restoredState = saved.state === 'paused' ? saved.pausedInfo?.state : saved.state;
         runner.session.pausedMs = (runner.session.pausedMs || 0) + Math.max(0, runner.clock() - (saved.state === 'paused' ? (saved.pausedInfo?.pausedAt || saved.savedAt) : (saved.savedAt || runner.clock())));
         runner.pausedInfo = { ...(saved.state === 'paused' ? saved.pausedInfo : saved), state: ['done', 'paused'].includes(restoredState) ? 'ready' : restoredState || 'ready', pausedAt: runner.clock() };
@@ -79,6 +86,10 @@ export class Runner {
     }
     changed() { this.emit('change', this.snapshot()); }
     setState(next, { silence = true } = {}) {
+        if (this.state === 'review' && next !== 'review') {
+            this.reviewGeneration++;
+            this.reviewAuto = null;
+        }
         this.epoch++;
         this.completeAt = null;
         if (silence)
@@ -100,6 +111,7 @@ export class Runner {
     get activeElapsedSec() { const pausedNow = this.state === 'paused' ? this.clock() - (this.pausedInfo?.pausedAt || this.clock()) : 0; return Math.max(0, this.elapsedSec - ((this.session.pausedMs || 0) + pausedNow) / 1000); }
     get restLeft() { return REST_STATES.has(this.state) ? Math.max(0, (this.deadline - this.clock()) / 1000) : 0; }
     get countdownLeft() { return this.state === 'countdown' ? Math.max(0, (this.deadline - this.clock()) / 1000) : 0; }
+    get reviewAutoLeft() { return this.reviewAuto && this.reviewAutoMatches() ? Math.max(0, (this.reviewAuto.deadline - this.clock()) / 1000) : 0; }
     get isResting() { return REST_STATES.has(this.state); }
     get measure() { return this.entry?.measure || 'reps'; }
     get phaseLabel() {
@@ -168,6 +180,8 @@ export class Runner {
         clearInterval(this.timer);
         this.timer = null;
         this.epoch++;
+        this.reviewGeneration++;
+        this.reviewAuto = null;
         this.completeAt = null;
         if (silence)
             this.audio.stop();
@@ -213,7 +227,7 @@ export class Runner {
         const runtime = { state: this.state, entryId: this.entry?.id, setId: this.setRec?.id, rep: this.rep, tempo: this.tempo, countMode: this.countMode,
             remaining: Math.max(0, this.deadline - this.clock()), nextRepRemaining: Math.max(0, this.nextRepAt - this.clock()),
             completionRemaining: this.completeAt == null ? null : Math.max(0, this.completeAt - this.clock()),
-            transition: clone(this.transition), pausedInfo: clone(this.pausedInfo), savedAt: this.clock() };
+            transition: clone(this.transition), pausedInfo: clone(this.pausedInfo), reviewDraft: clone(this.reviewDraft), savedAt: this.clock() };
         return { schema: 2, session: clone(this.session), planSnapshot: clone(this.planSnapshot), runtime };
     }
     tick() {
@@ -263,6 +277,8 @@ export class Runner {
             if (now >= this.deadline)
                 this.finishRest();
         }
+        else if (this.state === 'review' && this.reviewAuto && this.reviewAutoMatches() && now >= this.reviewAuto.deadline)
+            this.recordReview('auto');
         this.emit('tick', this);
     }
     beginSet() {
@@ -294,6 +310,7 @@ export class Runner {
         if (!['countdown', 'counting', 'review'].includes(this.state))
             return;
         this.rep = 0;
+        this.reviewDraft = null;
         this.setState('ready');
     }
     finishSet(actualReps = null) {
@@ -301,22 +318,72 @@ export class Runner {
             return false;
         this.rep = actualReps == null ? this.rep : finite(actualReps, 0, 600, '실제 수행', { integer: true });
         // Counting is not sensing: actual performance is confirmed on the review screen.
+        this.reviewDraft = { entryId: this.entry.id, setId: this.setRec.id, reps: String(this.rep),
+            weight: this.setRec.weight == null ? '' : String(Number(displayWeight(this.setRec.weight, this.config.unit).toFixed(2))), weightTouched: false, rir: '' };
         this.setState('review');
+        this.startReviewAuto();
         this.audio.cue.setDone();
         return true;
     }
-    recordSet({ reps = this.rep, rir = null, weight = this.setRec?.weight ?? null } = {}) {
+    reviewAutoMatches() {
+        return this.state === 'review' && this.reviewAuto?.generation === this.reviewGeneration && this.reviewAuto.entryId === this.entry?.id && this.reviewAuto.setId === this.setRec?.id;
+    }
+    reviewValues() {
+        const d = this.reviewDraft;
+        if (!d || d.entryId !== this.entry?.id || d.setId !== this.setRec?.id)
+            throw new Error('확인 중인 세트가 바뀌었어요. 다시 확인해 주세요.');
+        return { reps: finite(d.reps, 0, 600, '실제 수행', { integer: true }), weight: d.weightTouched ? inputWeight(d.weight, this.config.unit) : this.setRec.weight,
+            rir: finite(d.rir, 0, 10, '여유 횟수', { nullable: true, integer: true }) };
+    }
+    updateReviewDraft(patch, { interaction = true } = {}) {
+        if (this.state !== 'review' || !this.reviewDraft)
+            return false;
+        Object.assign(this.reviewDraft, patch);
+        if (interaction)
+            this.cancelReviewAuto();
+        this.changed();
+        return true;
+    }
+    cancelReviewAuto() {
+        if (!this.reviewAuto)
+            return false;
+        this.reviewGeneration++;
+        this.reviewAuto = null;
+        this.emit('tick', this);
+        this.changed();
+        return true;
+    }
+    startReviewAuto() {
+        if (this.state !== 'review' || !this.config.reviewAutoAdvance)
+            return false;
+        this.reviewValues(); // Invalid or incomplete edits are never auto-recorded.
+        const generation = ++this.reviewGeneration;
+        this.reviewAuto = { generation, entryId: this.entry.id, setId: this.setRec.id, deadline: this.clock() + this.config.reviewAutoAdvanceSec * 1000 };
+        this.emit('tick', this);
+        this.changed();
+        return true;
+    }
+    recordReview(source = 'manual') {
+        if (!['manual', 'auto'].includes(source))
+            throw new Error('세트 확인 방식이 올바르지 않습니다.');
+        return this.recordSet({ ...this.reviewValues(), confirmationSource: source });
+    }
+    recordSet({ reps = this.rep, rir = null, weight = this.setRec?.weight ?? null, confirmationSource = 'manual' } = {}) {
         if (this.state !== 'review' || !this.setRec || this.setRec.done)
             return false;
+        if (!['manual', 'auto'].includes(confirmationSource))
+            throw new Error('세트 확인 방식이 올바르지 않습니다.');
         const clean = { reps: finite(reps, 0, 600, '실제 수행', { integer: true }), rir: finite(rir, 0, 10, '여유 횟수', { nullable: true, integer: true }), weight: finite(weight, 0, 1500, '실제 무게', { nullable: true }) };
         const rec = this.setRec;
         Object.assign(rec, clean);
         rec.done = true;
-        rec.confirmed = true;
+        rec.confirmed = confirmationSource === 'manual';
+        rec.confirmationSource = confirmationSource;
         rec.at = this.clock();
         rec.tempo = this.tempo;
         rec.rest = this.rest;
         rec.skipped = false;
+        this.reviewDraft = null;
         this.changed();
         if (!this.peekNext())
             this.finishWorkout();
@@ -475,6 +542,7 @@ export class Runner {
         this.exIndex = next.exIndex;
         this.setIndex = next.setIndex;
         this.rep = 0;
+        this.reviewDraft = null;
         this.transition = null;
         this.syncCurrent();
         this.setState('ready');
@@ -488,6 +556,7 @@ export class Runner {
         rec.skipped = true;
         rec.done = false;
         this.pausedInfo = null;
+        this.reviewDraft = null;
         this.advance();
         return true;
     }
@@ -499,6 +568,7 @@ export class Runner {
                 s.skipped = true;
         });
         this.pausedInfo = null;
+        this.reviewDraft = null;
         this.advance();
         return true;
     }
@@ -512,6 +582,7 @@ export class Runner {
         this.setIndex = setIndex;
         rec.skipped = false;
         this.rep = 0;
+        this.reviewDraft = null;
         this.transition = null;
         this.pausedInfo = null;
         this.syncCurrent();
@@ -579,7 +650,7 @@ export class Runner {
             throw new Error('복사할 세트가 없습니다.');
         if (t.entry.sets.length >= 50)
             throw new Error('한 종목에 최대 50세트까지 추가할 수 있어요.');
-        const rec = { ...clone(t.rec), id: uid('set'), reps: null, done: false, confirmed: false, skipped: false, rir: null, at: null };
+        const rec = { ...clone(t.rec), id: uid('set'), reps: null, done: false, confirmed: false, confirmationSource: null, skipped: false, rir: null, at: null };
         t.entry.sets.splice(t.setIndex + 1, 0, rec);
         if (t.exIndex === this.exIndex && t.setIndex < this.setIndex)
             this.setIndex++;
@@ -624,6 +695,7 @@ export class Runner {
             this.setIndex = Math.min(this.setIndex, t.entry.sets.length - 1);
         }
         this.rep = 0;
+        this.reviewDraft = null;
         this.pausedInfo = null;
         this.transition = null;
         if (this.setRec?.done || this.setRec?.skipped) {
@@ -672,6 +744,7 @@ export class Runner {
             this.session.entries[this.exIndex] = fresh;
         this.setIndex = 0;
         this.rep = 0;
+        this.reviewDraft = null;
         this.transition = null;
         this.pausedInfo = null;
         this.syncCurrent();
@@ -683,6 +756,7 @@ export class Runner {
         if (this.state === 'paused' && this.pausedInfo)
             this.session.pausedMs = (this.session.pausedMs || 0) + Math.max(0, this.clock() - this.pausedInfo.pausedAt);
         this.session.endedAt = this.clock();
+        this.reviewDraft = null;
         this.session.status = !this.session.stopReason && this.session.entries.every(e => e.sets.every(s => s.done)) ? 'completed' : 'partial';
         this.setState('done');
         this.stop();
@@ -697,11 +771,14 @@ export class Runner {
         this.session.status = 'partial';
     }
 }
+// The reset flow dispatches this before deleting workout-owned storage. A live
+// execution page must not retain a timer capable of confirming an old set.
+globalThis.addEventListener?.('workout:reset-start', () => activeRunner?.stop());
 /** Recorded-load volume, not physiological workload; warmups and timed sets excluded by default. */
 export function sessionVolume(session, { includeWarmup = false, confirmedOnly = false } = {}) {
     let volume = 0;
     for (const e of session.entries || []) {
-        if (e.measure === 'duration' || e.exerciseId === 'plank')
+        if (e.measure === 'duration' || e.exerciseId === 'plank' || isAssistanceExercise(e))
             continue;
         for (const st of e.sets || []) {
             if (st.done && (includeWarmup || !st.warmup) && (!confirmedOnly || st.confirmed) && Number.isFinite(st.weight) && Number.isFinite(st.reps))
