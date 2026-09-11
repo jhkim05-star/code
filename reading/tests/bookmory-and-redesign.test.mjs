@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { emptyState,normalizeBook,normalizeReading,normalizeNote,validateState,suggestedCollection,collectionGroups,statistics,clone } from '../assets/js/domain.js';
+import { DEFAULT_BOOK_PROXY,emptyState,normalizeBook,normalizeReading,normalizeNote,validateState,suggestedCollection,collectionGroups,statistics,clone } from '../assets/js/domain.js';
 import { parseBookmoryXlsx,bookmoryXlsx,bookmoryMatrix,BOOK_HEADERS,ROUND_HEADERS } from '../assets/js/bookmory.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
@@ -62,6 +62,12 @@ test('statistics count rereads once, sort dates newest first and expose detail b
 class MemoryAdapter{constructor(value=null){this.value=value&&clone(value);this.drafts=[];this.fail=false;this.lastOptions={};}async load(){return this.value&&clone(this.value);}async save(next,expected,options={}){if(this.fail)throw new Error('disk failed');if((this.value?.revision??0)!==expected)throw new ConflictError();this.value=clone(next);this.lastOptions=options;}readLegacy(){return null;}async draftPut(){}async draftGet(){return null;}async draftDelete(){}}
 test('theme and independent background persist through validated settings and failed replace keeps old data',async()=>{
   const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();for(const theme of ['red','pink','blue','green','yellow']){await repo.setting({theme});assert.equal(repo.state.settings.theme,theme);assert.equal(adapter.value.settings.theme,theme);}for(const background of ['black','beige','white']){await repo.setting({background});assert.equal(repo.state.settings.background,background);assert.equal(adapter.value.settings.background,background);}await repo.createBook({title:'기존 책'});const before=clone(repo.state),incoming=emptyState();incoming.books.push(book('new','새 책'));incoming.readings.push(reading('new-read','new'));adapter.fail=true;await assert.rejects(repo.import(incoming,{mode:'replace'}));assert.deepEqual(repo.state,before);assert.deepEqual(adapter.value,before);
+});
+
+test('domestic book proxy is available in fresh and existing standalone storage',()=>{
+  assert.equal(emptyState().settings.kakaoProxyUrl,DEFAULT_BOOK_PROXY);
+  const existing=emptyState();existing.settings.kakaoProxyUrl='';assert.equal(validateState(existing).settings.kakaoProxyUrl,DEFAULT_BOOK_PROXY);
+  const custom=emptyState();custom.settings.kakaoProxyUrl='https://example.com/books';assert.equal(validateState(custom).settings.kakaoProxyUrl,'https://example.com/books');
 });
 
 test('explicit wipe starts with empty records, clears drafts and remains atomic on failure',async()=>{
