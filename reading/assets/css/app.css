@@ -12,4 +12,5 @@ body[data-background=white]{color-scheme:light;--bg:#f7f7f5;--bg-soft:#ededeb;--
 @media(min-width:700px){.main{padding-top:48px}.grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:28px 20px}.book-card .title{font-size:15px}.book-card .author{font-size:12px}.editor-layout{grid-template-columns:250px minmax(0,1fr)}.editor-side{position:sticky;top:40px}.note-list{grid-template-columns:repeat(2,minmax(0,1fr))}.sheet{border-radius:22px;margin:auto}.stats-list{grid-template-columns:repeat(4,minmax(0,1fr))}.chart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}h1{font-size:38px}.collection-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .background-title{margin-top:24px}.stat-detail-row{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;text-align:left;gap:12px;align-items:center}.stat-detail-row span{min-width:0}.stat-detail-row strong,.stat-detail-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stat-detail-row small{color:var(--muted);margin-top:4px}
 .chip{min-height:44px}
+.reset-card{border-color:color-mix(in srgb,var(--danger) 48%,var(--line))}
 h1:focus{outline:none}
