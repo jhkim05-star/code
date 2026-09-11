@@ -22,6 +22,7 @@ export function fromKakao(d){
   return {title:plain(d?.title),authors:array(d?.authors).filter(x=>typeof x==='string'),translator:array(d?.translators).filter(x=>typeof x==='string').join(', '),publisher:plain(d?.publisher),publishedDate:txt(d?.datetime).slice(0,10),isbn:ids.find(x=>/^\d{13}$/.test(x))||ids[0]||'',pageCount:null,genre:'',origin:'',language:'',coverUrl:image(d?.thumbnail),description:plain(d?.contents),source:'카카오'};
 }
 export function fromOpenLibrary(d){return {title:plain(d?.title),authors:array(d?.author_name).filter(x=>typeof x==='string'),publisher:txt(array(d?.publisher)[0]),publishedDate:d?.first_publish_year?String(d.first_publish_year):'',isbn:txt(array(d?.isbn)[0]),pageCount:Number.isInteger(d?.number_of_pages_median)?d.number_of_pages_median:null,genre:genre(d?.subject),language:'',origin:'',coverUrl:Number.isInteger(d?.cover_i)?`https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg`:'',source:'Open Library'};}
+export function fromProxy(d){return {title:plain(d?.title),authors:array(d?.authors).filter(x=>typeof x==='string'),translator:plain(d?.translator),publisher:plain(d?.publisher),publishedDate:txt(d?.publishedDate),isbn:txt(d?.isbn),pageCount:Number.isInteger(d?.pageCount)&&d.pageCount>0?d.pageCount:null,genre:plain(d?.genre),language:txt(d?.language),origin:'',coverUrl:image(d?.coverUrl),description:plain(d?.description),source:plain(d?.source)||'도서 검색'};}
 export function parseAladinAuthors(raw){
   const authors=[],translators=[];
   for(const part of plain(raw).split(',')){
@@ -59,8 +60,7 @@ async function fromAladinQuery(query,key,signal){
 export async function searchBooks(query,settings={},signal){
   const q=String(query||'').trim();if(!q)return {items:[],warnings:[]};
   const providers=[];
-  if(settings.kakaoProxyUrl)providers.push(['카카오',async()=>{const u=new URL(cleanUrl(settings.kakaoProxyUrl));u.searchParams.set('query',q.replace(/^(\d[\d-]+)$/,(s)=>s.replace(/-/g,'')));u.searchParams.set('size','12');if(/^[\d-]{10,17}$/.test(q))u.searchParams.set('target','isbn');const data=await getJson(u.href,signal);if(!Array.isArray(data.documents))throw new Error('카카오 응답 형식 오류');return data.documents.map(fromKakao);}]);
-  if(settings.aladinKey)providers.push(['알라딘',()=>fromAladinQuery(q,settings.aladinKey,signal)]);
+  if(settings.kakaoProxyUrl)providers.push(['국내 도서',async()=>{const u=new URL(cleanUrl(settings.kakaoProxyUrl));u.searchParams.set('query',q.replace(/^(\d[\d-]+)$/,(s)=>s.replace(/-/g,'')));u.searchParams.set('size','12');if(/^[\d-]{10,17}$/.test(q))u.searchParams.set('target','isbn');const data=await getJson(u.href,signal);if(Array.isArray(data.items))return data.items.map(fromProxy);if(Array.isArray(data.documents))return data.documents.map(fromKakao);throw new Error('도서 검색 프록시 응답 형식 오류');}]);
   providers.push(['Google Books',async()=>{const gq=/^[\d-]{10,17}$/.test(q)?'isbn:'+q.replace(/-/g,''):q;const d=await getJson('https://www.googleapis.com/books/v1/volumes?maxResults=12&printType=books&q='+encodeURIComponent(gq),signal);if(d.items!==undefined&&!Array.isArray(d.items))throw new Error('Google 응답 형식 오류');return array(d.items).map(fromGoogle);}]);
   providers.push(['Open Library',async()=>{const d=await getJson('https://openlibrary.org/search.json?limit=12&fields=title,author_name,publisher,first_publish_year,isbn,cover_i,number_of_pages_median,subject&q='+encodeURIComponent(q),signal);if(!Array.isArray(d.docs))throw new Error('Open Library 응답 형식 오류');return d.docs.map(fromOpenLibrary);}]);
   const warnings=[];let successes=0;
@@ -71,4 +71,22 @@ export async function searchBooks(query,settings={},signal){
   }
   if(!successes)throw new Error('책 정보를 불러오지 못했어요. 인터넷 연결을 확인하거나 제목만 직접 입력해 주세요.');
   return {items:[],warnings};
+}
+
+const compactIsbn=value=>String(value||'').replace(/[^0-9Xx]/g,'').toUpperCase();
+function isbn13(value){const isbn=compactIsbn(value);if(/^\d{13}$/.test(isbn))return isbn;if(!/^\d{9}[\dX]$/.test(isbn))return '';const core='978'+isbn.slice(0,9);let sum=0;for(let i=0;i<12;i++)sum+=Number(core[i])*(i%2?3:1);return core+String((10-sum%10)%10);}
+function exactIsbn(item,isbn){const wanted=isbn13(isbn);return String(item?.isbn||'').split(/\s+/).some(value=>isbn13(value)===wanted);}
+function uniqueCovers(items){const seen=new Set();return items.filter(item=>{if(!item.coverUrl||seen.has(item.coverUrl))return false;seen.add(item.coverUrl);return true;});}
+/** Return exact-ISBN cover candidates in durable preference order. Image loading is
+ * deliberately verified by the UI before any candidate is stored.
+ */
+export async function coverCandidates(book,settings={},signal){
+  const isbn=compactIsbn(book?.isbn);if(!/^(?:\d{9}[\dX]|\d{13})$/.test(isbn))return {items:[],warnings:['ISBN이 없어 자동 복구에서 건너뛰었어요.']};
+  const jobs=[];
+  if(settings.kakaoProxyUrl)jobs.push(['국내 도서',async()=>{const u=new URL(cleanUrl(settings.kakaoProxyUrl));u.searchParams.set('action','cover');u.searchParams.set('query',isbn);u.searchParams.set('isbn',isbn);if(book?.title)u.searchParams.set('title',book.title);const data=await getJson(u.href,signal),found=Array.isArray(data.items)?data.items.map(fromProxy):Array.isArray(data.documents)?data.documents.map(fromKakao):[];return found.filter(item=>exactIsbn(item,isbn)&&item.coverUrl);}]);
+  jobs.push(['Google Books',async()=>{const data=await getJson('https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q='+encodeURIComponent('isbn:'+isbn),signal);return array(data.items).map(fromGoogle).filter(item=>exactIsbn(item,isbn)&&item.coverUrl);}]);
+  const settled=await Promise.allSettled(jobs.map(([,run])=>run()));if(signal?.aborted)throw signal.reason||new DOMException('취소됨','AbortError');
+  const items=[],warnings=[];settled.forEach((result,index)=>{if(result.status==='fulfilled')items.push(...result.value);else warnings.push(jobs[index][0]+' 조회 실패');});
+  items.push({title:book.title||'',authors:book.authors||[],publisher:book.publisher||'',isbn,coverUrl:`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-L.jpg?default=false`,source:'Open Library'});
+  return {items:uniqueCovers(items),warnings};
 }

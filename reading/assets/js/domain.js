@@ -1,7 +1,7 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.2.0-reading-library';
+export const BUILD = '3.3.0-cover-rescue';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
@@ -82,8 +82,10 @@ export function normalizeBook(b) {
   let collection=text(b.collection,'컬렉션',500).trim();
   const candidate={title,publisher:text(b.publisher),collection,tags};
   if(!collection)collection=suggestedCollection(candidate);
-  const isbn=text(b.isbn),coverUrl=cleanUrl(b.coverUrl,{image:true})||isbnCoverUrl(isbn);
-  return { id:id(b.id), title, subtitle:text(b.subtitle), authors:strings(b.authors,'저자'), translator:text(b.translator), illustrator:text(b.illustrator), narrator:text(b.narrator), publisher:candidate.publisher, publishedDate:text(b.publishedDate), isbn, pageCount:number(b.pageCount,0,1000000,true), genre:text(b.genre,'장르',200).trim()||inferred.genre, language:text(b.language), origin, legacyOrigin, tags, collection, series:text(b.series,'시리즈',500).trim(), wishlisted:!!b.wishlisted, coverUrl, description:text(b.description), source:text(b.source), createdAt:stamp(b.createdAt), updatedAt:stamp(b.updatedAt) };
+  const isbn=text(b.isbn),coverUrl=cleanUrl(b.coverUrl,{image:true});
+  const coverFallbacks=strings(b.coverFallbacks,'대체 표지',8).map(value=>cleanUrl(value,{image:true})).filter(value=>value!==coverUrl);
+  const coverCheckedAt=text(b.coverCheckedAt,'표지 확인 시각',40);if(coverCheckedAt&&!Number.isFinite(Date.parse(coverCheckedAt)))throw new Error('표지 확인 시각 형식이 올바르지 않아요.');
+  return { id:id(b.id), title, subtitle:text(b.subtitle), authors:strings(b.authors,'저자'), translator:text(b.translator), illustrator:text(b.illustrator), narrator:text(b.narrator), publisher:candidate.publisher, publishedDate:text(b.publishedDate), isbn, pageCount:number(b.pageCount,0,1000000,true), genre:text(b.genre,'장르',200).trim()||inferred.genre, language:text(b.language), origin, legacyOrigin, tags, collection, series:text(b.series,'시리즈',500).trim(), wishlisted:!!b.wishlisted, coverUrl, coverFallbacks, coverSource:text(b.coverSource,'표지 출처',80), coverCheckedAt, description:text(b.description), source:text(b.source), createdAt:stamp(b.createdAt), updatedAt:stamp(b.updatedAt) };
 }
 export function normalizeReading(r) {
   requireObject(r,'독서 이력');
