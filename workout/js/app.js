@@ -63,7 +63,22 @@ function paintStorage() {
     const backup = s.readOnly
         ? h('button', { onclick: async () => download('운동일지-복구원본-개인보관.json', JSON.stringify(await exportRecoveryCopies(), null, 2)) }, '복구 원본 내보내기 · 민감 정보 포함')
         : s.dirty ? h('button', { onclick: () => download('운동일지-복구용.json', JSON.stringify(exportAll(), null, 2)) }, '백업 내보내기') : null;
-    mount(el, s.message, s.dirty && !s.readOnly ? h('button', { onclick: () => retrySave() }, '저장 재시도') : null, backup);
+    const reset = s.readOnly ? h('button.btn-danger', { onclick: () => location.assign('./reset.html') }, '기존 운동 데이터 삭제 후 새로 시작') : null;
+    mount(el, s.message, s.dirty && !s.readOnly ? h('button', { onclick: () => retrySave() }, '저장 재시도') : null, backup, reset);
+}
+function stopForReset() {
+    generation++;
+    controller?.abort();
+    closeAllModals();
+    const dispose = cleanup;
+    cleanup = null;
+    try {
+        dispose?.();
+    }
+    catch (error) {
+        console.error(error);
+    }
+    stopSpeaking();
 }
 async function boot() {
     await initStore();
@@ -77,4 +92,5 @@ async function boot() {
         navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => { });
     }
 }
+addEventListener('workout:reset-start', stopForReset);
 boot().catch(e => mount(document.getElementById('app'), h('.card', null, h('h2', null, '앱을 시작하지 못했어요'), h('p', null, e.message))));

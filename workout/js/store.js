@@ -3,15 +3,16 @@ import { DEFAULT_SETTINGS, emptyData } from './config.js';
 import { clone, uid, finite, LB_PER_KG } from './util.js';
 import { validateData, validateSettings, validateSession, validateWeeklyPlan, validateDraft, validateLegacyDataForRecovery, parseBackup } from './validation.js';
 import { SnapshotWriter } from './persistence.js';
+import { CONTROL_CHANNEL, RESET_MARKER_KEY, blankResetData, readResetMarker, snapshotMatchesReset } from './reset.js';
 export { DEFAULT_SETTINGS };
 const SNAPSHOT_KEY = 'wl:snapshot.v2';
 const DB_SNAPSHOT = 'snapshot.v2';
 const LEGACY_KEYS = ['settings', 'plans', 'sessions', 'customExercises', 'meta'];
 const providerCredential = /^(apiKey|proxyToken|openaiKey|anthropicKey|apiToken|openaiApiKey|anthropicApiKey|openaiProxyToken|clientToken)$/i;
-let mem = emptyData(), db = null, writer = null, ready = false, lastSave = Promise.resolve();
+let mem = emptyData(), db = null, writer = null, ready = false, lastSave = Promise.resolve(), resetting = false;
 let status = { state: 'loading', message: '저장소 확인 중', readOnly: false, dirty: false, revision: 0 };
 const listeners = new Set();
-let releaseWriterLock = null, ownsWriterLock = false;
+let releaseWriterLock = null, ownsWriterLock = false, controlChannel = null, lifecycleInstalled = false;
 export const storageStatus = () => ({ ...status });
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function notify() {
@@ -225,7 +226,99 @@ async function acquireWriter() {
         }).catch(() => resolve(false));
     });
 }
+function closeConnections() {
+    try {
+        db?.close?.();
+    }
+    catch { }
+    db = null;
+    releaseWriterLock?.();
+    releaseWriterLock = null;
+    ownsWriterLock = false;
+}
+async function quiesceForReset(resetId) {
+    if (resetting)
+        return;
+    resetting = true;
+    status = { ...status, state: 'resetting', readOnly: true, dirty: false, message: '다른 화면에서 운동 데이터 새로 시작을 진행 중입니다. 이 창은 저장을 중단했습니다.' };
+    notify();
+    try {
+        globalThis.dispatchEvent?.(new Event('workout:reset-start'));
+    }
+    catch { }
+    await lastSave.catch(() => { });
+    closeConnections();
+    if (resetId)
+        mem.meta.pendingResetId = resetId;
+}
+function installLifecycleListeners() {
+    if (lifecycleInstalled || !globalThis.addEventListener)
+        return;
+    lifecycleInstalled = true;
+    addEventListener('storage', e => {
+        if (e.key === RESET_MARKER_KEY && e.newValue) {
+            let marker = null;
+            try {
+                marker = JSON.parse(e.newValue);
+            }
+            catch { }
+            if (marker?.id && marker.id !== mem.meta.resetId)
+                quiesceForReset(marker.id);
+            return;
+        }
+        if (e.key !== SNAPSHOT_KEY || !e.newValue)
+            return;
+        try {
+            const incoming = JSON.parse(e.newValue);
+            if (incoming.writer !== writer?.writer && incoming.revision >= writer?.revision && !status.readOnly) {
+                status = { ...status, readOnly: true, state: 'conflict', message: '다른 창에서 새 기록을 저장했습니다. 백업 후 이 창을 새로고침해 주세요.' };
+                notify();
+            }
+        }
+        catch { }
+    });
+    if (globalThis.document && globalThis.BroadcastChannel) {
+        try {
+            controlChannel = new BroadcastChannel(CONTROL_CHANNEL);
+            controlChannel.onmessage = event => {
+                if (event.data?.type === 'reset-request')
+                    quiesceForReset(event.data.resetId);
+            };
+        }
+        catch { }
+    }
+    addEventListener('pagehide', () => {
+        closeConnections();
+        controlChannel?.close?.();
+        controlChannel = null;
+    });
+    addEventListener('pageshow', async (e) => {
+        if (!e.persisted)
+            return;
+        if (readResetMarker()) {
+            status = { ...status, readOnly: true, state: 'resetting', message: '저장 상태가 바뀌었습니다. 최신 빈 운동일지를 열려면 새로고침해 주세요.' };
+            notify();
+            return;
+        }
+        const owns = await acquireWriter();
+        status.readOnly = !owns;
+        status.message = '화면 복원 후 최신 저장값 확인을 위해 새로고침해 주세요.';
+        status.readOnly = true;
+        notify();
+    });
+}
 export async function initStore() {
+    const resetMarker = readResetMarker();
+    if (resetMarker?.state === 'pending') {
+        resetting = true;
+        mem = emptyData();
+        mem.meta.pendingResetId = resetMarker.id;
+        status = { ...status, state: 'resetting', readOnly: true, dirty: false, message: '확인한 운동 데이터 초기화가 완료되지 않았습니다. 기존 운동 데이터 삭제 후 새로 시작에서 다시 시도해 주세요.' };
+        ready = true;
+        installLifecycleListeners();
+        notify();
+        return mem;
+    }
     const ownsLock = await acquireWriter();
     ownsWriterLock = ownsLock;
     db = await openDB();
@@ -233,8 +326,27 @@ export async function initStore() {
         await purgeStoredProviderCredentials();
     writer = new SnapshotWriter({
         writer: uid('window'),
-        local: { read: async () => localGet(SNAPSHOT_KEY), writeSync: value => localSet(SNAPSHOT_KEY, value) },
-        database: { read: () => idbGet(DB_SNAPSHOT), write: idbWrite },
+        local: {
+            read: async () => {
+                if (resetMarker?.state !== 'complete')
+                    return localGet(SNAPSHOT_KEY);
+                try {
+                    const value = localGet(SNAPSHOT_KEY);
+                    return snapshotMatchesReset(value, resetMarker) ? value : undefined;
+                }
+                catch {
+                    return undefined;
+                }
+            },
+            writeSync: value => localSet(SNAPSHOT_KEY, value),
+        },
+        database: {
+            read: async () => {
+                const value = await idbGet(DB_SNAPSHOT);
+                return snapshotMatchesReset(value, resetMarker) ? value : undefined;
+            },
+            write: idbWrite,
+        },
     });
     let validatedLegacy = null;
     try {
@@ -243,6 +355,11 @@ export async function initStore() {
             throw new Error('저장소 사본을 읽지 못했습니다. 오래된 사본으로 자동 교체하지 않습니다. 원본 복구 파일을 먼저 내보내 주세요.');
         if (latest)
             mem = validateData(latest.data);
+        else if (resetMarker?.state === 'complete') {
+            mem = blankResetData(resetMarker.id, resetMarker.completedAt || Date.now());
+            const result = await writer.save(mem);
+            status = { ...status, state: 'saved', dirty: false, revision: result.revision, message: '빈 운동일지 저장 상태를 복구함' };
+        }
         else {
             // Legacy copies carry no common revision. Keep both unchanged and surface a conflict rather than guessing.
             const legacy = {}, localLegacy = {}, dbLegacy = {};
@@ -321,48 +438,33 @@ export async function initStore() {
     }
     ready = true;
     notify();
-    if (globalThis.addEventListener) {
-        addEventListener('storage', e => {
-            if (e.key !== SNAPSHOT_KEY || !e.newValue)
-                return;
-            try {
-                const incoming = JSON.parse(e.newValue);
-                if (incoming.writer !== writer.writer && incoming.revision >= writer.revision && !status.readOnly) {
-                    status = { ...status, readOnly: true, state: 'conflict', message: '다른 창에서 새 기록을 저장했습니다. 백업 후 이 창을 새로고침해 주세요.' };
-                    notify();
-                }
-            }
-            catch { }
-        });
-        addEventListener('pagehide', () => { releaseWriterLock?.(); releaseWriterLock = null; });
-        addEventListener('pageshow', async (e) => {
-            if (e.persisted) {
-                const owns = await acquireWriter();
-                status.readOnly = !owns;
-                status.message = '화면 복원 후 최신 저장값 확인을 위해 새로고침해 주세요.';
-                status.readOnly = true;
-                notify();
-            }
-        });
-    }
+    installLifecycleListeners();
     return mem;
 }
 function ensureWritable() {
+    if (resetting)
+        throw new Error('운동 데이터 새로 시작을 진행 중이어서 이 창에서는 저장할 수 없습니다.');
     if (status.readOnly)
         throw new Error(status.message);
+    const marker = readResetMarker();
+    if (marker?.state === 'pending' || (marker?.state === 'complete' && mem.meta.resetId !== marker.id)) {
+        quiesceForReset(marker.id);
+        throw new Error('다른 화면에서 운동 데이터를 새로 시작했습니다. 이 창을 새로고침해 주세요.');
+    }
 }
 function persist() {
+    ensureWritable();
     if (!writer)
         return Promise.reject(new Error('저장소가 아직 준비되지 않았습니다.'));
     const requestedRevision = writer.revision + 1;
     status = { ...status, state: 'saving', dirty: true, message: '기기에 저장 중' };
     notify();
     lastSave = writer.save(mem).then(result => {
-        if (requestedRevision === writer.revision)
+        if (!resetting && requestedRevision === writer.revision)
             status = { ...status, state: 'saved', dirty: false, revision: result.revision, message: result.database ? '기기에 저장됨' : '기기에 저장됨 · localStorage만 사용 중' };
         notify();
         return result;
-    }).catch(err => { status = { ...status, state: 'error', dirty: true, message: err.message }; notify(); throw err; });
+    }).catch(err => { if (!resetting) status = { ...status, state: 'error', dirty: true, message: err.message }; notify(); throw err; });
     // UI can await flush(); the event handler also reports the failure prominently.
     lastSave.catch(() => { });
     return lastSave;

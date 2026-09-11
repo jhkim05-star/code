@@ -144,3 +144,83 @@ export function indexedDbStub(initial = []) {
         },
     };
 }
+
+export function resetIndexedDbStub(initial = [], { deleteMode = 'success' } = {}) {
+    let values = new Map(initial);
+    const deleteCalls = [];
+    const makeDb = () => ({
+        objectStoreNames: { contains: () => true },
+        createObjectStore: () => {},
+        close: () => {},
+        transaction: (_name, mode) => {
+            let pending = 0;
+            let aborted = false;
+            const tx = {
+                oncomplete: null,
+                onerror: null,
+                onabort: null,
+                abort() {
+                    aborted = true;
+                    queueMicrotask(() => tx.onabort?.());
+                },
+                objectStore: () => ({
+                    get(key) {
+                        const request = {};
+                        pending++;
+                        queueMicrotask(() => {
+                            if (aborted)
+                                return;
+                            request.result = values.get(key);
+                            request.onsuccess?.();
+                            if (--pending === 0)
+                                queueMicrotask(() => !aborted && tx.oncomplete?.());
+                        });
+                        return request;
+                    },
+                    put(value, key) {
+                        if (mode !== 'readwrite')
+                            throw new Error('readonly transaction');
+                        pending++;
+                        queueMicrotask(() => {
+                            if (aborted)
+                                return;
+                            values.set(key, structuredClone(value));
+                            if (--pending === 0)
+                                queueMicrotask(() => !aborted && tx.oncomplete?.());
+                        });
+                    },
+                }),
+            };
+            return tx;
+        },
+    });
+    const factory = {
+        deleteDatabase(name) {
+            deleteCalls.push(name);
+            const request = {};
+            queueMicrotask(() => {
+                if (deleteMode === 'failure') {
+                    request.onerror?.();
+                    return;
+                }
+                if (deleteMode === 'blocked-error') {
+                    request.onblocked?.();
+                    queueMicrotask(() => request.onerror?.());
+                    return;
+                }
+                values = new Map();
+                request.onsuccess?.();
+            });
+            return request;
+        },
+        open() {
+            const request = {};
+            queueMicrotask(() => {
+                request.result = makeDb();
+                request.onsuccess?.();
+            });
+            return request;
+        },
+    };
+    return { factory, deleteCalls, values: () => values };
+}
