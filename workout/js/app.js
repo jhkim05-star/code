@@ -2,7 +2,7 @@
 import { initStore, subscribe, storageStatus, retrySave, exportAll, exportRecoveryCopies } from './store.js';
 import { initVoice, unlockAudio, stopSpeaking } from './voice.js';
 import { h, mount, closeAllModals } from './ui.js';
-import { download } from './util.js';
+import { download, navigationTab } from './util.js';
 import { renderPlanTab } from './views/planTab.js';
 import { renderExec } from './views/execTab.js';
 import { renderRun } from './views/run.js';
@@ -60,7 +60,8 @@ async function route() {
     }
     document.body.classList.toggle('no-tabs', !!match.fullscreen);
     bar.hidden = !!match.fullscreen;
-    mount(bar, ...tabs.map(([p, label, icon]) => h('button', { 'aria-label': label, 'aria-current': path.startsWith(p) ? 'page' : null, onclick: () => go(p) }, h('span.ic', null, navIcon(icon)), h('span', null, label))));
+    const activeTab = navigationTab(path);
+    mount(bar, ...tabs.map(([p, label, icon]) => h('button', { 'aria-label': label, 'aria-current': activeTab === p ? 'page' : null, onclick: () => go(p) }, h('span.ic', null, navIcon(icon)), h('span', null, label))));
     mount(root);
     scrollTo(0, 0);
     try {

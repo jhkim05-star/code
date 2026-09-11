@@ -1,6 +1,6 @@
 import { h, mount, pageHead, field, toast, modal, stepper, switchRow, weightInput } from '../ui.js';
-import { settings, setSetting, replaceSettings, sessions, getPlan, avoidExerciseIds, toggleAvoid, customExercises } from '../store.js';
-import { generateWeek, normalizeAiPlan, PRESETS, recommendWeight, resolveWeeklyTargets } from '../planner.js';
+import { settings, setSetting, replaceSettings, sessions, getPlan, avoidExerciseIds, customExercises } from '../store.js';
+import { generateWeek, normalizeAiPlan, PRESETS, recommendWeight, resolveWeeklyTargets, syncAutomaticWeeklyTargets, applyWeeklyTargetChoice } from '../planner.js';
 import { BENCHMARKS, resolveBenchmarks } from '../weights.js';
 import { GROUPS, GROUP_NAME, EQUIPMENT, findExercise, equipmentReadiness } from '../exercises.js';
 import { generatePlanWithAi, contextFingerprint } from '../ai.js';
@@ -10,20 +10,28 @@ import { pickMachines, machineNames } from './machinePicker.js';
 import { weekStartOf, ymd, parseYmd, DOW_KO, fmtWeight, readWeightInput, finite } from '../util.js';
 export function renderPlanTab(root, params, opt = {}) {
     let chosenWeek = ymd(weekStartOf());
-    const draw = () => {
+    const recommendationContext = () => ({ custom: customExercises(), avoid: avoidExerciseIds() });
+    const updateRecommended = mutate => {
+        let next = structuredClone(settings());
+        mutate(next);
+        next = syncAutomaticWeeklyTargets(next, { custom: customExercises(), avoid: next.avoidExerciseIds });
+        replaceSettings(next);
+        draw();
+    };
+    function draw() {
         const s = settings();
-        mount(root, pageHead('운동계획', '목표량과 실제 기록을 기준으로 계획해요'), h('.card', null, h('h3', null, '빠른 시작'), h('p.hint', null, '요일 배치만 바꿉니다. 내 목표량과 기구 설정은 유지해요.'), h('.stack', null, ...PRESETS.map(p => h('button', { onclick: () => { setSetting('plan.week', structuredClone(p.week)); draw(); } }, p.label)))), weekCard(s), sessionCard(s), volumeCard(s), benchmarkCard(s), equipmentCard(s), avoidCard(), h('.card', null, h('h3', null, '계획 생성'), field('계획을 만들 주 (어느 날짜든 선택)', h('input', { type: 'date', value: chosenWeek, onchange: e => { chosenWeek = ymd(weekStartOf(parseYmd(e.target.value))); e.target.value = chosenWeek; } })), h('p.hint', null, '생성만으로 기존 계획을 덮어쓰지 않아요. 결과를 확인한 뒤 적용합니다.'), h('.btn-row', null, h('button.btn-primary', { onclick: () => {
+        mount(root, pageHead('운동계획', '목표량과 실제 기록을 기준으로 계획해요'), h('.card', null, h('h3', null, '빠른 시작'), h('p.hint', null, '요일 배치만 바꿉니다. 내 목표량과 기구 설정은 유지해요.'), h('.stack', null, ...PRESETS.map(p => h('button', { onclick: () => updateRecommended(next => { next.plan.week = structuredClone(p.week); }) }, p.label)))), weekCard(s), sessionCard(s), volumeCard(s), benchmarkCard(s), equipmentCard(s), avoidCard(), h('.card', null, h('h3', null, '계획 생성'), field('계획을 만들 주 (어느 날짜든 선택)', h('input', { type: 'date', value: chosenWeek, onchange: e => { chosenWeek = ymd(weekStartOf(parseYmd(e.target.value))); e.target.value = chosenWeek; } })), h('p.hint', null, '생성만으로 기존 계획을 덮어쓰지 않아요. 결과를 확인한 뒤 적용합니다.'), h('.btn-row', null, h('button.btn-primary', { onclick: () => {
                 if (!Object.values(settings().plan.week).some(a => a.length))
                     throw new Error('요일별 부위를 먼저 선택해 주세요.');
                 const fingerprint = contextFingerprint();
                 const plan = generateWeek(chosenWeek, { sessions: sessions() });
                 showPlanPreview(plan, { guard: () => contextFingerprint() === fingerprint });
             } }, '규칙으로 생성'), h('button', { onclick: () => openAiSheet(chosenWeek, opt.signal) }, 'AI로 생성'))));
-    };
+    }
     function weekCard(s) {
         return h('.card', null, h('h3', null, '요일별 부위'), h('p.hint', null, '선택하지 않은 날은 휴식입니다. 앞에 고른 부위가 주 부위예요.'), ...[1, 2, 3, 4, 5, 6, 0].map(d => {
             const row = h('div', { style: { marginTop: '14px' } }), choices = new Set(s.plan.week[d]), label = h('.lbl'), chips = h('.chips');
-            const paint = () => { label.textContent = `${DOW_KO[d]}요일${choices.size ? '' : ' · 휴식'}`; mount(chips, ...GROUPS.map(g => h('button.chip', { 'aria-pressed': choices.has(g.id), onclick: () => { choices.has(g.id) ? choices.delete(g.id) : choices.add(g.id); setSetting(`plan.week.${d}`, [...choices]); paint(); } }, g.short))); };
+            const paint = () => { label.textContent = `${DOW_KO[d]}요일${choices.size ? '' : ' · 휴식'}`; mount(chips, ...GROUPS.map(g => h('button.chip', { 'aria-pressed': choices.has(g.id), onclick: () => { choices.has(g.id) ? choices.delete(g.id) : choices.add(g.id); updateRecommended(next => { next.plan.week[d] = [...choices]; }); } }, g.short))); };
             paint();
             mount(row, label, chips);
             return row;
@@ -31,10 +39,10 @@ export function renderPlanTab(root, params, opt = {}) {
     }
     function sessionCard(s) {
         const direct = s.plan.dailyExerciseCount != null;
-        return h('.card', null, h('h3', null, '운동시간과 목표'), field('하루 운동시간', stepper({ value: s.plan.sessionMinutes, min: 20, max: 150, step: 5, format: v => `${v}분`, onchange: v => setSetting('plan.sessionMinutes', v) }), '웜업·휴식·기구 준비·카운트다운을 포함합니다.'), switchRow('하루 종목 수 직접 지정', '끄면 시간·부위별 목표에 맞춰 자동으로 정해요.', direct, v => { setSetting('plan.dailyExerciseCount', v ? 6 : null); draw(); }), direct ? field('운동일마다 요청할 종목 수', stepper({ value: s.plan.dailyExerciseCount, min: 1, max: 12, step: 1, format: v => `${v}종목`, onchange: v => setSetting('plan.dailyExerciseCount', v) }), '규칙·AI 계획 모두에 적용합니다. 조건상 부족하면 실제 생성 수와 이유를 보여줘요.') : h('p.hint', null, '하루 종목 수 · 자동'), field('목표', select(s.plan.goal, [['general', '꾸준한 일반 운동'], ['strength', '근력 중심'], ['hypertrophy', '근비대 중심']], v => setSetting('plan.goal', v))), field('경험 수준', select(s.plan.experience, [['unknown', '아직 설정하지 않음'], ['beginner', '입문'], ['intermediate', '중급'], ['advanced', '숙련']], v => setSetting('plan.experience', v))), switchRow('웜업 세트 포함', '기구와 준비한 동작을 구분합니다. 추정 중량은 확인이 필요해요.', s.plan.warmup, v => setSetting('plan.warmup', v)), field('증량 판단에 필요한 여유 횟수', stepper({ value: s.plan.targetRir, min: 0, max: 5, step: 1, format: v => `RIR ${v}`, onchange: v => setSetting('plan.targetRir', v) }), '본세트 전체가 목표를 채우고 이 여유가 확인된 경우에만 다음 기구 단계를 제안해요.'));
+        return h('.card', null, h('h3', null, '운동시간과 목표'), field('하루 운동시간', stepper({ value: s.plan.sessionMinutes, min: 20, max: 150, step: 5, format: v => `${v}분`, onchange: v => updateRecommended(next => { next.plan.sessionMinutes = v; }) }), '운동량을 채우는 목표가 아니라 넘지 않을 최대 시간입니다. 웜업·휴식·기구 준비·카운트다운을 포함합니다.'), switchRow('하루 종목 수 직접 지정', '끄면 시간·부위별 목표에 맞춰 자동으로 정해요.', direct, v => updateRecommended(next => { next.plan.dailyExerciseCount = v ? 6 : null; })), direct ? field('운동일마다 요청할 종목 수', stepper({ value: s.plan.dailyExerciseCount, min: 1, max: 12, step: 1, format: v => `${v}종목`, onchange: v => updateRecommended(next => { next.plan.dailyExerciseCount = v; }) }), '규칙·AI 계획 모두에 적용합니다. 조건상 부족하면 실제 생성 수와 이유를 보여줘요.') : h('p.hint', null, '하루 종목 수 · 자동'), field('목표', select(s.plan.goal, [['general', '꾸준한 일반 운동'], ['strength', '근력 중심'], ['hypertrophy', '근비대 중심']], v => updateRecommended(next => { next.plan.goal = v; }))), field('경험 수준', select(s.plan.experience, [['unknown', '아직 설정하지 않음'], ['beginner', '입문'], ['intermediate', '중급'], ['advanced', '숙련']], v => updateRecommended(next => { next.plan.experience = v; }))), switchRow('웜업 세트 포함', '기구와 준비한 동작을 구분합니다. 추정 중량은 확인이 필요해요.', s.plan.warmup, v => updateRecommended(next => { next.plan.warmup = v; })), field('증량 판단에 필요한 여유 횟수', stepper({ value: s.plan.targetRir, min: 0, max: 5, step: 1, format: v => `RIR ${v}`, onchange: v => setSetting('plan.targetRir', v) }), '본세트 전체가 목표를 채우고 이 여유가 확인된 경우에만 다음 기구 단계를 제안해요.'));
     }
     function volumeCard(s) {
-        const { targets, recommendation } = resolveWeeklyTargets(s.plan, s);
+        const { targets, recommendation } = resolveWeeklyTargets(s.plan, s, recommendationContext());
         const maxMinutes = Math.max(0, ...recommendation.dayEstimates.map(day => day.minutes));
         return h('.card', null,
             h('h3', null, '부위별 주간 본세트 목표'),
@@ -42,16 +50,11 @@ export function renderPlanTab(root, params, opt = {}) {
             h('details', { open: true }, h('summary', null, '추천 근거와 목표량 조절'),
                 ...GROUPS.map(g => {
                     const manual = s.plan.weeklyTargetModes[g.id] === 'manual';
-                    const change = v => {
-                        const next = structuredClone(settings());
-                        next.plan.weeklyTargetModes[g.id] = 'manual';
-                        next.plan.weeklyTargets[g.id] = v;
-                        replaceSettings(next);
-                    };
+                    const change = v => { replaceSettings(applyWeeklyTargetChoice(settings(), g.id, 'manual', v, recommendationContext())); draw(); };
                     return h('.target-row', null,
-                        h('.target-copy', null, h('.lbl', null, g.name, h('span.target-mode', { class: manual ? 'manual' : '' }, manual ? '수동' : '자동')), h('p.hint', null, recommendation.reasons[g.id])),
+                        h('.target-copy', null, h('.lbl', null, g.name, h('span.target-mode', { class: manual ? 'manual' : '' }, manual ? '수동' : '자동')), h('p.hint', null, manual ? `수동 ${targets[g.id]}세트 · 현재 자동 추천 ${recommendation.targets[g.id]}세트 · ${recommendation.reasons[g.id]}` : `자동 ${targets[g.id]}세트 · ${recommendation.reasons[g.id]}`)),
                         stepper({ value: targets[g.id], min: 0, max: 30, step: 1, format: v => `${v}세트`, onchange: change }),
-                        manual ? h('button.btn-sm.btn-ghost', { onclick: () => { setSetting(`plan.weeklyTargetModes.${g.id}`, 'auto'); draw(); } }, '자동 추천으로') : null);
+                        manual ? h('button.btn-sm.btn-ghost', { onclick: () => { replaceSettings(applyWeeklyTargetChoice(settings(), g.id, 'auto', null, recommendationContext())); draw(); } }, '자동 추천으로') : null);
                 })),
             h('p.hint', null, '프레스 등에서 함께 쓰이는 보조 부위는 결과에서 따로 표시합니다. 자동 추천은 개인 맞춤 처방이 아니므로 회복과 실제 수행에 맞춰 수동 조정해 주세요.'));
     }
@@ -81,11 +84,12 @@ export function renderPlanTab(root, params, opt = {}) {
     function equipmentCard(s) {
         const readiness = equipmentReadiness(s.plan), selectedMachines = machineNames(s.plan.machineIds);
         return h('.card', null, h('h3', null, '사용 가능한 기구'), h('p.hint', { class: readiness.ready && !readiness.needsMachineReview ? '' : 'warning' }, readiness.ready && !readiness.needsMachineReview ? '선택한 기구와 머신만 규칙·AI 계획에 사용합니다. 맨몸은 수동 추가 전용입니다.' : readiness.message),
-            h('.chips', null, ...EQUIPMENT.map(eq => h('button.chip', { 'aria-pressed': s.plan.equipment.includes(eq), onclick: () => { const next = new Set(settings().plan.equipment); next.has(eq) ? next.delete(eq) : next.add(eq); setSetting('plan.equipment', [...next]); draw(); } }, eq))),
-            h('hr.rule'), h('.card-head', null, h('div', null, h('.lbl', null, '헬스장'), h('p.hint', null, '헬스장에서 사용할 머신을 선택합니다.'), h('p.hint', null, selectedMachines.length ? `${selectedMachines.length}개 선택 · ${selectedMachines.join(', ')}` : '선택한 머신이 없어요. 머신 운동은 자동 계획에서 제외됩니다.')), h('button.btn-sm', { onclick: () => pickMachines(s.plan.machineIds, ids => { setSetting('plan.machineIds', ids); setSetting('plan.equipmentReviewRequired', false); draw(); }) }, '머신 추가')));
+            h('.chips', null, ...EQUIPMENT.map(eq => h('button.chip', { 'aria-pressed': s.plan.equipment.includes(eq), onclick: () => updateRecommended(next => { const selected = new Set(next.plan.equipment); selected.has(eq) ? selected.delete(eq) : selected.add(eq); next.plan.equipment = [...selected]; }) }, eq))),
+            h('hr.rule'), h('.card-head', null, h('div', null, h('.lbl', null, '헬스장'), h('p.hint', null, '헬스장에서 사용할 머신을 선택합니다.'), h('p.hint', null, selectedMachines.length ? `${selectedMachines.length}개 선택 · ${selectedMachines.join(', ')}` : '선택한 머신이 없어요. 머신 운동은 자동 계획에서 제외됩니다.')), h('button.btn-sm', { onclick: () => pickMachines(s.plan.machineIds, ids => updateRecommended(next => { next.plan.machineIds = ids; next.plan.equipmentReviewRequired = false; })) }, '머신 추가')));
     }
     function avoidCard() {
-        return h('.card', null, h('.card-head', null, h('h3', null, '피할 종목'), h('button.btn-sm', { onclick: () => pickExercise(null, ex => { toggleAvoid(ex.id); draw(); }, { equipmentOnly: false }) }, '추가')), ...avoidExerciseIds().map(id => h('.row', null, h('span.grow', null, findExercise(id, customExercises())?.name || id), h('button.btn-sm', { onclick: () => { toggleAvoid(id); draw(); } }, '제외 해제'))), !avoidExerciseIds().length ? h('p.hint', null, '등록한 종목이 없어요. 자동·AI 생성 모두 이 목록을 지킵니다.') : null);
+        const changeAvoid = id => updateRecommended(next => { const selected = new Set(next.avoidExerciseIds); selected.has(id) ? selected.delete(id) : selected.add(id); next.avoidExerciseIds = [...selected]; });
+        return h('.card', null, h('.card-head', null, h('h3', null, '피할 종목'), h('button.btn-sm', { onclick: () => pickExercise(null, ex => changeAvoid(ex.id), { equipmentOnly: false }) }, '추가')), ...avoidExerciseIds().map(id => h('.row', null, h('span.grow', null, findExercise(id, customExercises())?.name || id), h('button.btn-sm', { onclick: () => changeAvoid(id) }, '제외 해제'))), !avoidExerciseIds().length ? h('p.hint', null, '등록한 종목이 없어요. 자동·AI 생성 모두 이 목록을 지킵니다.') : null);
     }
     draw();
 }

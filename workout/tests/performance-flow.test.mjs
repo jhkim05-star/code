@@ -12,6 +12,8 @@ function fourDayUpperPlan(minutes = 60, dailyExerciseCount = 4) {
     const s = clone(DEFAULT_SETTINGS);
     s.plan.sessionMinutes = minutes;
     s.plan.dailyExerciseCount = dailyExerciseCount;
+    s.plan.equipment = ['바벨', '덤벨', '케이블', '스미스머신'];
+    s.plan.machineIds = ['chest_press', 'incline_press', 'pec_deck'];
     s.plan.week = { 0: [], 1: ['chest', 'delt_f', 'triceps'], 2: ['back', 'delt_sr', 'biceps'], 3: [], 4: ['chest', 'delt_f', 'triceps'], 5: ['back', 'delt_sr', 'biceps'], 6: [] };
     return s;
 }

@@ -40,8 +40,8 @@ export function requestContext(weekStart, request) {
     weekDates(weekStart);
     if (metadata().unitReviewRequired)
         throw new Error('기존 기록의 단위를 먼저 확인해 주세요.');
-    const s = settings(), history = serializeHistory(sessions(), customExercises());
-    const resolved = resolveWeeklyTargets(s.plan, s);
+    const s = settings(), custom = customExercises(), history = serializeHistory(sessions(), custom);
+    const resolved = resolveWeeklyTargets(s.plan, s, { custom, avoid: avoidExerciseIds() });
     return { provider: s.aiProvider, weekStart, request: String(request || '').trim().slice(0, 3000), catalog: allowedCatalog(),
         profile: { ...structuredClone(s.plan), weeklyTargets: resolved.targets, weeklyTargetRecommendation: resolved.recommendation, unit: 'kg', timing: { countdownSec: s.countdownSec, exerciseRest: s.exerciseRest, exerciseSetup: s.exerciseSetup, warmupRest: s.warmupRest, warmupToWorkRest: s.warmupToWorkRest } }, history };
 }
