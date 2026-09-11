@@ -1,5 +1,5 @@
 /** Versioned app-shell installation, network-first reads, and app-scoped cleanup only. */
-const CACHE = 'workout-log-v21-planning-ui';
+const CACHE = 'workout-log-v22-performance-flow';
 const PREFIX = 'workout-log-';
 const ROOT = new URL('./', self.location.href);
 const CORE = [

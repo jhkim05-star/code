@@ -11,6 +11,77 @@ export const PRESETS = [
     { id: 'ppl6', label: '3분할 주 6회', week: { 1: ['chest', 'delt_f', 'triceps'], 2: ['back', 'delt_sr', 'biceps'], 3: ['thighs', 'glutes', 'calves'], 4: ['chest', 'delt_f', 'triceps'], 5: ['back', 'delt_sr', 'biceps'], 6: ['thighs', 'glutes', 'calves'], 0: [] } },
 ];
 export const recommendExerciseCount = minutes => clamp(Math.round((minutes - 5) / 8), 2, 10);
+function allocateExerciseSlots(groups, count) {
+    const slots = [];
+    if (!groups.length || count < 1)
+        return slots;
+    for (let i = 0; i < count; i++)
+        slots.push(groups[i % groups.length]);
+    return slots;
+}
+function recommendationBlock(group, index, setCount, p, s) {
+    const reps = p.goal === 'strength' ? 8 : p.goal === 'hypertrophy' ? 12 : 10;
+    const sets = Array.from({ length: setCount }, (_, i) => ({ id: `recommended-${index}-${i}`, reps, warmup: false }));
+    if (p.warmup)
+        sets.unshift({ id: `recommended-${index}-warmup`, reps: 6, warmup: true });
+    return { id: `recommended-${index}`, group, measure: 'reps', tempo: s.tempo, rest: s.restDefault, sets };
+}
+/** Time-aware starting targets. They are planning policy, not a training prescription. */
+export function recommendWeeklyTargets(plan = settings().plan, s = settings()) {
+    const p = { ...plan }, targets = Object.fromEntries(GROUPS.map(g => [g.id, 0]));
+    const exerciseSlots = Object.fromEntries(GROUPS.map(g => [g.id, 0]));
+    const frequencies = Object.fromEntries(GROUPS.map(g => [g.id, 0]));
+    const trainingDays = Object.values(p.week || {}).filter(groups => groups?.length).length;
+    const dailyExerciseCount = p.dailyExerciseCount ?? recommendExerciseCount(p.sessionMinutes);
+    const baseSetsPerExercise = clamp(Math.floor((p.sessionMinutes + 5) / 15), 2, 5);
+    const dayEstimates = [];
+    for (const dow of [1, 2, 3, 4, 5, 6, 0]) {
+        const groups = p.week?.[dow] || [];
+        groups.forEach(group => frequencies[group]++);
+        if (!groups.length)
+            continue;
+        const requestedExercises = dailyExerciseCount;
+        const slots = allocateExerciseSlots(groups, requestedExercises);
+        const setCounts = slots.map(() => baseSetsPerExercise);
+        const makeDay = () => ({ blocks: slots.map((group, index) => recommendationBlock(group, index, setCounts[index], p, s)) });
+        let estimate = estimateDaySeconds(makeDay(), s);
+        while (estimate.total > p.sessionMinutes * 60) {
+            let reduceAt = -1;
+            for (let i = setCounts.length - 1; i >= 0; i--)
+                if (setCounts[i] > 1 && (reduceAt < 0 || setCounts[i] > setCounts[reduceAt]))
+                    reduceAt = i;
+            if (reduceAt < 0) {
+                slots.pop();
+                setCounts.pop();
+                estimate = estimateDaySeconds(makeDay(), s);
+                if (!slots.length)
+                    break;
+                continue;
+            }
+            setCounts[reduceAt]--;
+            estimate = estimateDaySeconds(makeDay(), s);
+        }
+        slots.forEach((group, index) => {
+            exerciseSlots[group]++;
+            targets[group] += setCounts[index];
+        });
+        dayEstimates.push({ dow, requestedExercises, exercises: slots.length, workSets: setCounts.reduce((sum, count) => sum + count, 0), minutes: Math.ceil(estimate.total / 60), withinBudget: estimate.total <= p.sessionMinutes * 60 });
+    }
+    for (const { id } of GROUPS)
+        targets[id] = clamp(targets[id], 0, 30);
+    const reasons = Object.fromEntries(GROUPS.map(({ id }) => {
+        const average = exerciseSlots[id] ? Math.round(targets[id] / exerciseSlots[id] * 10) / 10 : 0;
+        return [id, frequencies[id] ? `주 ${frequencies[id]}회 · 총 ${exerciseSlots[id]}종목 · 종목당 평균 ${average}본세트` : '선택한 운동일 없음'];
+    }));
+    return { targets, reasons, frequencies, exerciseSlots, trainingDays, dailyExerciseCount, baseSetsPerExercise, dayEstimates,
+        summary: `${p.sessionMinutes}분 × 주 ${trainingDays}일 · 하루 ${dailyExerciseCount}종목 기준` };
+}
+export function resolveWeeklyTargets(plan = settings().plan, s = settings()) {
+    const recommendation = recommendWeeklyTargets(plan, s), targets = {};
+    for (const { id } of GROUPS)
+        targets[id] = plan.weeklyTargetModes?.[id] === 'manual' ? plan.weeklyTargets[id] : recommendation.targets[id];
+    return { targets, recommendation };
+}
 export const estimateDayMinutes = (day, s = settings()) => estimateMinutes(day, s);
 export const estimateBlockSeconds = (b, s = settings()) => estimateDaySeconds({ blocks: [b] }, s).total;
 export const estimateBlocksSeconds = (blocks, s = settings()) => estimateDaySeconds({ blocks }, s).total;
@@ -139,6 +210,7 @@ function fitTime(day, s) {
 }
 export function analyzePlan(plan, s = settings()) {
     const direct = Object.fromEntries(GROUPS.map(g => [g.id, 0])), overlap = Object.fromEntries(GROUPS.map(g => [g.id, 0]));
+    const targetResolution = resolveWeeklyTargets(s.plan, s), effectiveTargets = targetResolution.targets;
     const warnings = [];
     const custom = customExercises();
     const days = plan.days.map(day => {
@@ -169,20 +241,21 @@ export function analyzePlan(plan, s = settings()) {
     });
     const selected = new Set(Object.values(s.plan.week).flat());
     for (const g of selected)
-        if (direct[g] < s.plan.weeklyTargets[g])
-            warnings.push(`${GROUP_NAME[g]}: 본세트 ${direct[g]} / 목표 ${s.plan.weeklyTargets[g]}세트. 후보 또는 시간 제한을 확인해 주세요.`);
+        if (direct[g] < effectiveTargets[g])
+            warnings.push(`${GROUP_NAME[g]}: 본세트 ${direct[g]} / 목표 ${effectiveTargets[g]}세트. 후보 또는 시간 제한을 확인해 주세요.`);
     for (let i = 1; i < plan.days.length; i++) {
         const previous = new Set(plan.days[i - 1].blocks.map(b => b.group));
         const repeated = [...new Set(plan.days[i].blocks.map(b => b.group))].filter(g => previous.has(g));
         if (repeated.length)
             warnings.push(`${plan.days[i].date}: 전날과 ${repeated.map(g => GROUP_NAME[g]).join(', ')} 부위가 겹쳐요. 회복 상태를 확인해 주세요.`);
     }
-    return { direct, overlap, days, warnings: [...new Set([...(plan.warnings || []), ...warnings])], note: '보조 자극 세트는 직접 본세트에 합산하지 않습니다. 개인에게 적절한 운동량을 보장하는 수치는 아니에요.' };
+    return { direct, overlap, days, targets: effectiveTargets, targetRecommendation: targetResolution.recommendation, warnings: [...new Set([...(plan.warnings || []), ...warnings])], note: '보조 자극 세트는 직접 본세트에 합산하지 않습니다. 자동 목표는 시간 안에서 구성한 출발값이며 개인에게 적절한 운동량을 보장하는 처방이 아니에요.' };
 }
 export function generateWeek(anyDay = new Date(), opt = {}) {
     if (metadata().unitReviewRequired)
         throw new Error('설정에서 기존 기록의 kg/lb를 먼저 확인해 주세요.');
     const base = settings(), p = { ...base.plan, ...opt.plan }, s = { ...base, plan: p }, custom = customExercises(), avoid = avoidExerciseIds();
+    const effectiveTargets = resolveWeeklyTargets(p, s).targets;
     const readiness = equipmentReadiness(p);
     if (!readiness.ready || readiness.needsMachineReview)
         throw new Error(readiness.message);
@@ -201,7 +274,7 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
         for (const group of groups) {
             const appearance = groupAppearances[group] || 0;
             groupAppearances[group] = appearance + 1;
-            const target = p.weeklyTargets[group] ?? 6, freq = frequencies[group];
+            const target = effectiveTargets[group] ?? 6, freq = frequencies[group];
             quotas[group] = Math.floor(target / freq) + (appearance < target % freq ? 1 : 0);
         }
         const directAllocation = p.dailyExerciseCount == null ? null : directExerciseAllocation(groups, requestedCount, quotas, { custom, plan: p, avoid });
@@ -241,7 +314,7 @@ export function generateWeek(anyDay = new Date(), opt = {}) {
         day.blocks.forEach(b => weekUsed.add(b.exerciseId));
         days.push(day);
     }
-    const result = { weekStart, createdAt: Date.now(), source: 'rule', note: '주간 본세트 목표 → 기구/제외 조건 → 종목 선택 → 시간 예산 순서로 만든 검토용 계획이에요.', warnings, days, profileSnapshot: structuredClone(p) };
+    const result = { weekStart, createdAt: Date.now(), source: 'rule', note: '운동시간 기반 주간 본세트 목표 → 기구/제외 조건 → 종목 선택 → 시간 예산 순서로 만든 검토용 계획이에요.', warnings, days, profileSnapshot: structuredClone({ ...p, weeklyTargets: effectiveTargets }) };
     result.analysis = analyzePlan(result, s);
     return result;
 }

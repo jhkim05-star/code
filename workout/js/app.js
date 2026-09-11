@@ -15,7 +15,26 @@ export function go(path, { replace = false } = {}) {
     else
         location.hash = path;
 }
-const tabs = [['/plan', '운동계획', '🗂️'], ['/exec', '운동실행', '🏋️'], ['/history', '기록', '📖'], ['/stats', '통계', '📈'], ['/settings', '설정', '⚙️']];
+const tabs = [['/plan', '운동계획', 'plan'], ['/exec', '운동실행', 'exec'], ['/history', '기록', 'history'], ['/stats', '통계', 'stats'], ['/settings', '설정', 'settings']];
+const NAV_PATHS = {
+    plan: ['M4.5 6.5c1.8-1.8 4.2-2.7 6.4-2.2l-.7 15c-2.5.2-4.6-.5-6.2-2.2z', 'M19.5 6.5c-1.8-1.8-4.2-2.7-6.4-2.2l.7 15c2.5.2 4.6-.5 6.2-2.2z', 'M7.2 7.6v8.3M16.8 7.6v8.3'],
+    exec: ['M12 3.5v7', 'M7.2 6.2a7.5 7.5 0 1 0 9.6 0', 'M9.4 13.9l1.8 1.8 3.7-4.1'],
+    history: ['M7 4.5h10l1.5 3v11H5.5v-11z', 'M8.5 4.5v4h7v-4', 'M8.5 12h7M8.5 15.5h4.5'],
+    stats: ['M4 17a8 8 0 0 1 16 0', 'M12 17l4.3-5.2', 'M7.2 13.1l-1.6-1M16.8 9.6l1.4-1.4M12 9V6.8'],
+    settings: ['M5 7h14M5 17h14M5 12h14', 'M9 4.8v4.4M15 9.8v4.4M10.5 14.8v4.4'],
+};
+function navIcon(name) {
+    const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', `nav-icon nav-icon-${name}`);
+    svg.setAttribute('aria-hidden', 'true');
+    for (const d of NAV_PATHS[name]) {
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', d);
+        svg.append(path);
+    }
+    return svg;
+}
 const routes = [[/^\/plan$/, renderPlanTab], [/^\/exec(?:\/(\d{4}-\d{2}-\d{2}))?$/, renderExec], [/^\/run\/(\d{4}-\d{2}-\d{2})$/, renderRun, true], [/^\/history$/, renderHistory], [/^\/session\/([\w-]+)$/, renderSessionDetail], [/^\/stats$/, renderStats], [/^\/settings$/, renderSettings]];
 let cleanup = null, controller = null, generation = 0;
 async function route() {
@@ -41,7 +60,7 @@ async function route() {
     }
     document.body.classList.toggle('no-tabs', !!match.fullscreen);
     bar.hidden = !!match.fullscreen;
-    mount(bar, ...tabs.map(([p, label, icon]) => h('button', { 'aria-current': path.startsWith(p) ? 'page' : null, onclick: () => go(p) }, h('span.ic', { 'aria-hidden': 'true' }, icon), h('span', null, label))));
+    mount(bar, ...tabs.map(([p, label, icon]) => h('button', { 'aria-label': label, 'aria-current': path.startsWith(p) ? 'page' : null, onclick: () => go(p) }, h('span.ic', null, navIcon(icon)), h('span', null, label))));
     mount(root);
     scrollTo(0, 0);
     try {

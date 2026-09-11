@@ -572,6 +572,13 @@ export class Runner {
         this.advance();
         return true;
     }
+    stopCurrentExercise(reason = '현재 운동 종료') {
+        if (this.state === 'done' || !this.entry)
+            return false;
+        if (this.state !== 'paused')
+            this.pause(reason);
+        return this.skipExercise();
+    }
     jumpTo(exIndex, setIndex = 0) {
         const entry = this.session.entries[exIndex], rec = entry?.sets[setIndex];
         if (!rec)

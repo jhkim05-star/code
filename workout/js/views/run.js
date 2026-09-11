@@ -125,8 +125,11 @@ function buildUi(root, r, alive, persistPlanOrder = () => {}) {
     const bar = h('i'), exBox = h('.run-ex'), big = h('span.big'), of = h('.of'), phase = h('.phase');
     const counter = h('.counter', null, big, of, phase), pips = h('.setgrid'), elapsed = h('.run-elapsed'), actions = h('.run-actions');
     const tools = h('.run-tools');
+    const stopActions = h('.run-stop-actions', null,
+        h('button.btn-stop-exercise', { onclick: () => stopExercise(r) }, '이 운동 그만하기'),
+        h('button.btn-stop-workout', { onclick: () => quit(r) }, '오늘 운동 그만하기'));
     let finishButton = null, reviewButton = null, reviewRestart = null, reviewHint = null;
-    mount(root, h('.run', null, h('.run-top', null, h('button.btn-sm.btn-ghost', { onclick: () => quit(r) }, '그만하기'), h('span.eyebrow', null, '운동 실행'), h('button.btn-sm', { onclick: () => openList(r, persistPlanOrder) }, '목록·추가')), h('.run-progress', { 'aria-hidden': 'true' }, bar), exBox, counter, pips, elapsed, tools, actions));
+    mount(root, h('.run', null, h('.run-top', null, h('span.eyebrow', null, '운동 실행'), h('button.btn-sm', { onclick: () => openList(r, persistPlanOrder) }, '목록·추가')), h('.run-progress', { 'aria-hidden': 'true' }, bar), exBox, counter, pips, elapsed, tools, actions, stopActions));
     function sync() {
         if (!alive() || r.state === 'done')
             return;
@@ -329,14 +332,22 @@ function openList(r, persistPlanOrder = () => {}) {
             h('.stack', null,
                 h('button', { onclick: () => { close(); pickExercise(null, ex => { r.addExercise(ex); toast('종목을 추가했어요.'); }); } }, '종목 추가'),
                 h('button', { onclick: () => { close(); pickExercise(r.entry?.group, ex => { r.substituteExercise(ex); toast('완료 기록을 보존하고 남은 운동만 대체했어요.'); }); } }, '현재 운동의 남은 세트 대체'),
-                h('button.btn-danger', { onclick: () => { r.skipExercise(); close(); } }, '현재 운동의 남은 세트 건너뛰기')),
+                h('button.btn-danger', { onclick: () => { r.stopCurrentExercise(); close(); } }, '현재 운동의 남은 세트 건너뛰기')),
         );
     });
 }
 
+async function stopExercise(r) {
+    r.pause('현재 운동 종료 확인 중이에요.');
+    const name = r.entry?.name || '현재 운동';
+    if (!await confirmSheet({ title: `${name}을 그만할까요?`, body: '이 종목의 남은 미완료 세트만 건너뛰고 다음 종목으로 이동합니다. 완료한 세트는 그대로 남아요.', confirmText: '이 운동 그만하기', danger: true }))
+        return;
+    r.stopCurrentExercise();
+}
+
 async function quit(r) {
     r.pause('종료 확인 중이에요.');
-    if (!await confirmSheet({ title: '여기까지 운동을 마칠까요?', body: '완료한 세트만 기록으로 남깁니다. 취소하면 일시정지 상태를 유지해요.', confirmText: '운동 마치기', danger: true }))
+    if (!await confirmSheet({ title: '오늘 운동을 여기서 마칠까요?', body: '현재까지 완료한 세트는 일부 진행 기록으로 안전하게 저장합니다. 남은 세트는 수행하지 않은 상태로 남고, 취소하면 일시정지 상태를 유지해요.', confirmText: '오늘 운동 그만하기', danger: true }))
         return;
-    r.abort();
+    r.abort('사용자가 오늘 운동 종료');
 }

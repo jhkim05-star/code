@@ -1,6 +1,6 @@
 import { h, mount, pageHead, field, toast, modal, stepper, switchRow, weightInput } from '../ui.js';
-import { settings, setSetting, sessions, getPlan, avoidExerciseIds, toggleAvoid, customExercises } from '../store.js';
-import { generateWeek, normalizeAiPlan, PRESETS, recommendWeight } from '../planner.js';
+import { settings, setSetting, replaceSettings, sessions, getPlan, avoidExerciseIds, toggleAvoid, customExercises } from '../store.js';
+import { generateWeek, normalizeAiPlan, PRESETS, recommendWeight, resolveWeeklyTargets } from '../planner.js';
 import { BENCHMARKS, resolveBenchmarks } from '../weights.js';
 import { GROUPS, GROUP_NAME, EQUIPMENT, findExercise, equipmentReadiness } from '../exercises.js';
 import { generatePlanWithAi, contextFingerprint } from '../ai.js';
@@ -34,7 +34,26 @@ export function renderPlanTab(root, params, opt = {}) {
         return h('.card', null, h('h3', null, '운동시간과 목표'), field('하루 운동시간', stepper({ value: s.plan.sessionMinutes, min: 20, max: 150, step: 5, format: v => `${v}분`, onchange: v => setSetting('plan.sessionMinutes', v) }), '웜업·휴식·기구 준비·카운트다운을 포함합니다.'), switchRow('하루 종목 수 직접 지정', '끄면 시간·부위별 목표에 맞춰 자동으로 정해요.', direct, v => { setSetting('plan.dailyExerciseCount', v ? 6 : null); draw(); }), direct ? field('운동일마다 요청할 종목 수', stepper({ value: s.plan.dailyExerciseCount, min: 1, max: 12, step: 1, format: v => `${v}종목`, onchange: v => setSetting('plan.dailyExerciseCount', v) }), '규칙·AI 계획 모두에 적용합니다. 조건상 부족하면 실제 생성 수와 이유를 보여줘요.') : h('p.hint', null, '하루 종목 수 · 자동'), field('목표', select(s.plan.goal, [['general', '꾸준한 일반 운동'], ['strength', '근력 중심'], ['hypertrophy', '근비대 중심']], v => setSetting('plan.goal', v))), field('경험 수준', select(s.plan.experience, [['unknown', '아직 설정하지 않음'], ['beginner', '입문'], ['intermediate', '중급'], ['advanced', '숙련']], v => setSetting('plan.experience', v))), switchRow('웜업 세트 포함', '기구와 준비한 동작을 구분합니다. 추정 중량은 확인이 필요해요.', s.plan.warmup, v => setSetting('plan.warmup', v)), field('증량 판단에 필요한 여유 횟수', stepper({ value: s.plan.targetRir, min: 0, max: 5, step: 1, format: v => `RIR ${v}`, onchange: v => setSetting('plan.targetRir', v) }), '본세트 전체가 목표를 채우고 이 여유가 확인된 경우에만 다음 기구 단계를 제안해요.'));
     }
     function volumeCard(s) {
-        return h('.card', null, h('h3', null, '부위별 주간 본세트 목표'), h('p.hint', null, '아래 값은 편집 가능한 출발 설정이지 개인 맞춤 처방이 아니에요. 프레스 등에서 함께 쓰이는 보조 부위는 결과에서 따로 표시합니다.'), h('details', null, h('summary', null, '주간 목표량 조절'), ...GROUPS.map(g => field(g.name, stepper({ value: s.plan.weeklyTargets[g.id], min: 0, max: 30, step: 1, format: v => `${v}세트`, onchange: v => setSetting(`plan.weeklyTargets.${g.id}`, v) })))));
+        const { targets, recommendation } = resolveWeeklyTargets(s.plan, s);
+        const maxMinutes = Math.max(0, ...recommendation.dayEstimates.map(day => day.minutes));
+        return h('.card', null,
+            h('h3', null, '부위별 주간 본세트 목표'),
+            h('p.hint', null, `${recommendation.summary} · 가장 긴 날 약 ${maxMinutes}분. 카운트·휴식·기구 전환을 포함해 시간 안에서 계산한 편집 가능한 출발값이에요.`),
+            h('details', { open: true }, h('summary', null, '추천 근거와 목표량 조절'),
+                ...GROUPS.map(g => {
+                    const manual = s.plan.weeklyTargetModes[g.id] === 'manual';
+                    const change = v => {
+                        const next = structuredClone(settings());
+                        next.plan.weeklyTargetModes[g.id] = 'manual';
+                        next.plan.weeklyTargets[g.id] = v;
+                        replaceSettings(next);
+                    };
+                    return h('.target-row', null,
+                        h('.target-copy', null, h('.lbl', null, g.name, h('span.target-mode', { class: manual ? 'manual' : '' }, manual ? '수동' : '자동')), h('p.hint', null, recommendation.reasons[g.id])),
+                        stepper({ value: targets[g.id], min: 0, max: 30, step: 1, format: v => `${v}세트`, onchange: change }),
+                        manual ? h('button.btn-sm.btn-ghost', { onclick: () => { setSetting(`plan.weeklyTargetModes.${g.id}`, 'auto'); draw(); } }, '자동 추천으로') : null);
+                })),
+            h('p.hint', null, '프레스 등에서 함께 쓰이는 보조 부위는 결과에서 따로 표시합니다. 자동 추천은 개인 맞춤 처방이 아니므로 회복과 실제 수행에 맞춰 수동 조정해 주세요.'));
     }
     function benchmarkCard(s) {
         const preview = h('p.hint');
