@@ -1,0 +1,8 @@
+name = "jhkim-budget-notion-proxy"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Set with `wrangler secret put`: NOTION_TOKEN, CLIENT_TOKEN
+# Set ALLOWED_ORIGIN to the exact deployed app origin (comma-separated for multiple trusted origins).
+[vars]
+ALLOWED_ORIGIN = "https://example.com"
