@@ -2,6 +2,7 @@
 import { settings, sessions, customExercises, avoidExerciseIds, metadata } from './store.js';
 import { GROUPS, byGroup, findExercise, isAssistanceExercise } from './exercises.js';
 import { validateCatalog, validatePlan, weekDates } from './ai-contract.js';
+import { resolveWeeklyTargets } from './planner.js';
 const TOKEN_KEY = 'wl:aiProxyToken';
 let memoryToken = '';
 export function proxyToken() {
@@ -39,9 +40,10 @@ export function requestContext(weekStart, request) {
     weekDates(weekStart);
     if (metadata().unitReviewRequired)
         throw new Error('기존 기록의 단위를 먼저 확인해 주세요.');
-    const s = settings(), history = serializeHistory(sessions(), customExercises());
+    const s = settings(), custom = customExercises(), history = serializeHistory(sessions(), custom);
+    const resolved = resolveWeeklyTargets(s.plan, s, { custom, avoid: avoidExerciseIds() });
     return { provider: s.aiProvider, weekStart, request: String(request || '').trim().slice(0, 3000), catalog: allowedCatalog(),
-        profile: { ...structuredClone(s.plan), unit: 'kg', timing: { countdownSec: s.countdownSec, exerciseRest: s.exerciseRest, exerciseSetup: s.exerciseSetup, warmupRest: s.warmupRest, warmupToWorkRest: s.warmupToWorkRest } }, history };
+        profile: { ...structuredClone(s.plan), weeklyTargets: resolved.targets, weeklyTargetRecommendation: resolved.recommendation, unit: 'kg', timing: { countdownSec: s.countdownSec, exerciseRest: s.exerciseRest, exerciseSetup: s.exerciseSetup, warmupRest: s.warmupRest, warmupToWorkRest: s.warmupToWorkRest } }, history };
 }
 export function contextFingerprint() { const s = settings(); return JSON.stringify({ plan: s.plan, avoid: s.avoidExerciseIds, history: sessions(), provider: s.aiProvider }); }
 export class AiError extends Error {

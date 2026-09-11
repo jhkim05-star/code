@@ -1,5 +1,5 @@
 /** All imports are validated in a temporary copy before live state is replaced. */
-import { DEFAULT_SETTINGS, GROUP_IDS } from './config.js';
+import { DEFAULT_SETTINGS, GROUP_IDS, LEGACY_WEEKLY_TARGETS } from './config.js';
 import { parseYmd, finite, uid, clone } from './util.js';
 import { EQUIPMENT, MACHINE_CATALOG, LOAD_BASES, isAssistanceExercise } from './exercises.js';
 const dangerous = new Set(['__proto__', 'constructor', 'prototype']);
@@ -69,6 +69,13 @@ function unique(list, label) {
 export function validateSettings(raw, { legacy = false } = {}) {
     assertSafeTree(raw);
     const s = mergeDefaults(DEFAULT_SETTINGS, raw);
+    // 2.1 stored only numeric targets. Values that differ from the former
+    // defaults were user choices and become manual overrides; untouched
+    // defaults move to the new time-aware automatic mode.
+    if (!raw?.plan?.weeklyTargetModes) {
+        for (const g of GROUP_IDS)
+            s.plan.weeklyTargetModes[g] = raw?.plan?.weeklyTargets?.[g] != null && raw.plan.weeklyTargets[g] !== LEGACY_WEEKLY_TARGETS[g] ? 'manual' : 'auto';
+    }
     if (legacy) {
         if (s.tempoMin <= 0)
             s.tempoMin = 0.5;
@@ -124,8 +131,11 @@ export function validateSettings(raw, { legacy = false } = {}) {
     s.plan.maxIncreasePercent = finite(s.plan.maxIncreasePercent, 1, 20, '최대 증량률');
     s.plan.staleDays = finite(s.plan.staleDays, 7, 365, '기록 참고 기간', { integer: true });
     s.plan.estimateScale = finite(s.plan.estimateScale, 0.3, 1, '환산 보수 계수');
-    for (const g of GROUP_IDS)
+    for (const g of GROUP_IDS) {
         s.plan.weeklyTargets[g] = finite(s.plan.weeklyTargets[g], 0, 30, '주간 본세트 목표', { integer: true });
+        if (!['auto', 'manual'].includes(s.plan.weeklyTargetModes[g]))
+            throw new Error('주간 본세트 목표 방식이 올바르지 않습니다.');
+    }
     for (let d = 0; d < 7; d++) {
         array(s.plan.week[d], '요일별 부위', 10);
         if (s.plan.week[d].some(g => !GROUP_IDS.includes(g)) || new Set(s.plan.week[d]).size !== s.plan.week[d].length)

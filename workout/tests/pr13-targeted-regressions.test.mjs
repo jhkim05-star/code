@@ -23,6 +23,7 @@ function plan(patch = {}) {
         sessionMinutes: 60,
         week: { 0: [], 1: ['chest'], 2: [], 3: [], 4: [], 5: [], 6: [] },
         weeklyTargets: targets({ chest: 12 }),
+        weeklyTargetModes: Object.fromEntries(Object.keys(DEFAULT_SETTINGS.plan.weeklyTargets).map(group => [group, 'manual'])),
         ...patch,
     };
 }

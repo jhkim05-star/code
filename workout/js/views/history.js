@@ -7,6 +7,7 @@ import { fmtDate, comma, parseYmd, ymd, todayYmd, DOW_KO, groupBy, uid, finite, 
 import { LOAD_LABELS, isAssistanceExercise } from '../exercises.js';
 import { go } from '../app.js';
 let calendarDate = new Date();
+export function historySetBadge(set) { return set.done && !set.confirmed && set.confirmationSource === 'auto' ? '자동' : ''; }
 export function renderHistory(root) { draw(root); }
 function draw(root) {
     const all = [...sessions()].sort((a, b) => b.startedAt - a.startedAt), byMonth = groupBy(all, s => s.date.slice(0, 7));
@@ -80,6 +81,7 @@ export function renderSessionDetail(root, [id]) {
                 await commit(s);
             } }, '검토한 실제 기록 확인')) : null, h('.card', null, field('운동 메모', h('textarea', { value: s.comment || '', maxLength: 20000, onchange: e => { s.comment = e.target.value; return commit(s); } }))), ...s.entries.map((entry, ei) => h('.card', null, h('.card-head', null, h('h3', null, entry.name), h('small', null, `${entry.sets.filter(st => st.done && !st.warmup).length}본세트`)), ...entry.sets.map((st, si) => {
             const weight = weightInput(st.weight, unit), reps = numberInput(st.reps, { min: 0, max: 600, label: `${si + 1}세트 실제 횟수/초` });
+            weight.setAttribute('aria-label', `${si + 1}세트 ${isAssistanceExercise(entry) ? '보조중량' : '중량'}`);
             weight.addEventListener('change', async () => {
                 try {
                     st.weight = readWeightInput(weight, st.weight, unit);
@@ -100,13 +102,20 @@ export function renderSessionDetail(root, [id]) {
                     toast(e.message);
                 }
             });
-            const rir = h('select', { 'aria-label': `${si + 1}세트 RIR`, onchange: e => { st.rir = e.target.value === '' ? null : Number(e.target.value); return commit(s); } }, h('option', { value: '', selected: st.rir == null }, 'RIR 미기록'), ...[0, 1, 2, 3, 4, 5].map(n => h('option', { value: n, selected: st.rir === n }, `RIR ${n}`)));
-            return h('div', null, h('.set-row', null, h('span', null, st.warmup ? '웜업' : `본 ${entry.sets.slice(0, si + 1).filter(x => !x.warmup).length}`), weight, reps, h('button.btn-sm', { 'aria-label': `${si + 1}세트 삭제`, onclick: async () => {
+            const rir = h('select', { 'aria-label': `${si + 1}세트 RIR`, onchange: e => { st.rir = e.target.value === '' ? null : Number(e.target.value); return commit(s); } }, h('option', { value: '', selected: st.rir == null }, 'RIR —'), ...[0, 1, 2, 3, 4, 5].map(n => h('option', { value: n, selected: st.rir === n }, `RIR ${n}`)));
+            const badge = historySetBadge(st);
+            return h('.history-set', null,
+                h('.history-set-head', null, h('span.set-label', null, st.warmup ? '웜업' : `본세트 ${entry.sets.slice(0, si + 1).filter(x => !x.warmup).length}`), badge ? h('span.auto-badge', { title: '자동 진행으로 저장된 미확인 기록', 'aria-label': '자동 저장된 미확인 기록' }, badge) : null, h('button.btn-icon.btn-ghost', { 'aria-label': `${si + 1}세트 삭제`, onclick: async () => {
                     if (!await confirmSheet({ title: '이 세트를 기록에서 지울까요?', confirmText: '삭제', danger: true }))
                         return;
                     entry.sets.splice(si, 1);
                     await commit(s);
-                } }, '✕')), h('.row', null, h('small.grow', null, st.done ? (st.confirmed ? '실제 기록 확인됨' : st.confirmationSource === 'auto' ? '5초 후 자동 기록 · 확인 필요' : '실제 기록 확인 필요') : '미완료·건너뜀'), rir, h('button.btn-sm', { onclick: async () => {
+                } }, '✕')),
+                h('.history-set-fields', null,
+                    h('label', null, h('small', null, isAssistanceExercise(entry) ? `보조중량 (${unit})` : `중량 (${unit})`), weight),
+                    h('label', null, h('small', null, entry.measure === 'duration' ? '초' : '횟수'), reps),
+                    h('label', null, h('small', null, 'RIR'), rir),
+                    h('button.btn-confirm-set', { 'aria-pressed': st.confirmed ? 'true' : 'false', onclick: async () => {
                     if (st.reps == null)
                         throw new Error('실제 횟수나 시간을 먼저 입력해 주세요.');
                     st.done = true;
@@ -114,7 +123,7 @@ export function renderSessionDetail(root, [id]) {
                     st.confirmed = true;
                     st.confirmationSource = 'manual';
                     await commit(s);
-                } }, '확인')));
+                } }, st.confirmed ? '확인됨' : '확인')));
         }), h('p.hint', null, LOAD_LABELS[isAssistanceExercise(entry) ? 'assistance' : entry.loadBasis] || ''), h('.btn-row', null, h('button.btn-sm', { onclick: () => manualSetSheet(entry, s, commit) }, '실제 세트 추가'), h('button.btn-sm.btn-danger', { onclick: async () => {
                 if (await confirmSheet({ title: `${entry.name} 기록을 삭제할까요?`, confirmText: '삭제', danger: true })) {
                     s.entries.splice(ei, 1);

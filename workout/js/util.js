@@ -35,6 +35,12 @@ export function weekStartOf(d = new Date()) {
     return addDays(c, -((c.getDay() + 6) % 7));
 }
 export const todayYmd = () => ymd(new Date());
+/** Map routes to their meaning in the persistent bottom navigation. */
+export function navigationTab(path) {
+    if (/^\/session(?:\/|$)/.test(path))
+        return '/history';
+    return ['/plan', '/exec', '/history', '/stats', '/settings'].find(tab => path === tab || path.startsWith(tab + '/')) || null;
+}
 export function dayDistance(a, b = todayYmd()) {
     parseYmd(a);
     parseYmd(b);
