@@ -1,4 +1,4 @@
 {
-  "version": "1.3.0",
-  "build": "budget-card-cycle-merchant-range"
+  "version": "1.4.0",
+  "build": "budget-current-next-card-due"
 }

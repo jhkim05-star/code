@@ -36,6 +36,20 @@ export function zonedDate(now=new Date(),timeZone='Asia/Seoul'){
 }
 
 function dueInMonth(y,m,billingDay){return isoDate(y,m,clampDay(y,m,billingDay));}
+export function cardCycleForBillingMonth(month,card){
+  const bounds=monthBounds(month),due=parseDate(bounds.from),billingDate=dueInMonth(due.y,due.m,card.billingDay),rule=card?.cycleRule||{type:'billing-offsets',startOffset:-45,endOffset:-16};
+  if(rule.type==='previous-current'){
+    const previous=parseDate(shiftMonths(bounds.from,-1,1));
+    return {start:isoDate(previous.y,previous.m,clampDay(previous.y,previous.m,rule.startDay)),end:isoDate(due.y,due.m,clampDay(due.y,due.m,rule.endDay)),billingDate,ruleType:rule.type};
+  }
+  if(rule.type==='monthly-range'){
+    const endBase=shiftMonths(bounds.from,-Number(rule.dueMonthOffset??1),1),endMonth=parseDate(endBase),spansMonths=Number(rule.endDay)<Number(rule.startDay),startBase=spansMonths?shiftMonths(endBase,-1,1):endBase,startMonth=parseDate(startBase);
+    return {start:isoDate(startMonth.y,startMonth.m,clampDay(startMonth.y,startMonth.m,rule.startDay)),end:isoDate(endMonth.y,endMonth.m,clampDay(endMonth.y,endMonth.m,rule.endDay)),billingDate,ruleType:rule.type};
+  }
+  const startOffset=Number(rule.startOffset??-45),endOffset=Number(rule.endOffset??-16);
+  if(startOffset>endOffset)throw new Error('주기 시작 offset은 종료 offset보다 작아야 해요.');
+  return {start:addDays(billingDate,startOffset),end:addDays(billingDate,endOffset),billingDate,ruleType:'billing-offsets'};
+}
 export function cardCycle(referenceDate,card){
   const ref=String(referenceDate).slice(0,10),p=parseDate(ref);if(!p)throw new Error('기준 날짜가 올바르지 않아요.');
   const rule=card?.cycleRule||{type:'billing-offsets',startOffset:-45,endOffset:-16};
@@ -110,6 +124,12 @@ export function cardCycleTotal(transactions,card,cycle){
   const regular=transactions.filter(tx=>tx.cardId===card.id&&!tx.cancelled).reduce((sum,tx)=>sum+installmentAmountForPeriod(tx,cycle.start,cycle.end),0);
   const cancellations=transactions.filter(tx=>tx.cardId===card.id&&tx.cancelled&&inRange(tx.date,cycle.start,cycle.end)).reduce((sum,tx)=>sum+normalizeAmount(tx.amount),0);
   return Math.max(0,regular-cancellations);
+}
+export function cardPaymentForecast(transactions,cards,today){
+  const current=parseDate(String(today).slice(0,10));if(!current)throw new Error('기준 날짜가 올바르지 않아요.');
+  const currentMonth=String(today).slice(0,7),nextMonth=shiftMonths(`${currentMonth}-01`,1,1).slice(0,7),active=cards.filter(card=>card.active);
+  const rowsFor=(month,zeroAfterDue)=>active.map(card=>{const cycle=cardCycleForBillingMonth(month,card),duePassed=zeroAfterDue&&compareDate(today,cycle.billingDate)>0;return {card,cycle,total:duePassed?0:cardCycleTotal(transactions,card,cycle),duePassed};});
+  return {currentMonth,nextMonth,current:rowsFor(currentMonth,true),next:rowsFor(nextMonth,false)};
 }
 export function monthBounds(month){const p=String(month).match(/^(\d{4})-(\d{2})$/);if(!p)throw new Error('월 형식이 올바르지 않아요.');return {from:`${month}-01`,to:isoDate(+p[1],+p[2],daysInMonth(+p[1],+p[2]))};}
 export function summarize(transactions,{month,categories=[]}={}){
