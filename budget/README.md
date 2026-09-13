@@ -7,7 +7,7 @@
 - IndexedDB 데이터베이스 `jhkim-budget`의 `authoritative` snapshot이 유일한 기준입니다.
 - snapshot에는 `transactions`, `cards`, `categories`, `budgets`, `imports`, `settings`, `meta`가 들어갑니다. 저장할 때 revision을 비교하므로 다른 창의 변경을 덮어쓰지 않습니다.
 - 손상되거나 알 수 없는 데이터는 자동 초기화하지 않습니다. 화면에 오류를 남기고 기존 데이터를 보존합니다.
-- Notion과 카드 알림 가져오기는 사용자가 각각의 **새로고침** 버튼을 누를 때만 동작합니다.
+- Notion ZIP·CSV 가져오기는 사용자가 파일을 직접 선택할 때만 동작합니다. 온라인 Notion과 카드 알림 가져오기는 각각의 **새로고침** 버튼을 누를 때만 동작합니다.
 - `NOTION_TOKEN`은 앱에 입력하거나 저장하지 않습니다. Cloudflare Worker secret으로만 보관합니다.
 - 알림 원문은 장기 저장하지 않습니다. 파싱된 거래 필드와 중복 방지용 source ID만 저장합니다.
 - JSON 백업에는 금액·가맹점·메모 등 민감정보가 포함됩니다. 안전한 위치에 보관하세요.
@@ -17,6 +17,7 @@
 ```js
 {
   id, date, time,
+  billingDate,       // Notion에 결제일이 있을 때만 사용하는 선택 필드
   type,              // expense | income | transfer
   amount, merchant, categoryId,
   paymentMethod, cardId,
@@ -41,7 +42,18 @@
 
 카드사마다 실제 이용기간과 청구 확정 규칙이 다르고 바뀔 수 있으므로, 카드 명세서의 이용기간을 확인한 뒤 값을 직접 설정하세요.
 
-## Notion 연결
+## Notion 내보내기 ZIP·CSV 가져오기
+
+Notion API 연결 없이 데이터베이스에서 내보낸 `.zip` 또는 `.csv`를 설정 화면에서 직접 선택할 수 있습니다. 파일은 브라우저 안에서만 읽으며 서버로 보내지 않습니다.
+
+- ZIP에 현재 보기 CSV와 전체 데이터 CSV가 함께 있으면 `_all.csv`를 우선 사용합니다.
+- 열 순서와 관계없이 `지출 내역`, `금액`, `날짜`를 필수로 읽고 `결제일`, `메모`, `카드`, `카테고리`를 선택적으로 읽습니다.
+- `June 11, 2025` 같은 Notion 영문 날짜를 ISO 날짜로 바꾸되, `날짜`와 `결제일`은 서로 합치지 않습니다.
+- 원화 기호와 천 단위 쉼표를 정규화합니다. 등록된 카드 이름·카드사·별칭과 정확히 맞으면 연결하고, 아니면 원래 카드 이름을 남긴 채 미연결 상태로 가져올 수 있습니다.
+- 기존에 없는 카테고리는 원래 이름으로 함께 추가합니다. `고정비`만 고정 카테고리로 표시하며, 다른 분류의 의미를 임의로 추측하지 않습니다.
+- 신규·중복 후보·오류를 먼저 보여주고 사용자가 확인한 신규 거래만 하나의 snapshot으로 저장합니다. 읽기나 저장에 실패하면 기존 데이터는 바뀌지 않습니다.
+
+## Notion 온라인 연결
 
 이 앱은 Notion API `2025-09-03`의 data source 경로를 사용합니다. 브라우저가 Notion에 직접 요청하지 않고 `proxy/worker.js`를 거칩니다.
 
@@ -83,6 +95,6 @@ cd budget
 npm test
 ```
 
-테스트 범위에는 validation, CRUD/revision, 손상 데이터 보존, 중복 후보, 카드 주기·월말·윤년, 할부, 승인취소, Notion 매핑·pagination·미리보기, 카드사 parser registry·cursor, 이체 제외, 취소 순액, 월/연 통계 기반 집계, 예산, 테마 저장, 서비스 워커 scope, 모바일 overflow 규칙, `Asia/Seoul`·`America/New_York` 날짜 경계가 포함됩니다.
+테스트 범위에는 validation, CRUD/revision, 손상 데이터 보존, 중복 후보, 카드 주기·월말·윤년, 할부, 승인취소, Notion ZIP·CSV 선택·날짜·카드·카테고리 정규화, Notion API 매핑·pagination·미리보기, 카드사 parser registry·cursor, 이체 제외, 취소 순액, 월/연 통계 기반 집계, 예산, 테마 저장, 서비스 워커 scope, 모바일 overflow 규칙, `Asia/Seoul`·`America/New_York` 날짜 경계가 포함됩니다.
 
 정적 파일 서버의 루트가 저장소 최상위가 되게 실행하고 `/budget/`을 여세요. ES module과 서비스 워커 때문에 `file://`로 직접 열지 않는 편이 안전합니다. 이 변경은 자동 배포하지 않습니다.
