@@ -123,10 +123,18 @@ export function installmentAmountForPeriod(tx,start,end){
   const base=Math.floor(amount/months),remainder=amount-base*months;let sum=0;
   for(let i=0;i<months;i++){const date=shiftMonths(tx.date,i);if(inRange(date,start,end))sum+=base+(i<remainder?1:0);}return sum;
 }
+export function cardCycleEntries(transactions,card,cycle){
+  const entries=[];
+  for(const tx of transactions){
+    if(tx.cardId!==card.id||tx.type!=='expense')continue;
+    if(tx.cancelled){if(inRange(tx.date,cycle.start,cycle.end))entries.push({transaction:tx,effectiveDate:tx.date,amount:-normalizeAmount(tx.amount),kind:'cancellation',installmentIndex:null,installmentMonths:null});continue;}
+    const months=Math.max(1,Number(tx.installment?.months||1)),amount=normalizeAmount(tx.amount),base=Math.floor(amount/months),remainder=amount-base*months;
+    for(let i=0;i<months;i++){const effectiveDate=months===1?tx.date:shiftMonths(tx.date,i);if(inRange(effectiveDate,cycle.start,cycle.end))entries.push({transaction:tx,effectiveDate,amount:months===1?amount:base+(i<remainder?1:0),kind:months===1?'purchase':'installment',installmentIndex:months===1?null:i+1,installmentMonths:months===1?null:months});}
+  }
+  return entries.sort((a,b)=>`${b.effectiveDate}T${b.transaction.time||'00:00'}`.localeCompare(`${a.effectiveDate}T${a.transaction.time||'00:00'}`));
+}
 export function cardCycleTotal(transactions,card,cycle){
-  const regular=transactions.filter(tx=>tx.cardId===card.id&&!tx.cancelled).reduce((sum,tx)=>sum+installmentAmountForPeriod(tx,cycle.start,cycle.end),0);
-  const cancellations=transactions.filter(tx=>tx.cardId===card.id&&tx.cancelled&&inRange(tx.date,cycle.start,cycle.end)).reduce((sum,tx)=>sum+normalizeAmount(tx.amount),0);
-  return Math.max(0,regular-cancellations);
+  return Math.max(0,cardCycleEntries(transactions,card,cycle).reduce((sum,entry)=>sum+entry.amount,0));
 }
 export function cardPaymentForecast(transactions,cards,today){
   const current=parseDate(String(today).slice(0,10));if(!current)throw new Error('기준 날짜가 올바르지 않아요.');
