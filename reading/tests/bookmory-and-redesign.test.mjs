@@ -5,6 +5,7 @@ import { COVER_COLORS,DEFAULT_BOOK_PROXY,coverColorValue,emptyState,normalizeBoo
 import { parseBookmoryXlsx,bookmoryXlsx,bookmoryMatrix,BOOK_HEADERS,ROUND_HEADERS } from '../assets/js/bookmory.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
+import { createResetGuard } from '../assets/js/views-settings.js';
 
 const stamp='2026-01-01T00:00:00.000Z';
 const book=(id,title,patch={})=>normalizeBook({id,title,authors:['한강'],createdAt:stamp,updatedAt:stamp,...patch});
@@ -97,6 +98,15 @@ test('mobile sheets constrain native date controls without horizontal overflow',
   assert.match(css,/\.field\{[^}]*min-width:0[^}]*max-width:100%/);
   assert.match(css,/\.sheet-body\{[^}]*max-width:100%[^}]*overflow-x:hidden/);
   assert.match(css,/input\[type=date\]\{[^}]*min-width:0[^}]*max-width:100%[^}]*-webkit-min-logical-width:0/);
+  assert.match(css,/input\[type=date\]\{[^}]*-webkit-appearance:none[^}]*appearance:none[^}]*font-size:19px[^}]*text-align:center/);
+});
+
+test('library reset requires both extra confirmations before wiping',async()=>{
+  let wipes=0,guard=createResetGuard(async()=>{wipes++;});
+  assert.equal(await guard.final(),false);assert.equal(wipes,0);
+  assert.equal(guard.typed('초기화'),true);assert.equal(await guard.final(),false);assert.equal(wipes,0);
+  assert.equal(guard.again(),true);assert.equal(await guard.final(),true);assert.equal(wipes,1);
+  const settings=await fs.readFile(new URL('../assets/js/views-settings.js',import.meta.url),'utf8');assert.match(settings,/마지막기회입니다\. 그래도 하시겠습니까\?/);
 });
 
 test('reading service worker remains scoped and does not mention workout caches',async()=>{

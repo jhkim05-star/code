@@ -50,7 +50,23 @@ async function repairCovers(ctx,status){
 }
 
 function resetLibrary(ctx){
-  modal('기존 기록 초기화',close=>{const word=input('',{placeholder:'초기화',autocomplete:'off',spellcheck:false}),error=h('p.error',{role:'alert'}),submit=h('button.danger.wide',{type:'submit',disabled:true},'모든 기록 삭제 후 새로 시작');word.addEventListener('input',()=>{submit.disabled=word.value.trim()!=='초기화';});return h('form',{onsubmit:async e=>{e.preventDefault();if(word.value.trim()!=='초기화'){error.textContent='초기화를 정확히 입력해 주세요.';return;}submit.disabled=true;try{await ctx.repo.wipe();close();await ctx.navigate('shelf');ctx.toast('기존 기록을 비우고 새 서재를 시작했어요.');}catch(err){error.textContent=err.message;submit.disabled=false;}}},h('p',{},`현재 책 ${ctx.repo.state.books.length}권, 독서 이력 ${ctx.repo.state.readings.length}개, 노트 ${ctx.repo.state.notes.length}개가 삭제됩니다.`),field("계속하려면 '초기화' 입력",word,'이 작업은 화면에서 되돌릴 수 없어요.'),error,submit);});
+  const guard=createResetGuard(()=>ctx.repo.wipe());
+  modal('기존 기록 초기화',close=>{
+    const box=h('div'),error=h('p.error',{role:'alert'});
+    const showFinal=()=>{const finish=button('삭제하고 새로 시작',async()=>{finish.disabled=true;error.textContent='';try{if(!await guard.final())return;close();await ctx.navigate('shelf');ctx.toast('기존 기록을 비우고 새 서재를 시작했어요.');}catch(err){error.textContent=err.message||'기존 기록을 초기화하지 못했어요.';finish.disabled=false;}},'danger');mount(box,h('h3',{},'진짜 마지막 확인'),h('p',{},'마지막기회입니다. 그래도 하시겠습니까?'),h('p.hint',{},'취소하면 기록은 그대로 유지됩니다.'),error,h('div.button-row',{},button('취소',()=>close()),finish));};
+    const showAgain=()=>{const next=button('계속',()=>{if(guard.again())showFinal();},'danger');mount(box,h('h3',{},'한 번 더 확인해 주세요'),h('p',{},'모든 책·독서 이력·노트와 임시 글을 정말 삭제하시겠습니까?'),h('p.hint',{},'아직 데이터는 삭제되지 않았습니다.'),h('div.button-row',{},button('취소',()=>close()),next));};
+    const word=input('',{placeholder:'초기화',autocomplete:'off',spellcheck:false}),submit=h('button.danger.wide',{type:'submit',disabled:true},'모든 기록 삭제 후 새로 시작');word.addEventListener('input',()=>{submit.disabled=word.value.trim()!=='초기화';});
+    const form=h('form',{onsubmit:e=>{e.preventDefault();if(!guard.typed(word.value)){error.textContent='초기화를 정확히 입력해 주세요.';return;}showAgain();}},h('p',{},`현재 책 ${ctx.repo.state.books.length}권, 독서 이력 ${ctx.repo.state.readings.length}개, 노트 ${ctx.repo.state.notes.length}개가 삭제됩니다.`),field("계속하려면 '초기화' 입력",word,'이 작업은 화면에서 되돌릴 수 없어요.'),error,submit);mount(box,form);return box;
+  });
+}
+
+export function createResetGuard(wipe){
+  let step=0;
+  return {
+    typed(value){if(step!==0||String(value).trim()!=='초기화')return false;step=1;return true;},
+    again(){if(step!==1)return false;step=2;return true;},
+    async final(){if(step!==2)return false;await wipe();step=3;return true;}
+  };
 }
 
 function importPreview(ctx,{state,warnings=[],summary=null,sheetName='',rounds=0},source){
