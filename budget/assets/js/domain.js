@@ -1,5 +1,5 @@
 export const TYPES=['expense','income','transfer'];
-export const SOURCES=['manual','notion','kakao','paste','import'];
+export const SOURCES=['manual','notion','kakao','paste','import','recurring'];
 export const DEFAULT_CATEGORIES=[
   {id:'food',name:'식비',kind:'expense',fixed:false},{id:'cafe',name:'카페·간식',kind:'expense',fixed:false},
   {id:'transport',name:'교통',kind:'expense',fixed:false},{id:'living',name:'생활',kind:'expense',fixed:false},
@@ -36,6 +36,20 @@ export function zonedDate(now=new Date(),timeZone='Asia/Seoul'){
 }
 
 function dueInMonth(y,m,billingDay){return isoDate(y,m,clampDay(y,m,billingDay));}
+export function cardCycleForBillingMonth(month,card){
+  const bounds=monthBounds(month),due=parseDate(bounds.from),billingDate=dueInMonth(due.y,due.m,card.billingDay),rule=card?.cycleRule||{type:'billing-offsets',startOffset:-45,endOffset:-16};
+  if(rule.type==='previous-current'){
+    const previous=parseDate(shiftMonths(bounds.from,-1,1));
+    return {start:isoDate(previous.y,previous.m,clampDay(previous.y,previous.m,rule.startDay)),end:isoDate(due.y,due.m,clampDay(due.y,due.m,rule.endDay)),billingDate,ruleType:rule.type};
+  }
+  if(rule.type==='monthly-range'){
+    const endBase=shiftMonths(bounds.from,-Number(rule.dueMonthOffset??1),1),endMonth=parseDate(endBase),spansMonths=Number(rule.endDay)<Number(rule.startDay),startBase=spansMonths?shiftMonths(endBase,-1,1):endBase,startMonth=parseDate(startBase);
+    return {start:isoDate(startMonth.y,startMonth.m,clampDay(startMonth.y,startMonth.m,rule.startDay)),end:isoDate(endMonth.y,endMonth.m,clampDay(endMonth.y,endMonth.m,rule.endDay)),billingDate,ruleType:rule.type};
+  }
+  const startOffset=Number(rule.startOffset??-45),endOffset=Number(rule.endOffset??-16);
+  if(startOffset>endOffset)throw new Error('주기 시작 offset은 종료 offset보다 작아야 해요.');
+  return {start:addDays(billingDate,startOffset),end:addDays(billingDate,endOffset),billingDate,ruleType:'billing-offsets'};
+}
 export function cardCycle(referenceDate,card){
   const ref=String(referenceDate).slice(0,10),p=parseDate(ref);if(!p)throw new Error('기준 날짜가 올바르지 않아요.');
   const rule=card?.cycleRule||{type:'billing-offsets',startOffset:-45,endOffset:-16};
@@ -90,10 +104,13 @@ export function validateTransaction(input){
 export function validateState(state){
   const keys=['transactions','cards','categories','budgets','imports','settings','meta'];
   for(const key of keys)if(!(key in(state||{})))throw new Error(`데이터에 ${key} 항목이 없어요.`);
+  if(!('recurringExpenses'in state))state.recurringExpenses=[];
   if(!Array.isArray(state.transactions)||!Array.isArray(state.cards)||!Array.isArray(state.categories)||!Array.isArray(state.budgets)||!Array.isArray(state.imports))throw new Error('목록 데이터 형식이 올바르지 않아요.');
+  if(!Array.isArray(state.recurringExpenses))throw new Error('고정지출 데이터 형식이 올바르지 않아요.');
+  for(const rule of state.recurringExpenses){if(!rule.id||!rule.name||!Number.isFinite(+rule.amount)||+rule.amount<=0||!Number.isInteger(+rule.day)||+rule.day<1||+rule.day>31||!parseDate(`${rule.startMonth}-01`)||!Array.isArray(rule.generatedMonths||[]))throw new Error('고정지출 항목을 확인해 주세요.');}
   state.transactions.forEach(validateTransaction);return state;
 }
-export function defaultState(){return {schemaVersion:1,revision:0,transactions:[],cards:[],categories:structuredClone(DEFAULT_CATEGORIES),budgets:[],imports:[],settings:{theme:'blue',background:'white',timeZone:'Asia/Seoul',notion:{proxyUrl:'',dataSourceId:'',mapping:{}},notificationCursor:null},meta:{createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),lastNotionSync:null}};}
+export function defaultState(){return {schemaVersion:1,revision:0,transactions:[],cards:[],categories:structuredClone(DEFAULT_CATEGORIES),budgets:[],imports:[],recurringExpenses:[],settings:{theme:'blue',background:'white',timeZone:'Asia/Seoul',notion:{proxyUrl:'',dataSourceId:'',mapping:{}},notificationCursor:null},meta:{createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),lastNotionSync:null}};}
 export function uid(prefix='id'){return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,9)}`;}
 
 export function signedAmount(tx){if(tx.type==='transfer')return 0;const amount=normalizeAmount(tx.amount);if(tx.type==='income')return amount;return tx.cancelled?-amount:amount;}
@@ -111,6 +128,12 @@ export function cardCycleTotal(transactions,card,cycle){
   const cancellations=transactions.filter(tx=>tx.cardId===card.id&&tx.cancelled&&inRange(tx.date,cycle.start,cycle.end)).reduce((sum,tx)=>sum+normalizeAmount(tx.amount),0);
   return Math.max(0,regular-cancellations);
 }
+export function cardPaymentForecast(transactions,cards,today){
+  const current=parseDate(String(today).slice(0,10));if(!current)throw new Error('기준 날짜가 올바르지 않아요.');
+  const currentMonth=String(today).slice(0,7),nextMonth=shiftMonths(`${currentMonth}-01`,1,1).slice(0,7),active=cards.filter(card=>card.active);
+  const rowsFor=(month,zeroAfterDue)=>active.map(card=>{const cycle=cardCycleForBillingMonth(month,card),duePassed=zeroAfterDue&&compareDate(today,cycle.billingDate)>0;return {card,cycle,total:duePassed?0:cardCycleTotal(transactions,card,cycle),duePassed};});
+  return {currentMonth,nextMonth,current:rowsFor(currentMonth,true),next:rowsFor(nextMonth,false)};
+}
 export function monthBounds(month){const p=String(month).match(/^(\d{4})-(\d{2})$/);if(!p)throw new Error('월 형식이 올바르지 않아요.');return {from:`${month}-01`,to:isoDate(+p[1],+p[2],daysInMonth(+p[1],+p[2]))};}
 export function summarize(transactions,{month,categories=[]}={}){
   const {from,to}=monthBounds(month),rows=netTransactions(transactions,{from,to}),catMap=new Map(categories.map(c=>[c.id,c]));
@@ -123,6 +146,17 @@ export function summarize(transactions,{month,categories=[]}={}){
 export function summarizeYear(transactions,year,categories=[]){
   const months=Array.from({length:12},(_,i)=>summarize(transactions,{month:`${year}-${String(i+1).padStart(2,'0')}`,categories}));
   return {expense:months.reduce((sum,row)=>sum+row.expense,0),income:months.reduce((sum,row)=>sum+row.income,0),months};
+}
+export function usageBreakdown(transactions,{month,cards=[],categories=[]}={}){
+  const {from,to}=monthBounds(month),rows=netTransactions(transactions,{from,to}).filter(tx=>tx.type==='expense'),cardNames=new Map(cards.map(card=>[card.id,card.name])),categoryMap=new Map(categories.map(category=>[category.id,category])),byCard={};let cashFixed=0,cashExpense=0;
+  for(const tx of rows){const value=signedAmount(tx),isCard=tx.paymentMethod==='card'||Boolean(tx.cardId);if(isCard){const name=cardNames.get(tx.cardId)||tx.cardAlias||'미연결 카드';byCard[name]=(byCard[name]||0)+value;}else if(tx.recurringExpenseId||categoryMap.get(tx.categoryId)?.fixed)cashFixed+=value;else cashExpense+=value;}
+  const cardRows=Object.entries(byCard).sort((a,b)=>b[1]-a[1]),cardTotal=cardRows.reduce((sum,row)=>sum+row[1],0),cashTotal=cashFixed+cashExpense;
+  return {cardRows,cardTotal,cashFixed,cashExpense,cashTotal,total:cardTotal+cashTotal};
+}
+export function recurringTransactionsDue(state,referenceDate,now=new Date().toISOString()){
+  const ref=String(referenceDate).slice(0,10),parsed=parseDate(ref);if(!parsed)throw new Error('기준 날짜가 올바르지 않아요.');const currentMonth=ref.slice(0,7),due=[];
+  for(const rule of state.recurringExpenses||[]){if(rule.active===false||rule.startMonth>currentMonth)continue;const generated=new Set(rule.generatedMonths||[]);let month=rule.startMonth,guard=0;while(month<=currentMonth&&guard++<1200){const p=parseDate(`${month}-01`),date=isoDate(p.y,p.m,clampDay(p.y,p.m,rule.day));if(compareDate(date,ref)<=0&&!generated.has(month))due.push({id:`recurring:${rule.id}:${month}`,date,time:'00:00',type:'expense',amount:Number(rule.amount),merchant:rule.name,categoryId:rule.categoryId||'other',paymentMethod:'cash',cardId:null,source:'recurring',sourceId:`recurring:${rule.id}:${month}`,memo:rule.memo||'매월 자동 고정지출',installment:null,cancelled:false,linkedOriginal:null,recurringExpenseId:rule.id,recurringMonth:month,createdAt:now,updatedAt:now});month=shiftMonths(`${month}-01`,1,1).slice(0,7);}}
+  return due;
 }
 export function merchantTopAcrossPreviousAndCurrentMonth(transactions,month,categories=[],limit=5){
   const previousMonth=shiftMonths(`${month}-01`,-1).slice(0,7),totals={};

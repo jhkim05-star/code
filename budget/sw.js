@@ -1,4 +1,4 @@
-const CACHE='budget-pwa-v4-card-cycle-merchant-range';
+const CACHE='budget-pwa-v6-recurring-expenses';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json','./assets/css/app.css','./assets/js/app.js','./assets/js/domain.js','./assets/js/storage.js','./assets/js/repository.js','./assets/js/notion.js','./assets/js/notion-export.js','./assets/js/notifications.js','./assets/js/platform.js','./assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('budget-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
