@@ -1,4 +1,4 @@
-import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js';
+import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js?v=1.6.1';
 
 const ISSUERS=[
   {id:'shinhan',name:'신한',tokens:['신한카드','신한']},{id:'kb',name:'KB국민',tokens:['KB국민카드','국민카드','KB카드']},
