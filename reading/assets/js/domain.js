@@ -1,7 +1,7 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.3.4-ui-cleanup';
+export const BUILD = '3.3.5-mobile-form-width';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];

@@ -91,6 +91,14 @@ test('UI source has five tabs, no shared header, theme tokens and non-color cove
   assert.doesNotMatch(index,/id="topbar"/);assert.match(index,/data-background="black"/);assert.doesNotMatch(app,/책꽂이.*·.*기록/);for(const theme of ['red','pink','blue','green','yellow'])assert.match(css,new RegExp(`data-theme=${theme}`));for(const background of ['black','beige','white'])assert.match(css,new RegExp(`data-background=${background}`));assert.match(css,/Malgun Gothic/);assert.match(css,/format-paper.*paper-contrast/s);assert.match(css,/format-paper.*paper-border/s);assert.match(css,/format-ebook.*border:3px double/s);assert.match(css,/format-ebook.*ebook-border/s);assert.match(css,/format-ebook:before/);assert.match(css,/format-audio.*border:2px dashed/s);assert.match(css,/rating-overlay/);assert.match(books,/cover\(b,false,r\)/);assert.match(books,/button\.chart-row/);assert.match(books,/statDetail/);assert.match(books,/기존 책 정보 다시 검색/);assert.match(books,/책유형/);assert.match(books,/collection-entry/);assert.match(books,/modal\('서재 컬렉션'/);assert.doesNotMatch(books,/section\.collection-panel/);assert.doesNotMatch(books,/달력상 기간/);assert.doesNotMatch(notes,/나에게 남은 것/);assert.doesNotMatch(notes,/takeaway/);assert.match(settings,/Bookmory Excel 불러오기/);assert.match(settings,/background-choice/);assert.match(settings,/책유형 테두리 색/);assert.match(settings,/paperBorderColor/);assert.match(settings,/ebookBorderColor/);assert.match(settings,/표지 자동 복구/);assert.match(settings,/repo\.updateCovers\(updates\)/);assert.doesNotMatch(settings,/알라딘 TTB 키/);assert.match(settings,/기존 기록 초기화/);assert.match(settings,/repo\.wipe\(\)/);
 });
 
+test('mobile sheets constrain native date controls without horizontal overflow',async()=>{
+  const css=await fs.readFile(new URL('../assets/css/app.css',import.meta.url),'utf8');
+  assert.match(css,/input,textarea,select\{[^}]*min-width:0[^}]*max-width:100%/);
+  assert.match(css,/\.field\{[^}]*min-width:0[^}]*max-width:100%/);
+  assert.match(css,/\.sheet-body\{[^}]*max-width:100%[^}]*overflow-x:hidden/);
+  assert.match(css,/input\[type=date\]\{[^}]*min-width:0[^}]*max-width:100%[^}]*-webkit-min-logical-width:0/);
+});
+
 test('reading service worker remains scoped and does not mention workout caches',async()=>{
   const sw=await fs.readFile(new URL('../sw.js',import.meta.url),'utf8');assert.match(sw,/bookshelf-reading-/);assert.match(sw,/startsWith\(PREFIX\)/);assert.doesNotMatch(sw,/workout/i);assert.match(sw,/bookmory\.js/);
 });
