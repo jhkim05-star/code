@@ -12,7 +12,8 @@ export function notionValue(property){
 }
 export function mapNotionPage(page,mapping){
   const get=key=>notionValue(page.properties?.[mapping[key]]),rawType=String(get('type')||'지출').toLowerCase();
-  const type=/(수입|income)/.test(rawType)?'income':/(이체|transfer)/.test(rawType)?'transfer':'expense',dateTime=String(get('date')||'').split('T');
+  if(/(수입|income)/.test(rawType))throw new Error('지원하지 않는 거래 유형이에요.');
+  const type=/(이체|transfer)/.test(rawType)?'transfer':'expense',dateTime=String(get('date')||'').split('T');
   const amount=normalizeAmount(get('amount')),date=dateTime[0],time=(dateTime[1]||'12:00').slice(0,5);
   if(!date||!amount)throw new Error('날짜 또는 금액이 비어 있어요.');
   return {id:uid('tx'),date,time,type,amount,merchant:String(get('merchant')||'가맹점 미입력'),categoryId:String(get('category')||'other'),paymentMethod:get('card')?'card':'other',cardId:null,cardAlias:String(get('card')||''),source:'notion',sourceId:`notion:${page.id}`,memo:String(get('memo')||''),installment:null,cancelled:false,linkedOriginal:null,createdAt:new Date().toISOString(),updatedAt:page.last_edited_time||new Date().toISOString()};

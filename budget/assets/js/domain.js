@@ -5,7 +5,7 @@ export const DEFAULT_CATEGORIES=[
   {id:'transport',name:'교통',kind:'expense',fixed:false},{id:'living',name:'생활',kind:'expense',fixed:false},
   {id:'housing',name:'주거·통신',kind:'expense',fixed:true},{id:'health',name:'건강',kind:'expense',fixed:false},
   {id:'culture',name:'문화·여가',kind:'expense',fixed:false},{id:'subscription',name:'구독',kind:'expense',fixed:true},
-  {id:'salary',name:'급여',kind:'income',fixed:true},{id:'other',name:'기타',kind:'all',fixed:false}
+  {id:'other',name:'기타',kind:'all',fixed:false}
 ];
 
 const pad=n=>String(n).padStart(2,'0');
