@@ -39,7 +39,13 @@ function dueInMonth(y,m,billingDay){return isoDate(y,m,clampDay(y,m,billingDay))
 export function cardCycle(referenceDate,card){
   const ref=String(referenceDate).slice(0,10),p=parseDate(ref);if(!p)throw new Error('기준 날짜가 올바르지 않아요.');
   const rule=card?.cycleRule||{type:'billing-offsets',startOffset:-45,endOffset:-16};
-  if(rule.type==='monthly-range'){
+  if(rule.type==='previous-current'){
+    for(let offset=-2;offset<=2;offset++){
+      const dueBase=shiftMonths(isoDate(p.y,p.m,1),offset,1),due=parseDate(dueBase),startBase=shiftMonths(dueBase,-1,1),startMonth=parseDate(startBase);
+      const start=isoDate(startMonth.y,startMonth.m,clampDay(startMonth.y,startMonth.m,rule.startDay)),end=isoDate(due.y,due.m,clampDay(due.y,due.m,rule.endDay));
+      if(inRange(ref,start,end)){const billingDate=dueInMonth(due.y,due.m,card.billingDay);return{start,end,billingDate,nextBillingDate:compareDate(billingDate,ref)>=0?billingDate:shiftMonths(billingDate,1,card.billingDay),ruleType:rule.type};}
+    }
+  }else if(rule.type==='monthly-range'){
     for(let offset=-2;offset<=2;offset++){
       const anchor=shiftMonths(isoDate(p.y,p.m,1),offset),a=parseDate(anchor);
       const start=isoDate(a.y,a.m,clampDay(a.y,a.m,rule.startDay));
@@ -117,6 +123,14 @@ export function summarize(transactions,{month,categories=[]}={}){
 export function summarizeYear(transactions,year,categories=[]){
   const months=Array.from({length:12},(_,i)=>summarize(transactions,{month:`${year}-${String(i+1).padStart(2,'0')}`,categories}));
   return {expense:months.reduce((sum,row)=>sum+row.expense,0),income:months.reduce((sum,row)=>sum+row.income,0),months};
+}
+export function merchantTopAcrossPreviousAndCurrentMonth(transactions,month,categories=[],limit=5){
+  const previousMonth=shiftMonths(`${month}-01`,-1).slice(0,7),totals={};
+  for(const targetMonth of[previousMonth,month]){
+    const stats=summarize(transactions,{month:targetMonth,categories});
+    for(const [merchant,amount] of Object.entries(stats.byMerchant))totals[merchant]=(totals[merchant]||0)+amount;
+  }
+  return {previousMonth,currentMonth:month,merchants:Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,limit)};
 }
 export function budgetProgress(state,month){
   const stats=summarize(state.transactions,{month,categories:state.categories}),rows=state.budgets.filter(b=>b.month===month),total=rows.find(b=>!b.categoryId)?.amount||0;
