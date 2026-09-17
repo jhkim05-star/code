@@ -20,18 +20,29 @@ export interface BattleState {
   message: string;
 }
 
-function drawCards(state: BattleState, count: number): void {
+type Random = () => number;
+
+function shuffle(cards: CardId[], random: Random): CardId[] {
+  const result = [...cards];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function drawCards(state: BattleState, count: number, random: Random): void {
   while (state.hand.length < count) {
     if (state.drawPile.length === 0) {
       if (state.discardPile.length === 0) break;
-      state.drawPile = state.discardPile;
+      state.drawPile = shuffle(state.discardPile, random);
       state.discardPile = [];
     }
     state.hand.push(state.drawPile.shift()!);
   }
 }
 
-export function startBattle(): BattleState {
+export function startBattle(random: Random = Math.random): BattleState {
   const state: BattleState = {
     phase: 'player',
     turn: 1,
@@ -39,12 +50,12 @@ export function startBattle(): BattleState {
     playerBlock: 0,
     energy: ENERGY_PER_TURN,
     enemyHp: TRAINING_ENEMY.maxHp,
-    drawPile: [...STARTER_DECK],
+    drawPile: shuffle([...STARTER_DECK], random),
     hand: [],
     discardPile: [],
     message: '카드를 눌러 사용하세요.',
   };
-  drawCards(state, HAND_SIZE);
+  drawCards(state, HAND_SIZE, random);
   return state;
 }
 
@@ -75,7 +86,7 @@ export function playCard(current: BattleState, handIndex: number): BattleState {
   return next;
 }
 
-export function endTurn(current: BattleState): BattleState {
+export function endTurn(current: BattleState, random: Random = Math.random): BattleState {
   if (current.phase !== 'player') return current;
   const damage = Math.max(0, TRAINING_ENEMY.attack - current.playerBlock);
   const playerHp = Math.max(0, current.playerHp - damage);
@@ -91,6 +102,6 @@ export function endTurn(current: BattleState): BattleState {
     discardPile: [...current.discardPile, ...current.hand],
     message: playerHp === 0 ? '패배. 다시 시작할 수 있습니다.' : `적의 공격! 피해 ${damage} · 내 턴`,
   };
-  if (next.phase === 'player') drawCards(next, HAND_SIZE);
+  if (next.phase === 'player') drawCards(next, HAND_SIZE, random);
   return next;
 }
