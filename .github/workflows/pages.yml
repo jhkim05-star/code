@@ -38,9 +38,16 @@ jobs:
         with:
           node-version: '22'
 
-      - name: 가족 게임 빌드
+      - name: 가족 게임 빌드 (family-roguelike)
         if: ${{ hashFiles('family-roguelike/package.json') != '' }}
         working-directory: family-roguelike
+        run: |
+          npm install
+          npm run build
+
+      - name: 가족 게임 빌드 (game)
+        if: ${{ hashFiles('game/package.json') != '' }}
+        working-directory: game
         run: |
           npm install
           npm run build
@@ -55,6 +62,10 @@ jobs:
           if [ -d family-roguelike/dist ]; then
             mkdir -p _site/family-roguelike
             cp -R family-roguelike/dist/. _site/family-roguelike/
+          fi
+          if [ -d game/dist ]; then
+            mkdir -p _site/game
+            cp -R game/dist/. _site/game/
           fi
 
       - name: 정적 파일 업로드
