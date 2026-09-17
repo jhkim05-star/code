@@ -1,5 +1,5 @@
 import { CARDS, STARTER_DECK, type CardId } from './cards.ts';
-import { TRAINING_ENEMY, type EnemyDefinition } from './enemies.ts';
+import { enemyAction, TRAINING_ENEMY, type EnemyDefinition } from './enemies.ts';
 
 export const PLAYER_MAX_HP = 30;
 export const ENERGY_PER_TURN = 3;
@@ -16,6 +16,8 @@ export interface BattleState {
   attacksPlayed: number;
   energy: number;
   enemyHp: number;
+  enemyBlock: number;
+  enemyStrength: number;
   enemyPoison: number;
   enemy: Readonly<EnemyDefinition>;
   drawPile: CardId[];
@@ -62,6 +64,8 @@ export function createBattle(setup: BattleSetup, random: Random = Math.random): 
     attacksPlayed: 0,
     energy: ENERGY_PER_TURN,
     enemyHp: setup.enemy.maxHp,
+    enemyBlock: 0,
+    enemyStrength: 0,
     enemyPoison: 0,
     enemy: setup.enemy,
     drawPile: shuffle([...setup.deck], random),
@@ -94,9 +98,11 @@ export function playCard(current: BattleState, handIndex: number): BattleState {
     case 'damage':
     case 'flurry': {
       const damage = card.value + (card.effect === 'flurry' ? current.attacksPlayed * (card.bonus ?? 0) : 0);
-      next.enemyHp = Math.max(0, next.enemyHp - damage);
+      const blocked = Math.min(next.enemyBlock, damage);
+      next.enemyBlock -= blocked;
+      next.enemyHp = Math.max(0, next.enemyHp - (damage - blocked));
       next.attacksPlayed += 1;
-      next.message = `${card.name}: 적에게 피해 ${damage}`;
+      next.message = `${card.name}: 피해 ${damage - blocked}${blocked ? ` · 방어 ${blocked}` : ''}`;
       break;
     }
     case 'block':
@@ -126,14 +132,15 @@ export function playCard(current: BattleState, handIndex: number): BattleState {
 
 export function endTurn(current: BattleState, random: Random = Math.random): BattleState {
   if (current.phase !== 'player') return current;
+  const action = enemyAction(current.enemy, current.turn);
   const poisonDamage = Math.min(current.enemyHp, current.enemyPoison);
   const poisonedEnemyHp = current.enemyHp - poisonDamage;
   if (poisonedEnemyHp === 0) {
     return { ...current, phase: 'won', enemyHp: 0, enemyPoison: Math.max(0, current.enemyPoison - 1), message: `중독 피해 ${poisonDamage} · 승리!` };
   }
-  const damage = Math.max(0, current.enemy.attack - current.playerBlock);
+  const damage = action.type === 'attack' ? Math.max(0, action.value + current.enemyStrength - current.playerBlock) : 0;
   const playerHp = Math.max(0, current.playerHp - damage);
-  const counterDamage = playerHp > 0 ? current.counterDamage : 0;
+  const counterDamage = action.type === 'attack' && playerHp > 0 ? current.counterDamage : 0;
   const enemyHp = Math.max(0, poisonedEnemyHp - counterDamage);
   const next: BattleState = {
     ...current,
@@ -145,11 +152,13 @@ export function endTurn(current: BattleState, random: Random = Math.random): Bat
     attacksPlayed: 0,
     energy: ENERGY_PER_TURN,
     enemyHp,
+    enemyBlock: action.type === 'block' ? action.value : 0,
+    enemyStrength: current.enemyStrength + (action.type === 'power' ? action.value : 0),
     enemyPoison: Math.max(0, current.enemyPoison - 1),
     hand: [],
     drawPile: [...current.drawPile],
     discardPile: [...current.discardPile, ...current.hand],
-    message: playerHp === 0 ? '패배.' : enemyHp === 0 ? `반격 피해 ${counterDamage} · 승리!` : `중독 ${poisonDamage} · 적 공격 피해 ${damage} · 내 턴`,
+    message: playerHp === 0 ? '패배.' : enemyHp === 0 ? `반격 피해 ${counterDamage} · 승리!` : action.type === 'attack' ? `적 공격 · 피해 ${damage} · 내 턴` : action.type === 'block' ? `적 방어도 ${action.value} · 내 턴` : `적 공격력 +${action.value} · 내 턴`,
   };
   if (next.phase === 'player') drawCards(next, HAND_SIZE, random);
   return next;

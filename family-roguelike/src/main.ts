@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { BattleScene } from './scenes/BattleScene';
+import { ChapterScene } from './scenes/ChapterScene';
 import './styles.css';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -12,7 +12,7 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BattleScene],
+  scene: [ChapterScene],
 };
 
 new Phaser.Game(config);

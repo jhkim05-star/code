@@ -21,8 +21,8 @@ export interface RunState {
 
 const RARITY_WEIGHT: Record<CardRarity, number> = { starter: 0, common: 4, uncommon: 2, rare: 1 };
 
-export function rollRewards(random: Random = Math.random): CardId[] {
-  const available = [...REWARD_POOL];
+export function rollRewards(random: Random = Math.random, pool: readonly CardId[] = REWARD_POOL): CardId[] {
+  const available = [...pool];
   const options: CardId[] = [];
   for (let choice = 0; choice < 3; choice++) {
     const total = available.reduce((sum, id) => sum + RARITY_WEIGHT[CARDS[id].rarity], 0);

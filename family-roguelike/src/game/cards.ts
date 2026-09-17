@@ -3,7 +3,9 @@ export type CardId =
   | 'jab' | 'jabPlus' | 'heavyStrike' | 'heavyStrikePlus'
   | 'fortify' | 'fortifyPlus' | 'flurry' | 'flurryPlus'
   | 'counter' | 'counterPlus' | 'toxin' | 'toxinPlus'
-  | 'catalyst' | 'catalystPlus';
+  | 'catalyst' | 'catalystPlus'
+  | 'remoteBounce' | 'remoteBouncePlus' | 'snackGuard' | 'snackGuardPlus'
+  | 'blanketFlurry' | 'blanketFlurryPlus' | 'midnightToxin' | 'midnightToxinPlus';
 
 export type CardRarity = 'starter' | 'common' | 'uncommon' | 'rare';
 export type CardEffect = 'damage' | 'block' | 'flurry' | 'counter' | 'poison' | 'catalyst';
@@ -40,9 +42,18 @@ export const CARDS: Record<CardId, CardDefinition> = {
   toxinPlus: { id: 'toxinPlus', name: '독 바르기+', cost: 1, kind: 'skill', effect: 'poison', value: 5, rarity: 'uncommon', description: '적 중독 5' },
   catalyst: { id: 'catalyst', name: '독 증폭', cost: 2, kind: 'skill', effect: 'catalyst', value: 2, rarity: 'rare', description: '적 중독 2배', upgradeTo: 'catalystPlus' },
   catalystPlus: { id: 'catalystPlus', name: '독 증폭+', cost: 1, kind: 'skill', effect: 'catalyst', value: 2, rarity: 'rare', description: '적 중독 2배' },
+  remoteBounce: { id: 'remoteBounce', name: '리모컨 튕기기', cost: 1, kind: 'attack', effect: 'damage', value: 9, rarity: 'uncommon', description: '피해 9', upgradeTo: 'remoteBouncePlus' },
+  remoteBouncePlus: { id: 'remoteBouncePlus', name: '리모컨 튕기기+', cost: 1, kind: 'attack', effect: 'damage', value: 13, rarity: 'uncommon', description: '피해 13' },
+  snackGuard: { id: 'snackGuard', name: '간식 작전', cost: 1, kind: 'block', effect: 'block', value: 9, rarity: 'uncommon', description: '방어도 9', upgradeTo: 'snackGuardPlus' },
+  snackGuardPlus: { id: 'snackGuardPlus', name: '간식 작전+', cost: 1, kind: 'block', effect: 'block', value: 13, rarity: 'uncommon', description: '방어도 13' },
+  blanketFlurry: { id: 'blanketFlurry', name: '담요 연타', cost: 1, kind: 'attack', effect: 'flurry', value: 5, bonus: 4, rarity: 'uncommon', description: '피해 5 + 앞선 공격당 4', upgradeTo: 'blanketFlurryPlus' },
+  blanketFlurryPlus: { id: 'blanketFlurryPlus', name: '담요 연타+', cost: 1, kind: 'attack', effect: 'flurry', value: 7, bonus: 5, rarity: 'uncommon', description: '피해 7 + 앞선 공격당 5' },
+  midnightToxin: { id: 'midnightToxin', name: '한밤의 독', cost: 1, kind: 'skill', effect: 'poison', value: 4, rarity: 'rare', description: '적 중독 4', upgradeTo: 'midnightToxinPlus' },
+  midnightToxinPlus: { id: 'midnightToxinPlus', name: '한밤의 독+', cost: 1, kind: 'skill', effect: 'poison', value: 7, rarity: 'rare', description: '적 중독 7' },
 };
 
 export const REWARD_POOL: readonly CardId[] = ['jab', 'heavyStrike', 'fortify', 'flurry', 'counter', 'toxin', 'catalyst'];
+export const CHAPTER_REWARD_POOL: readonly CardId[] = [...REWARD_POOL, 'remoteBounce', 'snackGuard', 'blanketFlurry', 'midnightToxin'];
 
 export const STARTER_DECK: readonly CardId[] = [
   'strike', 'guard', 'strike', 'guard', 'strike',
