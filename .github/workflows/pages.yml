@@ -1,4 +1,4 @@
-# 저장소의 정적 파일을 그대로 GitHub Pages 로 배포합니다.
+# 기존 정적 앱과 빌드한 가족 게임을 GitHub Pages 로 배포합니다.
 # 저장소 Settings → Pages → Source 를 "GitHub Actions" 로 바꾸면 동작합니다.
 name: Deploy to GitHub Pages
 
@@ -33,11 +33,34 @@ jobs:
       - name: Pages 설정
         uses: actions/configure-pages@v5
 
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 가족 게임 빌드
+        if: ${{ hashFiles('family-roguelike/package.json') != '' }}
+        working-directory: family-roguelike
+        run: |
+          npm install
+          npm run build
+
+      - name: 배포 파일 모으기
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          for app in reading workout budget; do
+            if [ -d "$app" ]; then cp -R "$app" _site/; fi
+          done
+          if [ -d family-roguelike/dist ]; then
+            mkdir -p _site/family-roguelike
+            cp -R family-roguelike/dist/. _site/family-roguelike/
+          fi
+
       - name: 정적 파일 업로드
         uses: actions/upload-pages-artifact@v3
         with:
-          # 빌드 단계가 없는 정적 앱이므로 저장소 루트를 그대로 올린다
-          path: .
+          path: _site
 
       - name: 배포
         id: deployment
