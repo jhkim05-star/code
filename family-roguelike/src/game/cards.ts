@@ -1,25 +1,49 @@
-export type CardId = 'strike' | 'guard' | 'jab' | 'heavyStrike' | 'fortify';
+export type CardId =
+  | 'strike' | 'strikePlus' | 'guard' | 'guardPlus'
+  | 'jab' | 'jabPlus' | 'heavyStrike' | 'heavyStrikePlus'
+  | 'fortify' | 'fortifyPlus' | 'flurry' | 'flurryPlus'
+  | 'counter' | 'counterPlus' | 'toxin' | 'toxinPlus'
+  | 'catalyst' | 'catalystPlus';
+
+export type CardRarity = 'starter' | 'common' | 'uncommon' | 'rare';
+export type CardEffect = 'damage' | 'block' | 'flurry' | 'counter' | 'poison' | 'catalyst';
 
 export interface CardDefinition {
   id: CardId;
   name: string;
   cost: number;
-  kind: 'attack' | 'block';
+  kind: 'attack' | 'block' | 'skill';
+  effect: CardEffect;
   value: number;
+  bonus?: number;
+  rarity: CardRarity;
   description: string;
+  upgradeTo?: CardId;
 }
 
 export const CARDS: Record<CardId, CardDefinition> = {
-  strike: { id: 'strike', name: '공격', cost: 1, kind: 'attack', value: 6, description: '적에게 피해 6' },
-  guard: { id: 'guard', name: '방어', cost: 1, kind: 'block', value: 5, description: '방어도 5 획득' },
-  jab: { id: 'jab', name: '잽', cost: 0, kind: 'attack', value: 3, description: '적에게 피해 3' },
-  heavyStrike: { id: 'heavyStrike', name: '강공격', cost: 2, kind: 'attack', value: 12, description: '적에게 피해 12' },
-  fortify: { id: 'fortify', name: '튼튼 방어', cost: 2, kind: 'block', value: 11, description: '방어도 11 획득' },
+  strike: { id: 'strike', name: '공격', cost: 1, kind: 'attack', effect: 'damage', value: 6, rarity: 'starter', description: '피해 6', upgradeTo: 'strikePlus' },
+  strikePlus: { id: 'strikePlus', name: '공격+', cost: 1, kind: 'attack', effect: 'damage', value: 8, rarity: 'starter', description: '피해 8' },
+  guard: { id: 'guard', name: '방어', cost: 1, kind: 'block', effect: 'block', value: 5, rarity: 'starter', description: '방어도 5', upgradeTo: 'guardPlus' },
+  guardPlus: { id: 'guardPlus', name: '방어+', cost: 1, kind: 'block', effect: 'block', value: 7, rarity: 'starter', description: '방어도 7' },
+  jab: { id: 'jab', name: '잽', cost: 0, kind: 'attack', effect: 'damage', value: 3, rarity: 'common', description: '피해 3', upgradeTo: 'jabPlus' },
+  jabPlus: { id: 'jabPlus', name: '잽+', cost: 0, kind: 'attack', effect: 'damage', value: 5, rarity: 'common', description: '피해 5' },
+  heavyStrike: { id: 'heavyStrike', name: '강공격', cost: 2, kind: 'attack', effect: 'damage', value: 12, rarity: 'common', description: '피해 12', upgradeTo: 'heavyStrikePlus' },
+  heavyStrikePlus: { id: 'heavyStrikePlus', name: '강공격+', cost: 2, kind: 'attack', effect: 'damage', value: 16, rarity: 'common', description: '피해 16' },
+  fortify: { id: 'fortify', name: '튼튼 방어', cost: 2, kind: 'block', effect: 'block', value: 11, rarity: 'common', description: '방어도 11', upgradeTo: 'fortifyPlus' },
+  fortifyPlus: { id: 'fortifyPlus', name: '튼튼 방어+', cost: 2, kind: 'block', effect: 'block', value: 15, rarity: 'common', description: '방어도 15' },
+  flurry: { id: 'flurry', name: '연속타', cost: 1, kind: 'attack', effect: 'flurry', value: 4, bonus: 3, rarity: 'uncommon', description: '피해 4 + 앞선 공격당 3', upgradeTo: 'flurryPlus' },
+  flurryPlus: { id: 'flurryPlus', name: '연속타+', cost: 1, kind: 'attack', effect: 'flurry', value: 6, bonus: 4, rarity: 'uncommon', description: '피해 6 + 앞선 공격당 4' },
+  counter: { id: 'counter', name: '받아치기', cost: 1, kind: 'block', effect: 'counter', value: 4, bonus: 5, rarity: 'uncommon', description: '방어 4 · 적 공격 후 반격 5', upgradeTo: 'counterPlus' },
+  counterPlus: { id: 'counterPlus', name: '받아치기+', cost: 1, kind: 'block', effect: 'counter', value: 6, bonus: 8, rarity: 'uncommon', description: '방어 6 · 적 공격 후 반격 8' },
+  toxin: { id: 'toxin', name: '독 바르기', cost: 1, kind: 'skill', effect: 'poison', value: 3, rarity: 'uncommon', description: '적 중독 3', upgradeTo: 'toxinPlus' },
+  toxinPlus: { id: 'toxinPlus', name: '독 바르기+', cost: 1, kind: 'skill', effect: 'poison', value: 5, rarity: 'uncommon', description: '적 중독 5' },
+  catalyst: { id: 'catalyst', name: '독 증폭', cost: 2, kind: 'skill', effect: 'catalyst', value: 2, rarity: 'rare', description: '적 중독 2배', upgradeTo: 'catalystPlus' },
+  catalystPlus: { id: 'catalystPlus', name: '독 증폭+', cost: 1, kind: 'skill', effect: 'catalyst', value: 2, rarity: 'rare', description: '적 중독 2배' },
 };
 
-export const REWARD_CARDS: readonly CardId[] = ['jab', 'heavyStrike', 'fortify'];
+export const REWARD_POOL: readonly CardId[] = ['jab', 'heavyStrike', 'fortify', 'flurry', 'counter', 'toxin', 'catalyst'];
 
-// A small fixed starter deck. The order is shuffled at the start of each battle.
 export const STARTER_DECK: readonly CardId[] = [
   'strike', 'guard', 'strike', 'guard', 'strike',
   'guard', 'strike', 'guard', 'strike', 'strike',

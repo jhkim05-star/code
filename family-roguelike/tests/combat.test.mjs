@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { endTurn, playCard, startBattle } from '../src/game/combat.ts';
+import { createBattle, endTurn, playCard, startBattle } from '../src/game/combat.ts';
 import { STARTER_DECK } from '../src/game/cards.ts';
 
 const fixedRandom = () => 0;
@@ -110,4 +110,50 @@ test('victory and defeat stop further turns until restart', () => {
   assert.equal(lost.playerHp, 0);
   assert.equal(playCard(lost, 0), lost);
   assert.equal(startBattle(fixedRandom).phase, 'player');
+});
+
+test('attack order increases flurry damage and resets next turn', () => {
+  const enemy = { name: 'combo target', maxHp: 40, attack: 1 };
+  let state = createBattle({ enemy, playerHp: 30, deck: ['jab', 'flurry', 'guard', 'guard', 'guard'] }, fixedRandom);
+  state = playCard(state, state.hand.indexOf('jab'));
+  state = playCard(state, state.hand.indexOf('flurry'));
+  assert.equal(state.enemyHp, 30);
+  assert.equal(state.attacksPlayed, 2);
+  state = endTurn(state, fixedRandom);
+  assert.equal(state.attacksPlayed, 0);
+});
+
+test('counter adds block and retaliates after a survivable enemy attack', () => {
+  const enemy = { name: 'counter target', maxHp: 30, attack: 6 };
+  let state = createBattle({ enemy, playerHp: 30, deck: ['counter'] }, fixedRandom);
+  state = playCard(state, 0);
+  assert.equal(state.playerBlock, 4);
+  assert.equal(state.counterDamage, 5);
+  state = endTurn(state, fixedRandom);
+  assert.equal(state.playerHp, 28);
+  assert.equal(state.enemyHp, 25);
+  assert.equal(state.counterDamage, 0);
+});
+
+test('poison stacks, catalyst doubles it, and lethal poison prevents enemy attack', () => {
+  const enemy = { name: 'poison target', maxHp: 6, attack: 20 };
+  let state = createBattle({ enemy, playerHp: 30, deck: ['toxin', 'catalyst'] }, fixedRandom);
+  state = playCard(state, state.hand.indexOf('toxin'));
+  assert.equal(state.enemyPoison, 3);
+  state = playCard(state, state.hand.indexOf('catalyst'));
+  assert.equal(state.enemyPoison, 6);
+  state = endTurn(state, fixedRandom);
+  assert.equal(state.phase, 'won');
+  assert.equal(state.enemyHp, 0);
+  assert.equal(state.playerHp, 30);
+  assert.equal(playCard(state, 0), state);
+});
+
+test('upgraded cards use their upgraded values', () => {
+  const enemy = { name: 'upgrade target', maxHp: 30, attack: 1 };
+  const start = createBattle({ enemy, playerHp: 30, deck: ['strikePlus', 'guardPlus'] }, fixedRandom);
+  const attacked = playCard(start, start.hand.indexOf('strikePlus'));
+  assert.equal(attacked.enemyHp, 22);
+  const defended = playCard(attacked, attacked.hand.indexOf('guardPlus'));
+  assert.equal(defended.playerBlock, 7);
 });
