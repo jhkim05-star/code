@@ -1,5 +1,5 @@
 import { CARDS, STARTER_DECK, type CardId } from './cards.ts';
-import { TRAINING_ENEMY } from './enemies.ts';
+import { TRAINING_ENEMY, type EnemyDefinition } from './enemies.ts';
 
 export const PLAYER_MAX_HP = 30;
 export const ENERGY_PER_TURN = 3;
@@ -14,6 +14,7 @@ export interface BattleState {
   playerBlock: number;
   energy: number;
   enemyHp: number;
+  enemy: Readonly<EnemyDefinition>;
   drawPile: CardId[];
   hand: CardId[];
   discardPile: CardId[];
@@ -42,21 +43,32 @@ function drawCards(state: BattleState, count: number, random: Random): void {
   }
 }
 
-export function startBattle(random: Random = Math.random): BattleState {
+export interface BattleSetup {
+  enemy: Readonly<EnemyDefinition>;
+  playerHp: number;
+  deck: readonly CardId[];
+}
+
+export function createBattle(setup: BattleSetup, random: Random = Math.random): BattleState {
   const state: BattleState = {
     phase: 'player',
     turn: 1,
-    playerHp: PLAYER_MAX_HP,
+    playerHp: setup.playerHp,
     playerBlock: 0,
     energy: ENERGY_PER_TURN,
-    enemyHp: TRAINING_ENEMY.maxHp,
-    drawPile: shuffle([...STARTER_DECK], random),
+    enemyHp: setup.enemy.maxHp,
+    enemy: setup.enemy,
+    drawPile: shuffle([...setup.deck], random),
     hand: [],
     discardPile: [],
     message: '카드를 눌러 사용하세요.',
   };
   drawCards(state, HAND_SIZE, random);
   return state;
+}
+
+export function startBattle(random: Random = Math.random): BattleState {
+  return createBattle({ enemy: TRAINING_ENEMY, playerHp: PLAYER_MAX_HP, deck: STARTER_DECK }, random);
 }
 
 export function playCard(current: BattleState, handIndex: number): BattleState {
@@ -88,7 +100,7 @@ export function playCard(current: BattleState, handIndex: number): BattleState {
 
 export function endTurn(current: BattleState, random: Random = Math.random): BattleState {
   if (current.phase !== 'player') return current;
-  const damage = Math.max(0, TRAINING_ENEMY.attack - current.playerBlock);
+  const damage = Math.max(0, current.enemy.attack - current.playerBlock);
   const playerHp = Math.max(0, current.playerHp - damage);
   const next: BattleState = {
     ...current,
