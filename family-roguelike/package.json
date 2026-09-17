@@ -1,11 +1,12 @@
 {
   "name": "family-roguelike",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

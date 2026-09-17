@@ -1,10 +1,11 @@
-# 가족 로그라이크 — Level 0
+# 가족 로그라이크 — Level 1
 
-Phaser 4 + TypeScript + Vite로 만든 실행용 최소 뼈대입니다. 전투·카드·적·저장은 아직 없습니다.
+Phaser 4 + TypeScript + Vite로 만든 첫 연습 전투입니다. 공격·방어 카드를 사용하고 턴을 종료해 한 명의 적과 겨룹니다. 저장·맵·덱 편집·아트·사운드는 아직 없습니다.
 
 ```sh
 npm install
 npm run dev
+npm test
 npm run build
 ```
 
