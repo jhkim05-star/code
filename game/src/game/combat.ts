@@ -1,11 +1,21 @@
-// Level 1 전투 규칙. Phaser를 전혀 참조하지 않는다.
-// 카드 사용 → 에너지 감소 → 적 HP 감소 같은 계산만 여기서 담당하고,
-// 화면 표시·입력·연출은 BattleScene이 맡는다.
+// 전투 규칙 엔진. Phaser를 전혀 참조하지 않는다.
+// 카드 효과와 적 행동은 같은 CardEffectStep 어휘를 쓰기 때문에, 플레이어
+// 쪽이든 적 쪽이든 같은 resolveEffects()로 처리한다.
 
-import { createStarterDeck, getCardDefinition, type CardInstance } from './cards';
-import { advanceEnemyIntent, createEnemy, type EnemyState } from './enemies';
+import { type CardEffectStep } from './effects';
+import { type CardInstance, getEffectiveDefinition } from './cards';
+import { advanceMove, createEnemy, getCurrentMove, type EnemyState } from './enemies';
+import { shuffle } from './rng';
+import {
+  addStatus,
+  applyIncomingModifiers,
+  applyOutgoingModifiers,
+  applyRegenPowers,
+  getStatus,
+  tickStartOfTurn,
+  type StatusMap,
+} from './status';
 
-export const PLAYER_MAX_HP = 70;
 export const MAX_ENERGY = 3;
 export const HAND_SIZE = 5;
 
@@ -15,26 +25,84 @@ export interface CombatState {
   playerHp: number;
   playerMaxHp: number;
   block: number;
+  statuses: StatusMap;
   energy: number;
   maxEnergy: number;
   drawPile: CardInstance[];
   hand: CardInstance[];
   discardPile: CardInstance[];
+  exhaustPile: CardInstance[];
   enemy: EnemyState;
   turnNumber: number;
+  attacksPlayedThisTurn: number;
   status: CombatStatus;
 }
 
-function shuffle<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
+interface Combatant {
+  hp: number;
+  maxHp: number;
+  block: number;
+  statuses: StatusMap;
 }
 
-// 드로우 더미가 부족하면 버린 더미를 섞어 드로우 더미로 되돌린 뒤 계속 뽑는다.
+interface ResolveResult {
+  self: Combatant;
+  opponent: Combatant;
+  cardsDrawn: number;
+  energyGained: number;
+}
+
+// self가 행한 효과를 self/opponent 양쪽에 적용한다. 카드를 낸 쪽이 self,
+// 상대가 opponent다(플레이어가 카드를 내면 self=플레이어, 적 턴이면 self=적).
+function resolveEffects(
+  steps: CardEffectStep[],
+  selfIn: Combatant,
+  opponentIn: Combatant,
+  attacksPlayedThisTurn: number,
+): ResolveResult {
+  let self = selfIn;
+  let opponent = opponentIn;
+  let cardsDrawn = 0;
+  let energyGained = 0;
+
+  for (const step of steps) {
+    if (step.type === 'damage') {
+      const bonus = step.bonusPerAttackPlayed ? step.bonusPerAttackPlayed * attacksPlayedThisTurn : 0;
+      const hits = step.hits ?? 1;
+      for (let hit = 0; hit < hits; hit++) {
+        let amount = applyOutgoingModifiers(step.amount + bonus, self.statuses);
+        amount = applyIncomingModifiers(amount, opponent.statuses);
+        const blocked = Math.min(opponent.block, amount);
+        const toHp = amount - blocked;
+        opponent = { ...opponent, block: opponent.block - blocked, hp: Math.max(0, opponent.hp - toHp) };
+
+        const thorns = getStatus(opponent.statuses, 'thorns');
+        if (thorns > 0) {
+          self = { ...self, hp: Math.max(0, self.hp - thorns) };
+        }
+      }
+    } else if (step.type === 'block') {
+      const amount = step.amount + getStatus(self.statuses, 'dexterity');
+      self = { ...self, block: self.block + amount };
+    } else if (step.type === 'applyStatus') {
+      if (step.target === 'self') {
+        self = { ...self, statuses: addStatus(self.statuses, step.status, step.amount) };
+      } else {
+        const amplify = step.status === 'poison' ? getStatus(self.statuses, 'poisonAmplify') : 0;
+        opponent = { ...opponent, statuses: addStatus(opponent.statuses, step.status, step.amount + amplify) };
+      }
+    } else if (step.type === 'draw') {
+      cardsDrawn += step.amount;
+    } else if (step.type === 'gainEnergy') {
+      energyGained += step.amount;
+    } else if (step.type === 'heal') {
+      self = { ...self, hp: Math.min(self.maxHp, self.hp + step.amount) };
+    }
+  }
+
+  return { self, opponent, cardsDrawn, energyGained };
+}
+
 function drawCards(state: CombatState, count: number): CombatState {
   let drawPile = [...state.drawPile];
   let discardPile = [...state.discardPile];
@@ -58,25 +126,41 @@ function checkCombatEnd(state: CombatState): CombatState {
   return state;
 }
 
-export function createCombatState(): CombatState {
+function toPlayerCombatant(state: CombatState): Combatant {
+  return { hp: state.playerHp, maxHp: state.playerMaxHp, block: state.block, statuses: state.statuses };
+}
+
+function toEnemyCombatant(enemy: EnemyState): Combatant {
+  return { hp: enemy.hp, maxHp: enemy.maxHp, block: enemy.block, statuses: enemy.statuses };
+}
+
+export interface CreateCombatParams {
+  deck: CardInstance[]; // 런에서 넘어오는 마스터 덱(같은 인스턴스를 재사용 — uid·강화 여부 유지)
+  playerHp: number;
+  playerMaxHp: number;
+  enemyDefId: string;
+}
+
+export function createCombatState(params: CreateCombatParams): CombatState {
   const base: CombatState = {
-    playerHp: PLAYER_MAX_HP,
-    playerMaxHp: PLAYER_MAX_HP,
+    playerHp: params.playerHp,
+    playerMaxHp: params.playerMaxHp,
     block: 0,
+    statuses: {},
     energy: MAX_ENERGY,
     maxEnergy: MAX_ENERGY,
-    drawPile: shuffle(createStarterDeck()),
+    drawPile: shuffle(params.deck),
     hand: [],
     discardPile: [],
-    enemy: createEnemy(),
+    exhaustPile: [],
+    enemy: createEnemy(params.enemyDefId),
     turnNumber: 1,
+    attacksPlayedThisTurn: 0,
     status: 'ongoing',
   };
   return drawCards(base, HAND_SIZE);
 }
 
-// 손패의 카드 한 장(uid로 지정)을 사용한다. 에너지가 부족하거나 전투가
-// 이미 끝났으면 아무 효과 없이 그대로 상태를 반환한다.
 export function playCard(state: CombatState, uid: number): CombatState {
   if (state.status !== 'ongoing') return state;
 
@@ -84,27 +168,82 @@ export function playCard(state: CombatState, uid: number): CombatState {
   if (index === -1) return state;
 
   const card = state.hand[index];
-  const def = getCardDefinition(card);
+  const def = getEffectiveDefinition(card);
   if (state.energy < def.cost) return state;
 
-  const next: CombatState = {
+  const result = resolveEffects(def.effects, toPlayerCombatant(state), toEnemyCombatant(state.enemy), state.attacksPlayedThisTurn);
+
+  let next: CombatState = {
     ...state,
-    energy: state.energy - def.cost,
+    playerHp: result.self.hp,
+    block: result.self.block,
+    statuses: result.self.statuses,
+    energy: state.energy - def.cost + result.energyGained,
+    enemy: { ...state.enemy, hp: result.opponent.hp, block: result.opponent.block, statuses: result.opponent.statuses },
     hand: state.hand.filter((_, i) => i !== index),
-    discardPile: [...state.discardPile, card],
+    attacksPlayedThisTurn: state.attacksPlayedThisTurn + (def.type === 'attack' ? 1 : 0),
   };
 
-  if (def.effect.type === 'damage') {
-    next.enemy = { ...next.enemy, hp: Math.max(0, next.enemy.hp - def.effect.amount) };
+  if (def.exhaust) {
+    next.exhaustPile = [...next.exhaustPile, card];
   } else {
-    next.block += def.effect.amount;
+    next.discardPile = [...next.discardPile, card];
   }
+
+  if (result.cardsDrawn > 0) next = drawCards(next, result.cardsDrawn);
 
   return checkCombatEnd(next);
 }
 
-// 턴 종료: 남은 손패를 버리고 → 적이 공격하고 → 승패를 확인하고 →
-// (전투가 계속되면) 방어도 초기화, 에너지 충전, 다음 턴 드로우까지 진행한다.
+function runEnemyTurn(state: CombatState): CombatState {
+  let enemy = { ...state.enemy, block: 0 };
+  const tick = tickStartOfTurn(enemy.statuses);
+  enemy = { ...enemy, statuses: tick.statuses, hp: Math.max(0, enemy.hp - tick.poisonDamage) };
+
+  let next: CombatState = { ...state, enemy };
+  next = checkCombatEnd(next);
+  if (next.status !== 'ongoing') return next;
+
+  const move = getCurrentMove(enemy);
+  const result = resolveEffects(move.effects, toEnemyCombatant(enemy), toPlayerCombatant(next), 0);
+
+  enemy = { ...enemy, hp: result.self.hp, block: result.self.block, statuses: result.self.statuses };
+  next = {
+    ...next,
+    playerHp: result.opponent.hp,
+    block: result.opponent.block,
+    statuses: result.opponent.statuses,
+    enemy: advanceMove(enemy),
+  };
+
+  return checkCombatEnd(next);
+}
+
+function beginPlayerTurn(state: CombatState): CombatState {
+  const reset: CombatState = { ...state, block: 0 };
+  const tick = tickStartOfTurn(reset.statuses);
+  let hp = Math.max(0, reset.playerHp - tick.poisonDamage);
+  let statuses = tick.statuses;
+
+  const regen = applyRegenPowers(statuses);
+  statuses = regen.statuses;
+
+  let next: CombatState = {
+    ...reset,
+    playerHp: hp,
+    statuses,
+    block: reset.block + regen.bonusBlock,
+    energy: reset.maxEnergy,
+    attacksPlayedThisTurn: 0,
+    turnNumber: reset.turnNumber + 1,
+  };
+
+  next = checkCombatEnd(next);
+  if (next.status !== 'ongoing') return next;
+
+  return drawCards(next, HAND_SIZE);
+}
+
 export function endTurn(state: CombatState): CombatState {
   if (state.status !== 'ongoing') return state;
 
@@ -114,23 +253,8 @@ export function endTurn(state: CombatState): CombatState {
     hand: [],
   };
 
-  const damage = next.enemy.intent.amount;
-  const blocked = Math.min(next.block, damage);
-  next = {
-    ...next,
-    block: next.block - blocked,
-    playerHp: Math.max(0, next.playerHp - (damage - blocked)),
-  };
-
-  next = checkCombatEnd(next);
+  next = runEnemyTurn(next);
   if (next.status !== 'ongoing') return next;
 
-  next = {
-    ...next,
-    turnNumber: next.turnNumber + 1,
-    block: 0,
-    energy: next.maxEnergy,
-  };
-  next.enemy = advanceEnemyIntent(next.enemy, next.turnNumber);
-  return drawCards(next, HAND_SIZE);
+  return beginPlayerTurn(next);
 }
