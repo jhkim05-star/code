@@ -86,7 +86,10 @@ export function renderBook(root,ctx,bookId){
     if(r.status==='planned')actions.push(button('읽기 시작',e=>task(e.currentTarget,async()=>{await ctx.repo.editReading(r.id,{status:'reading',startedAt:today(),startedTime:nowIso()});ctx.refresh();}),'primary'));
     if(r.status==='reading'){actions.push(button('다 읽음',()=>recordForm(ctx,b,r,{finish:true}),'primary'),button('잠시 멈춤',e=>task(e.currentTarget,async()=>{await ctx.repo.editReading(r.id,{status:'paused'});ctx.refresh();})));}
     if(r.status==='paused')actions.push(button('이어서 읽기',e=>task(e.currentTarget,async()=>{await ctx.repo.editReading(r.id,{status:'reading'});ctx.refresh();}),'primary'));
-    if(!active&&index===reads.length&&['finished','abandoned'].includes(r.status))actions.push(button('읽는 중으로',e=>task(e.currentTarget,async()=>{await ctx.repo.reread(b.id,today());ctx.refresh();ctx.toast('이전 기록을 남기고 새 읽기를 시작했어요.');}),'primary'));
+    if(!active&&index===reads.length&&['finished','abandoned'].includes(r.status)){
+      actions.push(button('읽는 중으로',e=>task(e.currentTarget,async()=>{await ctx.repo.resumeReading(r.id,today());ctx.refresh();ctx.toast('이 읽기 기록을 읽는 중으로 바꾸고 완독일을 지웠어요.');}),'primary'));
+      actions.push(button('다시 읽기 · 새 회차',e=>task(e.currentTarget,async()=>{await ctx.repo.reread(b.id,today());ctx.refresh();ctx.toast('이전 기록을 남기고 새 읽기를 시작했어요.');}),'small'));
+    }
     actions.push(button('수정',()=>recordForm(ctx,b,r),'small'));
     if(index>1)actions.push(button('이 읽기 삭제',e=>deleteReread(ctx,r,index,e.currentTarget),'quiet danger small'));
     if(!['finished','abandoned'].includes(r.status))actions.push(button('그만 읽음',()=>stopForm(ctx,r),'quiet'));actions.push(button(r.status==='finished'?'감상평 쓰기':'노트 남기기',()=>ctx.openReview(b.id,r.id),'small'));
