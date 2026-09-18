@@ -57,7 +57,7 @@ export class BrowserStorage {
     }));
   }
   async load(){return this.get('state');}
-  async save(next,expectedRevision,{beforeImport=false,legacyBackup=null,clearDrafts=false,removeBookId=null,removeDraftIds=[]}={}) {
+  async save(next,expectedRevision,{beforeImport=false,legacyBackup=null,clearDrafts=false,removeBookId=null,detachReadingId=null,removeDraftIds=[]}={}) {
     return this._withTransaction(['kv','drafts'],'readwrite',tx=>new Promise((resolve,reject)=>{
       const store=tx.objectStore('kv');
       let failure;
@@ -69,7 +69,7 @@ export class BrowserStorage {
         if(legacyBackup) store.put(legacyBackup,'legacyBooksBackup');
         store.put(next,'state');
         if(clearDrafts)tx.objectStore('drafts').clear();
-        else {const drafts=tx.objectStore('drafts');for(const id of removeDraftIds)drafts.delete(id);if(removeBookId){const cursor=drafts.openCursor();cursor.onsuccess=()=>{const item=cursor.result;if(!item)return;if(item.value.note?.bookId===removeBookId)item.delete();item.continue();};}}
+        else {const drafts=tx.objectStore('drafts');for(const id of removeDraftIds)drafts.delete(id);if(removeBookId||detachReadingId){const cursor=drafts.openCursor();cursor.onsuccess=()=>{const item=cursor.result;if(!item)return;const value=item.value;if(removeBookId&&value.note?.bookId===removeBookId)item.delete();else if(detachReadingId&&value.note?.readingId===detachReadingId)item.update({...value,note:{...value.note,readingId:null}});item.continue();};}}
       };
       tx.oncomplete=()=>resolve();
       tx.onerror=()=>reject(failure||tx.error||new Error('저장 공간 또는 권한을 확인해 주세요.'));

@@ -51,6 +51,15 @@ export class ReadingRepository {
   }
   editReading(readingId,patch){return this.transact(s=>{const i=s.readings.findIndex(r=>r.id===readingId);if(i<0)throw new Error('독서 이력을 찾지 못했어요.');s.readings[i]=normalizeReading({...s.readings[i],...patch,id:readingId,bookId:s.readings[i].bookId,updatedAt:nowIso()});});}
   reread(bookId,date){const r=newReading(bookId,{status:'reading',startedAt:date,startedTime:nowIso()});return this.transact(s=>{if(activeReading(s,bookId))throw new Error('진행 중인 읽기를 먼저 마쳐 주세요.');s.readings.push(r);return r.id;});}
+  removeReread(readingId){return this.transact(s=>{
+    const reading=s.readings.find(r=>r.id===readingId);
+    if(!reading)throw new Error('독서 이력을 찾지 못했어요.');
+    const rounds=s.readings.filter(r=>r.bookId===reading.bookId);
+    if(rounds.length<2||rounds[0].id===readingId)throw new Error('첫 번째 읽기 기록은 책과 함께 보존해 주세요.');
+    s.readings=s.readings.filter(r=>r.id!==readingId);
+    // Keep the writing: it becomes a book-level note rather than an orphan.
+    for(const note of s.notes)if(note.readingId===readingId)note.readingId=null;
+  },{detachReadingId:readingId});}
   saveNote(note,expectedRev=0){
     if(expectedRev===0&&!noteHasContent(note))return Promise.reject(new Error('내용을 하나 이상 적은 뒤 저장해 주세요.'));
     return this.transact(s=>{

@@ -18,7 +18,21 @@ class FakeTransaction {
       put:(value,key)=>{this.pending.push(()=>map.set(key,value));},
       delete:key=>{this.pending.push(()=>map.delete(key));},
       clear:()=>{this.pending.push(()=>map.clear());},
-      openCursor:()=>({onsuccess:null}),
+      openCursor:()=>{
+        const req={onsuccess:null},entries=[...map.entries()];let index=0;
+        const emit=()=>{
+          if(this.aborted)return;
+          const entry=entries[index];
+          req.result=entry?{
+            key:entry[0],value:entry[1],
+            update:value=>this.pending.push(()=>map.set(entry[0],value)),
+            delete:()=>this.pending.push(()=>map.delete(entry[0])),
+            continue:()=>{index++;queueMicrotask(emit);}
+          }:null;
+          req.onsuccess?.();
+        };
+        queueMicrotask(emit);return req;
+      },
     };
   }
   abort(){if(this.aborted)return;this.aborted=true;queueMicrotask(()=>this.onabort?.());}
@@ -100,4 +114,17 @@ test('draft writes and reads share the same one-shot reconnect and versionchange
   assert.equal(storage.db,null);
   assert.deepEqual(await storage.draftGet('draft-1'),{text:'입력 유지'});
   assert.equal(idb.openCount,4);
+});
+
+test('deleting a reread detaches its draft note in the same state transaction',async()=>{
+  const idb=new FakeIndexedDB({state:{revision:2,readings:[{id:'first'},{id:'second'}]}});
+  idb.data.drafts.set('note-2',{baseRev:1,note:{id:'note-2',readingId:'second',text:'보존할 초안'}});
+  idb.data.drafts.set('other',{baseRev:1,note:{id:'other',readingId:'first',text:'다른 초안'}});
+  const storage=new BrowserStorage({indexedDB:idb,localStorage:null});
+  const next={revision:3,readings:[{id:'first'}]};
+  await storage.save(next,2,{detachReadingId:'second'});
+  assert.deepEqual(idb.data.kv.get('state'),next);
+  assert.equal(idb.data.drafts.get('note-2').note.readingId,null);
+  assert.equal(idb.data.drafts.get('note-2').note.text,'보존할 초안');
+  assert.equal(idb.data.drafts.get('other').note.readingId,'first');
 });
