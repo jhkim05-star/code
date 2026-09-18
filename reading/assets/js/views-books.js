@@ -38,6 +38,15 @@ function bookCard(ctx,b,r,library=false){
 function section(title,items){return h('section',{},h('div.section-head',{},h('h2',{},title),h('span.count',{},items.length+'권')),h('div.grid',{},items));}
 function contextualAction(label,fn){const b=button(label,fn,'primary small');b.prepend(icon('plus'));return b;}
 
+export function deleteReread(ctx,reading,index,trigger,ask=confirm){
+  return task(trigger,async()=>{
+    if(!await ask(`${index}번째 읽기 기록을 삭제할까요?`,'책과 다른 읽기 기록은 남아요. 이 회차에 연결된 노트는 책의 노트로 보존됩니다.','기록 삭제',true))return;
+    await ctx.repo.removeReread(reading.id);
+    ctx.refresh();
+    ctx.toast('이 읽기 기록만 삭제했어요.');
+  });
+}
+
 export function renderShelf(root,ctx){
   const control=h('div'),list=h('div'),q=input(ctx.view.shelfQuery||'',{type:'search',placeholder:'제목 · 저자 · 태그 · 컬렉션 검색','aria-label':'책꽂이 검색'});
   q.className='search';q.addEventListener('input',()=>{ctx.view.shelfQuery=q.value;paint();});
@@ -79,10 +88,7 @@ export function renderBook(root,ctx,bookId){
     if(r.status==='paused')actions.push(button('이어서 읽기',e=>task(e.currentTarget,async()=>{await ctx.repo.editReading(r.id,{status:'reading'});ctx.refresh();}),'primary'));
     if(!active&&index===reads.length&&['finished','abandoned'].includes(r.status))actions.push(button('읽는 중으로',e=>task(e.currentTarget,async()=>{await ctx.repo.reread(b.id,today());ctx.refresh();ctx.toast('이전 기록을 남기고 새 읽기를 시작했어요.');}),'primary'));
     actions.push(button('수정',()=>recordForm(ctx,b,r),'small'));
-    if(index>1)actions.push(button('이 읽기 삭제',async e=>{
-      if(!await confirm(`${index}번째 읽기 기록을 삭제할까요?`,'책과 다른 읽기 기록은 남아요. 이 회차에 연결된 노트는 책의 노트로 보존됩니다.','기록 삭제',true))return;
-      await task(e.currentTarget,async()=>{await ctx.repo.removeReread(r.id);ctx.refresh();ctx.toast('이 읽기 기록만 삭제했어요.');});
-    },'quiet danger small'));
+    if(index>1)actions.push(button('이 읽기 삭제',e=>deleteReread(ctx,r,index,e.currentTarget),'quiet danger small'));
     if(!['finished','abandoned'].includes(r.status))actions.push(button('그만 읽음',()=>stopForm(ctx,r),'quiet'));actions.push(button(r.status==='finished'?'감상평 쓰기':'노트 남기기',()=>ctx.openReview(b.id,r.id),'small'));
     return h('section.card',{},h('div.section-head.no-margin',{},h('h2',{},`${index}번째 읽기`),h('span.badge',{},STATUSES[r.status])),h('div.record-grid',{},h('div',{},h('span',{},'시작일'),h('strong',{},displayDate(r.startedAt))),h('div',{},h('span',{},r.status==='finished'?'완독일':'읽기 상태'),h('strong',{},r.status==='finished'?displayDate(r.finishedAt):STATUSES[r.status])),h('div',{},h('span',{},'읽은 기간'),h('strong',{},period===null?'시작·완독일 확인 필요':period+'일'+(r.status==='finished'?'':' (오늘까지)'))),h('div',{},h('span',{},'책유형'),h('strong',{},FORMATS[r.format])),h('div',{},h('span',{},'평점'),h('strong',{},ratingLabel(r)))),r.why?h('p.hint',{},'읽으려는 이유 · '+r.why):null,r.oneLiner?h('p.one-liner',{},r.oneLiner):null,r.stopReason?h('p.hint',{},'중단 이유 · '+r.stopReason):null,h('div.button-row',{},actions));
   };

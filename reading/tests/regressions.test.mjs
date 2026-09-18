@@ -5,6 +5,7 @@ import { fromAladin, parseAladinAuthors } from '../assets/js/api.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
 import { clone, newNote, noteHasContent, readingsFor } from '../assets/js/domain.js';
+import { deleteReread } from '../assets/js/views-books.js';
 
 class MemoryAdapter {
   constructor(){this.value=null;this.draftValues=new Map();}
@@ -98,11 +99,31 @@ test('회차 삭제 저장 실패 시 이전 기록과 연결을 그대로 유�
   adapter.save=save;
 });
 
+test('삭제 확인창 이후에도 두 번째 읽기만 삭제하고 취소 시 기록을 보존한다',async()=>{
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  const bookId=await repo.createBook({title:'다시 읽는 책'},{status:'finished'});
+  const firstId=repo.state.readings[0].id,secondId=await repo.reread(bookId,'2026-09-18');
+  const trigger={disabled:false},events=[],ctx={repo,refresh:()=>events.push('refresh'),toast:message=>events.push(message)};
+  await deleteReread(ctx,{id:secondId},2,trigger,async()=>false);
+  assert.equal(trigger.disabled,false);
+  assert.deepEqual(repo.state.readings.map(r=>r.id),[firstId,secondId]);
+  assert.deepEqual(events,[]);
+  await deleteReread(ctx,{id:secondId},2,trigger,async()=>{
+    assert.equal(trigger.disabled,true);
+    await Promise.resolve(); // The original click event has finished by now.
+    return true;
+  });
+  assert.equal(trigger.disabled,false);
+  assert.deepEqual(repo.state.readings.map(r=>r.id),[firstId]);
+  assert.deepEqual(adapter.value.readings.map(r=>r.id),[firstId]);
+  assert.equal(events[0],'refresh');
+});
+
 test('책 상세에 회차별 읽는 중 전환·수정·삭제와 별점 선택 버튼을 둔다',()=>{
   const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
   assert.match(view,/reread\(b\.id,today\(\)\)/);
   assert.match(view,/button\('수정',\(\)=>recordForm\(ctx,b,r\)/);
-  assert.match(view,/if\(index>1\)actions\.push\(button\('이 읽기 삭제'/);
+  assert.match(view,/if\(index>1\)actions\.push\(button\('이 읽기 삭제',e=>deleteReread\(ctx,r,index,e\.currentTarget\)/);
   assert.match(view,/button\('★'/);
   assert.match(view,/finished\?field\('평점',pastRating\):null/);
   assert.match(view,/rating:finished\?pastRating\.value:null/);
