@@ -1,7 +1,7 @@
 /** Pure domain model. No DOM, browser storage or native dependencies. */
 export const APP = 'bookshelf-reading';
 export const VERSION = 2;
-export const BUILD = '3.3.7-library-start-date';
+export const BUILD = '3.3.9-ebook-default';
 export const STATUSES = { planned: '읽을 예정', reading: '읽는 중', paused: '잠시 멈춤', finished: '완독', abandoned: '그만 읽음' };
 export const FORMATS = { paper: '종이책', ebook: '전자책', audio: '오디오북' };
 export const GENRES = ['소설','시/에세이','인문','역사','철학','종교','사회/정치','경제/경영','자기계발','과학','IT/컴퓨터','공학/기술','의학/건강','예술/대중문화','여행','요리/취미','아동/청소년','만화','외국어','교육/학습','기타'];
@@ -170,7 +170,7 @@ export function parseBackup(content) {
 export function newBook(data={}) { const t=nowIso(); return normalizeBook({id:uid('book'),createdAt:t,updatedAt:t,...data}); }
 export function newReading(bookId,data={}) { const t=nowIso(); return normalizeReading({id:uid('read'),bookId,status:'planned',createdAt:t,updatedAt:t,...data}); }
 export function newNote(bookId,readingId=null,kind='review',data={}) { const t=nowIso(); return normalizeNote({id:uid('note'),bookId,readingId,kind,createdAt:t,updatedAt:t,...data}); }
-export const readingsFor=(state,bookId)=>state.readings.filter(r=>r.bookId===bookId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));
+export const readingsFor=(state,bookId)=>state.readings.filter(r=>r.bookId===bookId).reverse().sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 export const activeReading=(state,bookId)=>state.readings.find(r=>r.bookId===bookId&&!['finished','abandoned'].includes(r.status));
 export function normalizeAuthor(value){return String(value||'').normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleLowerCase();}
 export function suggestedCollection(book){

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fromAladin, parseAladinAuthors } from '../assets/js/api.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
-import { clone, newNote, noteHasContent } from '../assets/js/domain.js';
+import { clone, newNote, noteHasContent, readingsFor } from '../assets/js/domain.js';
 
 class MemoryAdapter {
   constructor(){this.value=null;this.draftValues=new Map();}
@@ -62,4 +62,59 @@ test('책장의 읽은 책 추가에서 시작일을 완독일 앞에 받고 독
   const previous=clone(repo.state);
   assert.throws(()=>repo.createBook({title:'날짜가 뒤바뀐 책'},{status:'finished',startedAt:'2026-08-13',finishedAt:'2026-08-12'}),/완독일은 시작일보다/);
   assert.deepEqual(repo.state,previous);
+});
+
+test('완독한 책을 읽는 중으로 시작하면 앞선 기록과 노트를 보존하고 두 번째 회차만 삭제한다',async()=>{
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  const bookId=await repo.createBook({title:'다시 읽는 책'},{status:'finished',startedAt:'2026-01-01',finishedAt:'2026-01-10',rating:4.5});
+  const first=clone(repo.state.readings[0]);
+  const secondId=await repo.reread(bookId,'2026-09-18');
+  assert.deepEqual(repo.state.readings.find(r=>r.id===first.id),first);
+  assert.equal(repo.state.readings.find(r=>r.id===secondId).status,'reading');
+  assert.equal(readingsFor(repo.state,bookId)[0].id,secondId);
+  assert.equal(readingsFor({readings:repo.state.readings.map(r=>({...r,createdAt:first.createdAt}))},bookId)[0].id,secondId);
+  await assert.rejects(repo.reread(bookId,'2026-09-19'),/진행 중인/);
+  const note=await repo.saveNote(newNote(bookId,secondId,'memo',{text:'다시 읽으며 남긴 생각'}),0);
+  await assert.rejects(repo.removeReread(first.id),/첫 번째/);
+  await repo.removeReread(secondId);
+  assert.deepEqual(repo.state.readings,[first]);
+  assert.equal(repo.state.notes.find(n=>n.id===note.id).readingId,null);
+  assert.equal(repo.state.notes.find(n=>n.id===note.id).text,'다시 읽으며 남긴 생각');
+  const reopened=new ReadingRepository(adapter);await reopened.init();
+  assert.deepEqual(reopened.state.readings,[first]);
+  assert.equal(reopened.state.notes[0].readingId,null);
+});
+
+test('회차 삭제 저장 실패 시 이전 기록과 연결을 그대로 유지한다',async()=>{
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  const bookId=await repo.createBook({title:'보존할 책'},{status:'finished'});
+  const secondId=await repo.reread(bookId,'2026-09-18');
+  await repo.saveNote(newNote(bookId,secondId,'memo',{text:'보존할 메모'}),0);
+  const before=clone(repo.state),save=adapter.save.bind(adapter);
+  adapter.save=async()=>{throw new Error('저장 실패');};
+  await assert.rejects(repo.removeReread(secondId),/저장 실패/);
+  assert.deepEqual(repo.state,before);
+  assert.deepEqual(adapter.value,before);
+  adapter.save=save;
+});
+
+test('책 상세에 회차별 읽는 중 전환·수정·삭제와 별점 선택 버튼을 둔다',()=>{
+  const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
+  assert.match(view,/reread\(b\.id,today\(\)\)/);
+  assert.match(view,/button\('수정',\(\)=>recordForm\(ctx,b,r\)/);
+  assert.match(view,/if\(index>1\)actions\.push\(button\('이 읽기 삭제'/);
+  assert.match(view,/button\('★'/);
+  assert.match(view,/finished\?field\('평점',pastRating\):null/);
+  assert.match(view,/rating:finished\?pastRating\.value:null/);
+  assert.doesNotMatch(view,/날짜 · 별점 · 책유형 수정/);
+  assert.doesNotMatch(view,/ratingOpts=/);
+});
+
+test('새 책 담기와 읽은 책 추가의 기본 책유형은 전자책이며 기존 회차 수정은 저장값을 따른다',()=>{
+  const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
+  const bookForm=view.slice(view.indexOf('export function bookForm('),view.indexOf('function statDetail('));
+  assert.match(bookForm,/format=select\(FORMATS,'ebook'\)/);
+  assert.match(bookForm,/format:format\.value/);
+  assert.match(view,/format=select\(FORMATS,r\.format\)/);
+  assert.doesNotMatch(bookForm,/format=select\(FORMATS,'paper'\)/);
 });
