@@ -1,5 +1,5 @@
 /* Book-only app cache. CacheStorage is origin-wide: never clear another app. */
-const BUILD='reading338-20260918-reread-rating-actions';
+const BUILD='reading339-20260918-ebook-default';
 const SCOPE=self.registration.scope;
 let scopeHash=2166136261;for(const ch of new URL(SCOPE).pathname)scopeHash=Math.imul(scopeHash^ch.charCodeAt(0),16777619)>>>0;
 const PREFIX='bookshelf-reading-'+scopeHash.toString(16)+'-';

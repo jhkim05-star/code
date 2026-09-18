@@ -109,3 +109,12 @@ test('책 상세에 회차별 읽는 중 전환·수정·삭제와 별점 선택
   assert.doesNotMatch(view,/날짜 · 별점 · 책유형 수정/);
   assert.doesNotMatch(view,/ratingOpts=/);
 });
+
+test('새 책 담기와 읽은 책 추가의 기본 책유형은 전자책이며 기존 회차 수정은 저장값을 따른다',()=>{
+  const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
+  const bookForm=view.slice(view.indexOf('export function bookForm('),view.indexOf('function statDetail('));
+  assert.match(bookForm,/format=select\(FORMATS,'ebook'\)/);
+  assert.match(bookForm,/format:format\.value/);
+  assert.match(view,/format=select\(FORMATS,r\.format\)/);
+  assert.doesNotMatch(bookForm,/format=select\(FORMATS,'paper'\)/);
+});
