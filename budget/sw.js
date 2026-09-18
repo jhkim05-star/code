@@ -1,5 +1,5 @@
-const CACHE='budget-pwa-v8-loading-hotfix';
-const VERSION='1.6.1';
+const CACHE='budget-pwa-v9-card-recurring';
+const VERSION='1.6.2';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json',`./assets/css/app.css?v=${VERSION}`,`./assets/js/app.js?v=${VERSION}`,`./assets/js/domain.js?v=${VERSION}`,`./assets/js/storage.js?v=${VERSION}`,`./assets/js/repository.js?v=${VERSION}`,`./assets/js/notion.js?v=${VERSION}`,`./assets/js/notion-export.js?v=${VERSION}`,`./assets/js/notifications.js?v=${VERSION}`,`./assets/js/platform.js?v=${VERSION}`,'./assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('budget-')&&key!==CACHE&&key!=='budget-share-inbox-v1').map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
