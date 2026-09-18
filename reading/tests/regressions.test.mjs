@@ -86,6 +86,42 @@ test('완독한 책을 읽는 중으로 시작하면 앞선 기록과 노트를 
   assert.equal(reopened.state.notes[0].readingId,null);
 });
 
+test('오늘로 미리 완독한 읽기를 같은 회차로 되돌리고 완독일만 비운다',async()=>{
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  const bookId=await repo.createBook({title:'아직 읽는 책'},{status:'finished',startedAt:'2026-09-01',finishedAt:'2026-09-18',finishedTime:'2026-09-18T03:00:00.000Z',rating:4,oneLiner:'미리 입력한 평'});
+  const original=clone(repo.state.readings[0]);
+  const note=await repo.saveNote(newNote(bookId,original.id,'memo',{text:'읽는 중 남긴 메모'}),0);
+  await repo.resumeReading(original.id,'2026-09-18');
+  assert.equal(repo.state.readings.length,1);
+  assert.equal(repo.state.readings[0].id,original.id);
+  assert.equal(repo.state.readings[0].status,'reading');
+  assert.equal(repo.state.readings[0].startedAt,'2026-09-01');
+  assert.equal(repo.state.readings[0].finishedAt,'');
+  assert.equal(repo.state.readings[0].finishedTime,'');
+  assert.equal(repo.state.readings[0].rating,4);
+  assert.equal(repo.state.readings[0].oneLiner,'미리 입력한 평');
+  assert.equal(repo.state.notes.find(n=>n.id===note.id).readingId,original.id);
+  const reopened=new ReadingRepository(adapter);await reopened.init();
+  assert.equal(reopened.state.readings.length,1);
+  assert.equal(reopened.state.readings[0].status,'reading');
+  assert.equal(reopened.state.readings[0].finishedAt,'');
+  await assert.rejects(repo.resumeReading(original.id,'2026-09-18'),/진행 중인/);
+});
+
+test('완독일이 비어 있던 과거 기록은 같은 ID로 읽는 중이 되고 다른 진행 중 회차는 보존한다',async()=>{
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  const bookId=await repo.createBook({title:'두 번 읽는 책'},{status:'finished',finishedAt:'2026-09-18'});
+  const firstId=repo.state.readings[0].id;
+  await repo.resumeReading(firstId,'2026-09-18');
+  assert.equal(repo.state.readings[0].startedAt,'2026-09-18');
+  await repo.editReading(firstId,{status:'finished',finishedAt:'2026-09-18'});
+  const secondId=await repo.reread(bookId,'2026-09-18');
+  const before=clone(repo.state);
+  await assert.rejects(repo.resumeReading(firstId,'2026-09-18'),/진행 중인/);
+  assert.deepEqual(repo.state,before);
+  assert.equal(repo.state.readings.find(r=>r.id===secondId).status,'reading');
+});
+
 test('회차 삭제 저장 실패 시 이전 기록과 연결을 그대로 유지한다',async()=>{
   const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
   const bookId=await repo.createBook({title:'보존할 책'},{status:'finished'});
@@ -121,7 +157,8 @@ test('삭제 확인창 이후에도 두 번째 읽기만 삭제하고 취소 시
 
 test('책 상세에 회차별 읽는 중 전환·수정·삭제와 별점 선택 버튼을 둔다',()=>{
   const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
-  assert.match(view,/reread\(b\.id,today\(\)\)/);
+  assert.match(view,/button\('읽는 중으로'.*resumeReading\(r\.id,today\(\)\)/);
+  assert.match(view,/button\('다시 읽기 · 새 회차'.*reread\(b\.id,today\(\)\)/);
   assert.match(view,/button\('수정',\(\)=>recordForm\(ctx,b,r\)/);
   assert.match(view,/if\(index>1\)actions\.push\(button\('이 읽기 삭제',e=>deleteReread\(ctx,r,index,e\.currentTarget\)/);
   assert.match(view,/button\('★'/);
