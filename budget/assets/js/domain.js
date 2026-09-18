@@ -142,6 +142,34 @@ export function cardPaymentForecast(transactions,cards,today){
   const rowsFor=(month,zeroAfterDue)=>active.map(card=>{const cycle=cardCycleForBillingMonth(month,card),duePassed=zeroAfterDue&&compareDate(today,cycle.billingDate)>0;return {card,cycle,total:duePassed?0:cardCycleTotal(transactions,card,cycle),duePassed};});
   return {currentMonth,nextMonth,current:rowsFor(currentMonth,true),next:rowsFor(nextMonth,false)};
 }
+export function projectedCardTransactions(state,today){
+  const ref=String(today).slice(0,10);if(!parseDate(ref))throw new Error('기준 날짜가 올바르지 않아요.');
+  const month=ref.slice(0,7),nextMonth=shiftMonths(`${month}-01`,1,1).slice(0,7);
+  const cycles=state.cards.filter(card=>card.active!==false).flatMap(card=>[month,nextMonth].map(billingMonth=>({card,cycle:cardCycleForBillingMonth(billingMonth,card)}))).filter(({cycle})=>compareDate(cycle.billingDate,ref)>=0);
+  if(!cycles.length)return [...state.transactions];
+  const rules=new Map((state.recurringExpenses||[]).filter(rule=>rule.active!==false).map(rule=>[rule.id,rule]));
+  // A pending bill follows the current rule, while historical ledger rows remain untouched.
+  const transactions=state.transactions.filter(tx=>!((tx.source==='recurring'||tx.recurringExpenseId)&&rules.has(tx.recurringExpenseId)&&cycles.some(({cycle})=>inRange(tx.date,cycle.start,cycle.end))));
+  const projected=new Map();
+  for(const rule of rules.values()){
+    if(rule.paymentMethod!=='card'||!cycles.some(({card})=>card.id===rule.cardId))continue;
+    for(const {card,cycle} of cycles){
+      if(card.id!==rule.cardId)continue;
+      let occurrenceMonth=cycle.start.slice(0,7),guard=0;
+      while(occurrenceMonth<=cycle.end.slice(0,7)&&guard++<4){
+        if(occurrenceMonth>=rule.startMonth){
+          const p=parseDate(`${occurrenceMonth}-01`),date=isoDate(p.y,p.m,clampDay(p.y,p.m,rule.day));
+          if(inRange(date,cycle.start,cycle.end)){
+            const sourceId=`recurring:${rule.id}:${occurrenceMonth}`;
+            projected.set(sourceId,{id:`forecast:${sourceId}`,sourceId,date,time:'00:00',type:'expense',amount:Number(rule.amount),merchant:rule.name,categoryId:rule.categoryId||'other',paymentMethod:'card',cardId:rule.cardId,source:'recurring',recurringExpenseId:rule.id,recurringMonth:occurrenceMonth,projected:true,installment:null,cancelled:false});
+          }
+        }
+        occurrenceMonth=shiftMonths(`${occurrenceMonth}-01`,1,1).slice(0,7);
+      }
+    }
+  }
+  return [...transactions,...projected.values()];
+}
 export function monthBounds(month){const p=String(month).match(/^(\d{4})-(\d{2})$/);if(!p)throw new Error('월 형식이 올바르지 않아요.');return {from:`${month}-01`,to:isoDate(+p[1],+p[2],daysInMonth(+p[1],+p[2]))};}
 export function summarize(transactions,{month,categories=[]}={}){
   const {from,to}=monthBounds(month),rows=netTransactions(transactions,{from,to}),catMap=new Map(categories.map(c=>[c.id,c]));

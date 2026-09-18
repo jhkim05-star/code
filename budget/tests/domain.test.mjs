@@ -1,5 +1,5 @@
 import test from'node:test';import assert from'node:assert/strict';
-import{budgetProgress,cardCycle,cardCycleEntries,cardCycleForBillingMonth,cardCycleTotal,cardPaymentForecast,defaultState,duplicateCandidates,installmentAmountForPeriod,merchantTopAcrossPreviousAndCurrentMonth,recurringTransactionsDue,summarize,summarizeYear,transactionFingerprint,usageBreakdown,validateState,validateTransaction,zonedDate}from'../assets/js/domain.js';
+import{budgetProgress,cardCycle,cardCycleEntries,cardCycleForBillingMonth,cardCycleTotal,cardPaymentForecast,projectedCardTransactions,defaultState,duplicateCandidates,installmentAmountForPeriod,merchantTopAcrossPreviousAndCurrentMonth,recurringTransactionsDue,summarize,summarizeYear,transactionFingerprint,usageBreakdown,validateState,validateTransaction,zonedDate}from'../assets/js/domain.js';
 
 const tx=(patch={})=>({id:'t1',date:'2026-09-11',time:'12:30',type:'expense',amount:10000,merchant:'서울 식당',categoryId:'food',paymentMethod:'card',cardId:'c1',source:'manual',sourceId:'',memo:'',installment:null,cancelled:false,linkedOriginal:null,createdAt:'2026-09-11T00:00:00Z',updatedAt:'2026-09-11T00:00:00Z',...patch});
 
@@ -23,6 +23,36 @@ test('usage breakdown separates every card, cash fixed and cash expense totals',
 test('recurring expense generation clamps month end and never repeats generated months',()=>{const state=defaultState();state.recurringExpenses=[{id:'rent',name:'월세',amount:500000,categoryId:'housing',day:31,startMonth:'2026-08',active:true,generatedMonths:['2026-08']}];const due=recurringTransactionsDue(state,'2026-09-30','2026-09-30T00:00:00.000Z');assert.equal(due.length,1);assert.equal(due[0].date,'2026-09-30');assert.equal(due[0].sourceId,'recurring:rent:2026-09');assert.equal(due[0].paymentMethod,'cash');});
 test('legacy state gains an empty recurring-expense collection without losing data',()=>{const legacy=defaultState();delete legacy.recurringExpenses;legacy.transactions=[tx()];const normalized=validateState(legacy);assert.deepEqual(normalized.recurringExpenses,[]);assert.equal(normalized.transactions[0].id,'t1');});
 test('card recurring expense becomes a dated card purchase and card usage',()=>{const state=defaultState(),card={id:'c1',name:'신한',active:true,billingDay:20,cycleRule:{type:'previous-current',startDay:15,endDay:14}};state.cards=[card];state.recurringExpenses=[{id:'subscription',name:'구독',amount:12000,categoryId:'subscription',day:11,startMonth:'2026-09',paymentMethod:'card',cardId:'c1',active:true,generatedMonths:[]}];const due=recurringTransactionsDue(state,'2026-09-11','2026-09-11T00:00:00.000Z');assert.equal(due.length,1);assert.equal(due[0].date,'2026-09-11');assert.equal(due[0].paymentMethod,'card');assert.equal(due[0].cardId,'c1');assert.equal(cardCycleTotal(due,card,cardCycleForBillingMonth('2026-09',card)),12000);const usage=usageBreakdown(due,{month:'2026-09',cards:[card],categories:state.categories});assert.equal(usage.cardTotal,12000);assert.equal(usage.cashFixed,0);});
+test('October payment forecast includes future fixed expenses from current rules without posting a transaction',()=>{
+  const state=defaultState(),card={id:'c1',active:true,billingDay:20,cycleRule:{type:'previous-current',startDay:15,endDay:14}};
+  state.cards=[card];state.recurringExpenses=[{id:'subscription',name:'구독',amount:15000,categoryId:'subscription',day:10,startMonth:'2026-09',paymentMethod:'card',cardId:'c1',active:true,generatedMonths:['2026-09']}];
+  const before=structuredClone(state),rows=projectedCardTransactions(state,'2026-09-18'),forecast=cardPaymentForecast(rows,state.cards,'2026-09-18');
+  assert.equal(forecast.nextMonth,'2026-10');assert.equal(forecast.next[0].total,15000);
+  assert.deepEqual(cardCycleEntries(rows,card,forecast.next[0].cycle).map(entry=>[entry.effectiveDate,entry.transaction.projected]),[['2026-10-10',true]]);
+  assert.deepEqual(state,before);
+});
+test('October pending bill uses edited fixed amount and card once, keeping old ledger entries unchanged',()=>{
+  const state=defaultState(),card={id:'c1',active:true,billingDay:20,cycleRule:{type:'previous-current',startDay:15,endDay:14}};
+  state.cards=[card];
+  state.transactions=[tx({id:'old-fixed',date:'2026-09-16',amount:12000,merchant:'옛 구독',source:'recurring',sourceId:'recurring:subscription:2026-09',recurringExpenseId:'subscription',recurringMonth:'2026-09'}),tx({id:'manual',date:'2026-09-17',amount:3000})];
+  state.recurringExpenses=[{id:'subscription',name:'새 구독',amount:18000,categoryId:'subscription',day:16,startMonth:'2026-09',paymentMethod:'card',cardId:'c1',active:true,generatedMonths:['2026-09']}];
+  const before=structuredClone(state.transactions),rows=projectedCardTransactions(state,'2026-09-18'),forecast=cardPaymentForecast(rows,state.cards,'2026-09-18');
+  assert.equal(forecast.next[0].total,21000);
+  assert.equal(rows.filter(row=>row.recurringExpenseId==='subscription').length,1);
+  assert.equal(rows.find(row=>row.recurringExpenseId==='subscription').amount,18000);
+  assert.deepEqual(state.transactions,before);
+  state.recurringExpenses[0].paymentMethod='cash';state.recurringExpenses[0].cardId=null;
+  assert.equal(cardPaymentForecast(projectedCardTransactions(state,'2026-09-18'),state.cards,'2026-09-18').next[0].total,3000);
+});
+test('changing a generated cash fixed expense to card affects October estimate but not cash history',()=>{
+  const state=defaultState(),card={id:'c1',active:true,billingDay:20,cycleRule:{type:'previous-current',startDay:15,endDay:14}};
+  state.cards=[card];state.transactions=[tx({id:'cash-fixed',date:'2026-09-16',amount:9000,paymentMethod:'cash',cardId:null,source:'recurring',sourceId:'recurring:fixed:2026-09',recurringExpenseId:'fixed',recurringMonth:'2026-09'})];
+  state.recurringExpenses=[{id:'fixed',name:'고정비',amount:13000,categoryId:'housing',day:16,startMonth:'2026-09',paymentMethod:'card',cardId:'c1',active:true,generatedMonths:['2026-09']}];
+  const rows=projectedCardTransactions(state,'2026-09-18'),forecast=cardPaymentForecast(rows,state.cards,'2026-09-18');
+  assert.equal(forecast.next[0].total,13000);
+  assert.equal(state.transactions[0].paymentMethod,'cash');
+  assert.equal(rows.find(row=>row.recurringExpenseId==='fixed').projected,true);
+});
 test('legacy recurring expense without payment fields remains cash',()=>{const state=defaultState();state.recurringExpenses=[{id:'rent',name:'월세',amount:500000,categoryId:'housing',day:11,startMonth:'2026-09',active:true,generatedMonths:[]}];validateState(state);const [due]=recurringTransactionsDue(state,'2026-09-11');assert.equal(due.paymentMethod,'cash');assert.equal(due.cardId,null);});
 test('budget progress includes textual thresholds data',()=>{const s=defaultState();s.transactions=[tx({amount:85000})];s.budgets=[{id:'b',month:'2026-09',categoryId:'',amount:100000},{id:'bc',month:'2026-09',categoryId:'food',amount:70000}];const result=budgetProgress(s,'2026-09');assert.equal(result.remaining,15000);assert.equal(result.categories[0].remaining,-15000);});
 test('timezone date is stable for Seoul and New York near UTC midnight',()=>{const instant=new Date('2026-09-11T01:00:00Z');assert.equal(zonedDate(instant,'Asia/Seoul'),'2026-09-11');assert.equal(zonedDate(instant,'America/New_York'),'2026-09-10');});
