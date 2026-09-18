@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { fromAladin, parseAladinAuthors } from '../assets/js/api.js';
 import { ReadingRepository } from '../assets/js/repository.js';
 import { ConflictError } from '../assets/js/storage.js';
@@ -48,4 +49,17 @@ test('새 빈 노트는 저장하지 않고 실제 내용이 있으면 저장한
   assert.equal(repo.state.notes.length,1);assert.equal(noteHasContent(saved),true);
   await repo.saveNote({...saved,reflection:''},saved.rev);
   assert.equal(repo.state.notes.length,1);
+});
+
+test('책장의 읽은 책 추가에서 시작일을 완독일 앞에 받고 독서 이력에 보존한다',async()=>{
+  const view=readFileSync(new URL('../assets/js/views-books.js',import.meta.url),'utf8');
+  assert.match(view,/finished\?field\('읽기 시작일',pastStart\):null,finished\?field\('완독일',pastEnd\):null/);
+  assert.match(view,/startedAt:finished\?pastStart\.value:'',finishedAt:finished\?pastEnd\.value:''/);
+  const adapter=new MemoryAdapter(),repo=new ReadingRepository(adapter);await repo.init();
+  await repo.createBook({title:'이미 읽은 책'},{status:'finished',startedAt:'2026-08-01',finishedAt:'2026-08-12'});
+  assert.equal(repo.state.readings[0].startedAt,'2026-08-01');
+  assert.equal(adapter.value.readings[0].finishedAt,'2026-08-12');
+  const previous=clone(repo.state);
+  assert.throws(()=>repo.createBook({title:'날짜가 뒤바뀐 책'},{status:'finished',startedAt:'2026-08-13',finishedAt:'2026-08-12'}),/완독일은 시작일보다/);
+  assert.deepEqual(repo.state,previous);
 });
