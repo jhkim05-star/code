@@ -88,3 +88,10 @@ export function personalRecords(all) {
             }
     return [...best.values()].sort((a, b) => a.kind === b.kind ? (b.weight ?? b.seconds) - (a.weight ?? a.seconds) : a.kind === 'load' ? -1 : 1);
 }
+export function personalRecordSections(all, { loadLimit = 20 } = {}) {
+    const rows = personalRecords(all);
+    return {
+        loads: rows.filter(row => row.kind === 'load').slice(0, loadLimit),
+        durations: rows.filter(row => row.kind === 'duration'),
+    };
+}

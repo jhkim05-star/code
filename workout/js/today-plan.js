@@ -5,6 +5,29 @@ import { weekStartOf, parseYmd, ymd, addDays } from './util.js';
 
 export const workSetsOf = block => (block.sets || []).filter(set => !set.warmup);
 export const warmupSetsOf = block => (block.sets || []).filter(set => set.warmup);
+const REQUIRED_WEIGHT_BASES = new Set(['total', 'per_hand', 'stack', 'assistance']);
+
+export function initialTodayBlocks(storedDay, { fresh = false } = {}) {
+    return fresh ? [] : structuredClone(storedDay?.blocks || []);
+}
+export function hasValidWorkingWeight(exercise, value) {
+    if (!REQUIRED_WEIGHT_BASES.has(exercise?.loadBasis))
+        return true;
+    if (value == null || String(value).trim() === '')
+        return false;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0;
+}
+export function canBuildTodayExercise(exercise, value, { warmup = false } = {}) {
+    const hasValue = value != null && String(value).trim() !== '';
+    return hasValidWorkingWeight(exercise, value) && (!warmup || hasValue);
+}
+export function canStartTodayWorkout(blocks) {
+    return Array.isArray(blocks) && blocks.length > 0 && blocks.every(block => {
+        const work = workSetsOf(block);
+        return work.length > 0 && work.every(set => hasValidWorkingWeight(block, set.weight)) && (!warmupSetsOf(block).length || work.every(set => set.weight != null));
+    });
+}
 
 export function buildTodayWeekPlan(existing, date, blocks) {
     const start = ymd(weekStartOf(parseYmd(date)));

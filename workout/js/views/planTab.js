@@ -13,7 +13,7 @@ import { go } from '../app.js';
 export function renderPlanTab(root, params, opt = {}) {
     const page = params?.[0] || 'home';
     if (page === 'today')
-        return renderTodayWorkout(root);
+        return renderTodayWorkout(root, { fresh: params?.[1] === 'new' });
     if (page !== 'long-term')
         return renderPlanHome(root);
     let chosenWeek = ymd(weekStartOf());

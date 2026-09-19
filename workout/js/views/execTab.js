@@ -16,7 +16,7 @@ export function renderExec(root, [param]) { const weekStart = ymd(weekStartOf(pa
 function draw(root, weekStart) {
     const plan = getPlan(weekStart), pending = draft();
     const longTerm = plan && plan.source !== 'today';
-    mount(root, pageHead('운동실행', fmtWeekRange(weekStart), h('button.btn-sm', { 'aria-label': '지난주', onclick: () => go('/exec/' + ymd(addDays(parseYmd(weekStart), -7))) }, '‹'), h('button.btn-sm', { 'aria-label': '다음주', onclick: () => go('/exec/' + ymd(addDays(parseYmd(weekStart), 7))) }, '›')), pending ? h('.card', null, h('h3', null, '진행 중인 운동'), h('p.hint', null, pending.session.title), h('button.btn-block.btn-primary', { onclick: () => go('/run/' + (pending.session.plannedDate || pending.session.date)) }, '이어하기·기록 복구')) : null, longTerm ? planBody(root, weekStart, plan) : freeWeekBody(root, weekStart, plan));
+    mount(root, pageHead('운동실행', fmtWeekRange(weekStart), h('button.btn-sm.week-arrow', { 'aria-label': '지난주', onclick: () => go('/exec/' + ymd(addDays(parseYmd(weekStart), -7))) }, '‹'), h('button.btn-sm.week-arrow', { 'aria-label': '다음주', onclick: () => go('/exec/' + ymd(addDays(parseYmd(weekStart), 7))) }, '›')), pending ? h('.card', null, h('h3', null, '진행 중인 운동'), h('p.hint', null, pending.session.title), h('button.btn-block.btn-primary', { onclick: () => go('/run/' + (pending.session.plannedDate || pending.session.date)) }, '이어하기·기록 복구')) : null, longTerm ? planBody(root, weekStart, plan) : freeWeekBody(root, weekStart, plan));
 }
 function freeWeekBody(root, weekStart, savedPlan) {
     const start = parseYmd(weekStart), days = Array.from({ length: 7 }, (_, index) => {
@@ -36,7 +36,7 @@ function freeDayCard(day, report = freeDaySummary(day.date, sessions())) {
     const detail = report.records.length ? `${report.sets}본세트 · 총 ${fmtDuration(report.seconds)}` : '프로그램 없이 원하는 종목을 골라 운동해요.';
     return h('.day.free-day', { class: today ? 'today' : '' },
         h('div.day-head', null, h('.day-date', null, h('.d', null, d.getDate()), h('.w', null, DOW_KO[d.getDay()])), h('.day-title', null, h('.t', null, title), h('.m', null, detail)), report.records.length ? h('.day-badge.done', null, '기록됨') : today ? h('.day-badge', null, '오늘') : null),
-        today ? h('.day-actions', null, h('button.btn-block.btn-primary', { onclick: () => go('/plan/today') }, report.records.length ? '오늘 운동 추가 만들기' : '오늘 운동 만들기')) : report.records.length ? h('.day-actions', null, h('button.btn-block', { onclick: () => report.records.length === 1 ? go('/session/' + report.records[0].id) : go('/history') }, '기록 보기')) : null);
+        today ? h('.day-actions', null, h('button.btn-block.btn-primary', { onclick: () => go(report.records.length ? '/plan/today/new' : '/plan/today') }, report.records.length ? '오늘 운동 추가 만들기' : '오늘 운동 만들기')) : report.records.length ? h('.day-actions', null, h('button.btn-block', { onclick: () => report.records.length === 1 ? go('/session/' + report.records[0].id) : go('/history') }, '기록 보기')) : null);
 }
 function planBody(root, key, plan) {
     const report = analyzePlan(plan);
