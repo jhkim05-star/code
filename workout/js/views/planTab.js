@@ -7,8 +7,15 @@ import { generatePlanWithAi, contextFingerprint } from '../ai.js';
 import { pickExercise } from './exercisePicker.js';
 import { showPlanPreview } from './planPreview.js';
 import { pickMachines, machineNames } from './machinePicker.js';
+import { renderTodayWorkout } from './todayWorkout.js';
 import { weekStartOf, ymd, parseYmd, DOW_KO, fmtWeight, readWeightInput, finite } from '../util.js';
+import { go } from '../app.js';
 export function renderPlanTab(root, params, opt = {}) {
+    const page = params?.[0] || 'home';
+    if (page === 'today')
+        return renderTodayWorkout(root);
+    if (page !== 'long-term')
+        return renderPlanHome(root);
     let chosenWeek = ymd(weekStartOf());
     const recommendationContext = () => ({ custom: customExercises(), avoid: avoidExerciseIds() });
     const updateRecommended = mutate => {
@@ -20,7 +27,7 @@ export function renderPlanTab(root, params, opt = {}) {
     };
     function draw() {
         const s = settings();
-        mount(root, pageHead('운동계획', '목표량과 실제 기록을 기준으로 계획해요'), h('.card', null, h('h3', null, '빠른 시작'), h('p.hint', null, '요일 배치만 바꿉니다. 내 목표량과 기구 설정은 유지해요.'), h('.stack', null, ...PRESETS.map(p => h('button', { onclick: () => updateRecommended(next => { next.plan.week = structuredClone(p.week); }) }, p.label)))), weekCard(s), sessionCard(s), volumeCard(s), benchmarkCard(s), equipmentCard(s), avoidCard(), h('.card', null, h('h3', null, '계획 생성'), field('계획을 만들 주 (어느 날짜든 선택)', h('input', { type: 'date', value: chosenWeek, onchange: e => { chosenWeek = ymd(weekStartOf(parseYmd(e.target.value))); e.target.value = chosenWeek; } })), h('p.hint', null, '생성만으로 기존 계획을 덮어쓰지 않아요. 결과를 확인한 뒤 적용합니다.'), h('.btn-row', null, h('button.btn-primary', { onclick: () => {
+        mount(root, pageHead('장기 프로그램 만들기', '요일·부위·운동량을 정해 주간 계획을 만들어요', h('button.btn-sm', { onclick: () => go('/plan') }, '돌아가기')), h('.card', null, h('h3', null, '빠른 시작'), h('p.hint', null, '요일 배치만 바꿉니다. 내 목표량과 기구 설정은 유지해요.'), h('.stack', null, ...PRESETS.map(p => h('button', { onclick: () => updateRecommended(next => { next.plan.week = structuredClone(p.week); }) }, p.label)))), weekCard(s), sessionCard(s), volumeCard(s), benchmarkCard(s), equipmentCard(s), avoidCard(), h('.card', null, h('h3', null, '계획 생성'), field('계획을 만들 주 (어느 날짜든 선택)', h('input', { type: 'date', value: chosenWeek, onchange: e => { chosenWeek = ymd(weekStartOf(parseYmd(e.target.value))); e.target.value = chosenWeek; } })), h('p.hint', null, '생성만으로 기존 계획을 덮어쓰지 않아요. 결과를 확인한 뒤 적용합니다.'), h('.btn-row', null, h('button.btn-primary', { onclick: () => {
                 if (!Object.values(settings().plan.week).some(a => a.length))
                     throw new Error('요일별 부위를 먼저 선택해 주세요.');
                 const fingerprint = contextFingerprint();
@@ -92,6 +99,25 @@ export function renderPlanTab(root, params, opt = {}) {
         return h('.card', null, h('.card-head', null, h('h3', null, '피할 종목'), h('button.btn-sm', { onclick: () => pickExercise(null, ex => changeAvoid(ex.id), { equipmentOnly: false }) }, '추가')), ...avoidExerciseIds().map(id => h('.row', null, h('span.grow', null, findExercise(id, customExercises())?.name || id), h('button.btn-sm', { onclick: () => changeAvoid(id) }, '제외 해제'))), !avoidExerciseIds().length ? h('p.hint', null, '등록한 종목이 없어요. 자동·AI 생성 모두 이 목록을 지킵니다.') : null);
     }
     draw();
+}
+function renderPlanHome(root) {
+    const weekStart = ymd(weekStartOf()), current = getPlan(weekStart);
+    const longTerm = current && current.source !== 'today';
+    const trainingDays = longTerm ? current.days.filter(day => day.blocks.length).length : 0;
+    const exercises = longTerm ? current.days.reduce((sum, day) => sum + day.blocks.length, 0) : 0;
+    mount(root,
+        pageHead('운동계획', '장기 프로그램과 오늘 운동을 나눠 간단하게 만들어요'),
+        h('.card.plan-entry-card', null,
+            h('p.eyebrow', null, '내 프로그램'),
+            h('h2', null, longTerm ? '이번 주 프로그램' : '아직 만든 장기 프로그램이 없어요'),
+            h('p.hint', null, longTerm ? `${trainingDays}일 · ${exercises}종목이 저장돼 있어요. 세부 설정과 자동 계획은 안쪽에서 관리합니다.` : '요일별 반복 계획이 필요할 때만 만들면 됩니다. 없어도 자유운동을 바로 기록할 수 있어요.'),
+            longTerm ? h('button.btn-block', { onclick: () => go('/exec/' + weekStart) }, '이번 주 프로그램 보기') : null,
+            h('button.btn-block.btn-primary', { onclick: () => go('/plan/long-term') }, longTerm ? '장기 프로그램 설정·다시 만들기' : '장기 프로그램 만들기')),
+        h('.card.plan-entry-card.today-entry', null,
+            h('p.eyebrow', null, '오늘 운동'),
+            h('h2', null, '오늘의 운동 만들기'),
+            h('p.hint', null, '운동을 하나씩 고르고 본세트 무게와 세트 수만 정합니다. 휴식과 선택한 웜업은 자동으로 준비해요.'),
+            h('button.btn-block.btn-primary.btn-lg', { onclick: () => go('/plan/today') }, '오늘의 운동 만들기')));
 }
 function select(current, choices, onchange) { return h('select', { onchange: e => onchange(e.target.value) }, ...choices.map(([value, label]) => h('option', { value, selected: String(current) === String(value) }, label))); }
 function openAiSheet(weekStart, routeSignal) {

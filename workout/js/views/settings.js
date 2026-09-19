@@ -9,14 +9,42 @@ import { pickMachines, machineNames } from './machinePicker.js';
 import { VERSION } from '../config.js';
 import { parseBackup } from '../validation.js';
 import { mmss, download, pickFile, uid, finite, todayYmd, dayDistance, ymd } from '../util.js';
+let availableVersion = null;
+let updateReady = false;
 export function renderSettings(root, params, { signal } = {}) {
     let previewTimer = null, closed = false, checkController = null;
     const draw = () => {
         if (closed)
             return;
         const s = settings();
-        mount(root, pageHead('설정', `운동일지 ${VERSION}`), recoveryCard(), timingCard(s), countCard(s), voiceCard(s), aiCard(s), customCard(), dataCard(s), h('.card.flat', null, h('p.hint', null, '이 페이지의 버전은 캐시 이름이 아니라 실제 코드 버전이에요. 이전 버전으로 돌아갈 때는 수정 전 백업을 사용해 주세요.'), h('button.btn-block', { onclick: refreshApp }, '앱 파일 업데이트 확인')));
+        mount(root, pageHead('설정', `운동일지 ${VERSION}`), recoveryCard(), updateCard(), settingsGroup('운동 진행', '휴식·카운트·자동 진행', timingCard(s), countCard(s)), settingsGroup('소리', '음성·신호음·재생 확인', voiceCard(s)), settingsGroup('AI 계획', '프록시 연결과 제공자 선택', aiCard(s)), settingsGroup('운동 종목 관리', '내가 추가한 종목', customCard()), settingsGroup('데이터·고급 설정', '단위·백업·저장소·초기화', dataCard(s)));
     };
+    function updateCard() {
+        const status = h('p.hint', { 'aria-live': 'polite' }, updateReady && availableVersion ? `새 버전 ${availableVersion}을 적용할 준비가 됐어요.` : `현재 적용된 버전 ${VERSION}`);
+        const apply = h('button.btn-primary', { disabled: !updateReady, onclick: async () => {
+                await flush();
+                location.reload();
+            } }, '새 버전 적용');
+        return h('.card.update-card', null, h('h3', null, '앱 버전'), status, h('.btn-row', null,
+            h('button', { onclick: async event => {
+                    const button = event.currentTarget;
+                    button.disabled = true;
+                    status.textContent = '새 버전을 확인하고 있어요…';
+                    try {
+                        const result = await checkAppVersion();
+                        availableVersion = result.version;
+                        updateReady = result.available;
+                        apply.disabled = !updateReady;
+                        status.textContent = result.available ? `새 버전 ${result.version}을 찾았어요. 입력 중인 내용을 마친 뒤 적용해 주세요.` : `현재 ${VERSION}이 최신 버전이에요.`;
+                    }
+                    catch (error) {
+                        status.textContent = error.message;
+                    }
+                    finally {
+                        button.disabled = false;
+                    }
+                } }, '새 버전 확인'), apply), h('p.hint', null, '확인만으로 화면을 다시 열지 않습니다. 적용 버튼을 눌러야 새 앱 파일로 새로고침합니다. 운동 기록 저장소는 지우지 않아요.'));
+    }
     function recoveryCard() {
         const meta = metadata(), state = storageStatus();
         if (!meta.unitReviewRequired && !meta.legacyConflict && !state.readOnly)
@@ -121,6 +149,9 @@ export function renderSettings(root, params, { signal } = {}) {
     signal?.addEventListener('abort', () => { closed = true; checkController?.abort(); }, { once: true });
     return () => { closed = true; clearInterval(previewTimer); checkController?.abort(); stopSpeaking(); };
 }
+function settingsGroup(title, summary, ...content) {
+    return h('details.settings-group.card', null, h('summary', null, h('span', null, title), h('small', null, summary)), h('.settings-group-body', null, ...content));
+}
 function select(current, items, onchange) { return h('select', { onchange: e => onchange(e.target.value) }, ...items.map(([value, label]) => h('option', { value, selected: String(current) === String(value) }, label))); }
 async function doImport(redraw, isAlive) {
     const file = await pickFile();
@@ -174,12 +205,43 @@ function addCustomSheet(redraw) {
             } }, '종목 추가'));
     });
 }
-async function refreshApp() {
+export async function checkAppVersion() {
     if (!navigator.onLine)
-        return toast('오프라인에서는 저장된 앱 파일을 지우지 않아요.');
+        throw new Error('오프라인에서는 새 버전을 확인할 수 없어요. 저장된 앱 파일은 그대로 유지합니다.');
+    const response = await fetch(`./js/config.js?version-check=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok)
+        throw new Error('새 버전 정보를 불러오지 못했어요.');
+    const source = await response.text(), remote = source.match(/export const VERSION\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+    if (!remote)
+        throw new Error('새 버전 정보를 확인하지 못했어요.');
+    if (remote === VERSION)
+        return { available: false, version: remote };
     const reg = await navigator.serviceWorker?.getRegistration();
-    await reg?.update();
-    toast('업데이트를 확인했어요. 열린 입력 내용을 보존한 뒤 새로고침해 주세요.');
-    if (await confirmSheet({ title: '지금 앱을 새로고침할까요?', body: '기록 저장소는 지우지 않으며, 상대 앱 캐시도 건드리지 않아요.', confirmText: '새로고침' }))
-        location.reload();
+    if (reg) {
+        await reg.update();
+        await waitForServiceWorker(reg.installing || reg.waiting);
+    }
+    return { available: true, version: remote };
+}
+async function waitForServiceWorker(worker) {
+    if (!worker || worker.state === 'activated')
+        return;
+    if (worker.state === 'redundant')
+        throw new Error('새 앱 파일을 준비하지 못했어요. 잠시 뒤 다시 확인해 주세요.');
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error('새 앱 파일 준비가 늦어지고 있어요. 잠시 뒤 다시 확인해 주세요.')), 15000);
+        const onStateChange = () => {
+            if (worker.state === 'activated')
+                finish();
+            else if (worker.state === 'redundant')
+                finish(new Error('새 앱 파일을 준비하지 못했어요. 잠시 뒤 다시 확인해 주세요.'));
+        };
+        const finish = error => {
+            clearTimeout(timer);
+            worker.removeEventListener('statechange', onStateChange);
+            error ? reject(error) : resolve();
+        };
+        worker.addEventListener('statechange', onStateChange);
+        onStateChange();
+    });
 }
