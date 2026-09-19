@@ -35,7 +35,7 @@ function navIcon(name) {
     }
     return svg;
 }
-const routes = [[/^\/plan$/, renderPlanTab], [/^\/exec(?:\/(\d{4}-\d{2}-\d{2}))?$/, renderExec], [/^\/run\/(\d{4}-\d{2}-\d{2})$/, renderRun, true], [/^\/history$/, renderHistory], [/^\/session\/([\w-]+)$/, renderSessionDetail], [/^\/stats$/, renderStats], [/^\/settings$/, renderSettings]];
+const routes = [[/^\/plan(?:\/(long-term|today)(?:\/(new))?)?$/, renderPlanTab], [/^\/exec(?:\/(\d{4}-\d{2}-\d{2}))?$/, renderExec], [/^\/run\/(\d{4}-\d{2}-\d{2})$/, renderRun, true], [/^\/history$/, renderHistory], [/^\/session\/([\w-]+)$/, renderSessionDetail], [/^\/stats$/, renderStats], [/^\/settings$/, renderSettings]];
 let cleanup = null, controller = null, generation = 0;
 async function route() {
     const epoch = ++generation;

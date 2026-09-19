@@ -169,7 +169,10 @@ export function makeBlock(exercise, opt = {}) {
     const sets = opt.sets ?? ex.sets, reps = opt.reps ?? ex.reps;
     if (!Number.isInteger(sets) || sets < 1 || sets > 20 || !Number.isInteger(reps) || reps < 1 || reps > 600)
         throw new Error('종목 세트 수 또는 목표가 올바르지 않습니다.');
-    const recommendation = recommendWeight(ex, { ...opt, plan: p, targetReps: reps }), weight = recommendation?.weight ?? null;
+    const suggested = recommendWeight(ex, { ...opt, plan: p, targetReps: reps });
+    const manualWeight = Object.hasOwn(opt, 'weight');
+    const weight = manualWeight ? opt.weight : suggested?.weight ?? null;
+    const recommendation = manualWeight ? { source: 'manual', weight, requiresConfirmation: false, note: '오늘 운동에서 직접 정한 본세트 무게' } : suggested;
     const warm = (opt.warmup ?? p.warmup) && ex.warmupEligible ? warmupSets(weight, reps, ex.equip, { plan: p, patternPrepared: opt.preparedPatterns?.has(patternOf(ex)), warmupRest: s.warmupRest }) : [];
     return { id: uid('block'), exerciseId: ex.id, name: ex.name, group: ex.group, equip: ex.equip,
         rest: opt.rest ?? ex.rest, tempo: ex.measure === 'duration' ? 1 : (opt.tempo ?? ex.tempo ?? s.tempo),

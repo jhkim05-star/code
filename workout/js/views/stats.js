@@ -1,7 +1,7 @@
 import { h, mount, pageHead, empty } from '../ui.js';
 import { sessions, settings, metadata } from '../store.js';
-import { periodBuckets, periodStreak, personalRecords, totalTimedSeconds } from '../stats-model.js';
-import { GROUP_NAME, isAssistanceExercise } from '../exercises.js';
+import { periodBuckets, periodStreak, personalRecordSections, recentGroupWorkSets } from '../stats-model.js';
+import { GROUP_NAME } from '../exercises.js';
 import { comma, fmtWeight, displayWeight, todayYmd } from '../util.js';
 let mode = 'week';
 export function renderStats(root) { draw(root); }
@@ -17,28 +17,14 @@ function draw(root) {
     }
     const buckets = periodBuckets(all, mode), cur = buckets.at(-1), unit = settings().unit, maxActual = Math.max(0, ...buckets.map(b => b.volume)), scale = Math.max(1, maxActual);
     const readout = h('p.hint', { 'aria-live': 'polite' }, `표시 기간 최고 ${comma(displayWeight(maxActual, unit))}${unit} · 막대를 눌러 상세 확인`);
-    const since = buckets[buckets.length - (mode === 'week' ? 4 : 2)].start, totals = new Map();
-    let warmups = 0;
-    for (const s of all) {
-        if (s.date < since || s.date > todayYmd())
-            continue;
-        for (const e of s.entries) {
-            const row = totals.get(e.group) || { sets: 0, volume: 0 };
-            for (const st of e.sets) {
-                if (!st.done)
-                    continue;
-                if (st.warmup) {
-                    warmups++;
-                    continue;
-                }
-                row.sets++;
-                if (e.measure !== 'duration' && e.exerciseId !== 'plank' && !isAssistanceExercise(e))
-                    row.volume += (st.weight || 0) * (st.reps || 0);
-            }
-            totals.set(e.group, row);
-        }
-    }
+    const recent = recentGroupWorkSets(all), totals = recent.totals, warmups = recent.warmups;
     const rows = [...totals].filter(([, r]) => r.sets).sort((a, b) => b[1].sets - a[1].sets), maxSets = Math.max(1, ...rows.map(([, r]) => r.sets));
-    mount(root, pageHead('통계', '본세트·웜업·시간 운동을 구분해서 봐요'), h('.btn-row', null, h('button', { class: mode === 'week' ? 'btn-primary' : '', 'aria-pressed': mode === 'week', onclick: () => { mode = 'week'; draw(root); } }, '주간'), h('button', { class: mode === 'month' ? 'btn-primary' : '', 'aria-pressed': mode === 'month', onclick: () => { mode = 'month'; draw(root); } }, '월간')), h('.kpis', null, kpi(String(cur.count), mode === 'week' ? '이번 주 기록' : '이번 달 기록'), kpi(String(cur.sets), '본세트'), kpi(String(periodStreak(all, mode)), mode === 'week' ? '연속 주' : '연속 달')), h('.card', null, h('h3', null, `기록 볼륨 (${unit})`), h('p.hint', null, '입력 표기 중량 × 횟수의 참고 추이입니다. 보조중량은 낮을수록 부하가 커서 이 볼륨과 최고중량 계산에서는 제외합니다.'), h('.spark', null, ...buckets.map(b => h('button', { 'aria-label': `${b.label}: ${comma(displayWeight(b.volume, unit))}${unit}, ${b.sets}본세트`, onclick: () => readout.textContent = `${b.key} · ${b.count}회 · ${b.sets}본세트 · ${comma(displayWeight(b.volume, unit))}${unit}` }, h('i', { style: { height: `${Math.max(2, b.volume / scale * 100)}%`, opacity: b.volume ? 1 : .2 } })))), h('.spark-x', null, ...buckets.map((b, i) => h('span', null, i % 3 === 0 || i === buckets.length - 1 ? b.label : ''))), readout, h('details', null, h('summary', null, '숫자로 보기'), h('.table-wrap', null, h('table', null, h('thead', null, h('tr', null, h('th', null, '기간'), h('th', null, '기록'), h('th', null, '본세트'), h('th', null, '표기 볼륨'))), h('tbody', null, ...buckets.map(b => h('tr', null, h('td', null, b.key), h('td', null, b.count), h('td', null, b.sets), h('td', null, comma(displayWeight(b.volume, unit)))))))))), h('.card', null, h('h3', null, mode === 'week' ? '최근 4주 부위별 본세트' : '최근 2개월 부위별 본세트'), ...rows.map(([g, r]) => h('.bar', null, h('span', null, GROUP_NAME[g] || g), h('span.bar-track', null, h('i', { style: { width: `${r.sets / maxSets * 100}%` } })), h('span.bar-value', null, `${r.sets}세트`))), h('p.hint', null, `같은 기간 웜업 ${warmups}세트는 위 본세트에 합산하지 않았어요. 부위별 적정량을 자동 진단하는 그래프는 아닙니다.`)), h('.card', null, h('h3', null, '시간 운동'), h('p', null, `전체 본세트 유지 시간 ${Math.round(totalTimedSeconds(all) / 60)}분`), h('p.hint', null, '플랭크 같은 운동은 초로 기록하고 중량 볼륨과 섞지 않아요.')), h('.card', null, h('h3', null, '종목별 최고 기록'), h('p.hint', null, '웜업·보조중량 제외, 일반 기록 중량 우선입니다. 미확인 표시 값은 추천 근거로 사용하지 않아요.'), ...personalRecords(all).slice(0, 20).map(p => h('.row', { style: { padding: '12px 0', borderBottom: '1px solid var(--rule)' } }, h('span.grow', null, p.name), h('span.num', null, `${fmtWeight(p.weight, unit)} × ${p.reps}`), h('small', null, p.confirmed ? p.date.slice(5) : '미확인')))));
+    const records = personalRecordSections(all);
+    const recordRow = (record, value) => h('.row', { style: { padding: '12px 0', borderBottom: '1px solid var(--rule)' } }, h('span.grow', null, record.name), h('span.num', null, value), h('small', null, record.confirmed ? record.date.slice(5) : '미확인'));
+    mount(root, pageHead('통계', '최근 흐름과 종목별 최고 기록을 간단히 봐요'), h('.btn-row', null, h('button', { class: mode === 'week' ? 'btn-primary' : '', 'aria-pressed': mode === 'week', onclick: () => { mode = 'week'; draw(root); } }, '주간'), h('button', { class: mode === 'month' ? 'btn-primary' : '', 'aria-pressed': mode === 'month', onclick: () => { mode = 'month'; draw(root); } }, '월간')), h('.kpis', null, kpi(String(cur.count), mode === 'week' ? '이번 주 기록' : '이번 달 기록'), kpi(String(cur.sets), '본세트'), kpi(String(periodStreak(all, mode)), mode === 'week' ? '연속 주' : '연속 달')), h('.card', null, h('h3', null, `기록 볼륨 (${unit})`), h('p.hint', null, '중량 운동의 표기 중량 × 횟수 추이입니다. 보조중량과 시간 운동은 제외합니다.'), h('.spark', null, ...buckets.map(b => h('button', { 'aria-label': `${b.label}: ${comma(displayWeight(b.volume, unit))}${unit}, ${b.sets}본세트`, onclick: () => readout.textContent = `${b.key} · ${b.count}회 · ${b.sets}본세트 · ${comma(displayWeight(b.volume, unit))}${unit}` }, h('i', { style: { height: `${Math.max(2, b.volume / scale * 100)}%`, opacity: b.volume ? 1 : .2 } })))), h('.spark-x', null, ...buckets.map((b, i) => h('span', null, i % 3 === 0 || i === buckets.length - 1 ? b.label : ''))), readout, h('details', null, h('summary', null, '숫자로 보기'), h('.table-wrap', null, h('table', null, h('thead', null, h('tr', null, h('th', null, '기간'), h('th', null, '기록'), h('th', null, '본세트'), h('th', null, '표기 볼륨'))), h('tbody', null, ...buckets.map(b => h('tr', null, h('td', null, b.key), h('td', null, b.count), h('td', null, b.sets), h('td', null, comma(displayWeight(b.volume, unit)))))))))), h('.card', null, h('h3', null, '최근 7일 부위별 본세트'), rows.length ? rows.map(([g, r]) => h('.bar', null, h('span', null, GROUP_NAME[g] || g), h('span.bar-track', null, h('i', { style: { width: `${r.sets / maxSets * 100}%` } })), h('span.bar-value', null, `${r.sets}세트`))) : h('p.hint', null, '최근 7일 동안 기록한 중량·횟수 운동의 본세트가 없어요.'), h('p.hint', null, `오늘 포함 최근 7일 기준입니다. 웜업 ${warmups}세트와 시간 운동은 합산하지 않았어요.`)), h('.card', null, h('h3', null, '종목별 최고 기록'), h('p.hint', null, '중량 운동은 최고 무게×횟수, 시간 운동은 가장 오래 유지한 시간을 보여줘요. 웜업·보조중량은 제외합니다.'), records.loads.length ? h('h4', null, '중량 최고') : null, ...records.loads.map(p => recordRow(p, `${fmtWeight(p.weight, unit)} × ${p.reps}`)), records.durations.length ? h('h4', null, '시간 최고') : null, ...records.durations.map(p => recordRow(p, formatHoldTime(p.seconds)))));
 }
 const kpi = (v, k) => h('.kpi', null, h('.v', null, v), h('.k', null, k));
+function formatHoldTime(seconds) {
+    const value = Math.max(0, Math.round(seconds)), minutes = Math.floor(value / 60), rest = value % 60;
+    return minutes ? `${minutes}분${rest ? ` ${rest}초` : ''}` : `${rest}초`;
+}

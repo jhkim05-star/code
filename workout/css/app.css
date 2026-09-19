@@ -1,4 +1,4 @@
-/* Workout log 2.2: an always-dark, high-contrast navy performance system. */
+/* Workout log 2.3: a simpler dark, high-contrast navy performance system. */
 :root{color-scheme:dark;--paper:#070f1e;--paper-2:#0e1b30;--paper-3:#152842;--ink:#f3f7fd;--ink-2:#b6c4d9;--ink-3:#8fa2bc;--rule:#1b304c;--rule-2:#263c5a;--accent:#4ca9ff;--accent-2:#2f62d7;--danger:#ff5368;--good:#62d8a8;--warn:#ffc366;--perf-a:#45d4e8;--perf-b:#4c7dff;--perf-c:#ff6d62;--shadow:rgba(0,0,0,.34);--serif:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;--sans:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;--mono:ui-monospace,'SF Mono',Menlo,monospace;--safe-t:env(safe-area-inset-top,0px);--safe-b:env(safe-area-inset-bottom,0px);--tab-h:72px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}
 html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
@@ -72,3 +72,11 @@ input[type=date]{display:block;max-width:100%;-webkit-appearance:none;appearance
 .target-copy{margin-bottom:8px}.target-copy .lbl{margin:0}.target-copy .hint{margin:3px 0 0}.target-row>.btn-ghost{width:100%;margin-top:6px}
 
 @media(max-width:380px){.history-set-fields{grid-template-columns:1fr 1fr}.history-set-fields .btn-confirm-set{grid-column:2}.run-stop-actions{grid-template-columns:1fr}}
+
+/* Simple planning entry points and progressive disclosure for advanced settings. */
+.plan-entry-card h2{font-size:21px;margin:3px 0 8px}.plan-entry-card .btn-block+.btn-block{margin-top:8px}.today-entry{border-color:rgba(76,169,255,.45);background:linear-gradient(145deg,var(--paper-2),rgba(47,98,215,.16))}
+.today-workout-summary{position:sticky;top:0;z-index:4;margin:0 0 10px;padding:11px 14px;border:1px solid var(--rule-2);border-radius:10px;background:rgba(14,27,48,.96);color:var(--ink-2);font-size:13px;font-weight:700;backdrop-filter:blur(12px)}
+.today-exercise-card{padding:15px}.today-exercise-card .card-head{align-items:flex-start}.today-exercise-card .card-head p{margin:3px 0 0}.today-exercise-main{font-family:var(--mono);font-size:17px;font-weight:750}.free-week-intro .btn-row{margin-top:12px}.free-day .day-head{cursor:default}.free-day .day-actions{padding-top:9px;padding-bottom:9px}
+.settings-group{padding:0;overflow:hidden}.settings-group>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:66px;padding:15px 18px;color:var(--ink);font-size:16px;font-weight:750}.settings-group>summary::-webkit-details-marker{display:none}.settings-group>summary:after{content:'＋';color:var(--accent);font-size:20px;font-weight:500}.settings-group[open]>summary:after{content:'−'}.settings-group>summary small{margin-left:auto;text-align:right;font-weight:400;max-width:52%}.settings-group-body{padding:0 14px 14px;border-top:1px solid var(--rule)}.settings-group-body>.card{padding:14px 2px 2px;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}.settings-group-body>.card+.card{border-top:1px solid var(--rule);margin-top:10px}.update-card .btn-row{margin:12px 0 8px}
+.week-arrow{min-width:44px;min-height:44px;padding:8px 12px;font-size:24px;line-height:1}
+@media(max-width:380px){.settings-group>summary small{display:none}.today-exercise-main{font-size:15px}}
