@@ -56,7 +56,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html _site/
-          for app in reading workout budget; do
+          for app in reading workout budget haru-page; do
             if [ -d "$app" ]; then cp -R "$app" _site/; fi
           done
           if [ -d family-roguelike/dist ]; then
