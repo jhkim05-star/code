@@ -85,6 +85,7 @@ export function cardCycle(referenceDate,card){
 
 export const normalizeText=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'').replace(/[^0-9a-z가-힣]/g,'').trim();
 export const normalizeAmount=value=>Math.round(Math.abs(Number(String(value??'').replace(/[^0-9.-]/g,''))||0));
+export const formatAmountInput=value=>{const digits=String(value??'').replace(/\D/g,'').replace(/^0+(?=\d)/,'');return digits.replace(/\B(?=(\d{3})+(?!\d))/g,',');};
 export function transactionFingerprint(tx){
   return [String(tx.date||'').slice(0,10),normalizeAmount(tx.amount),normalizeText(tx.merchant),normalizeText(tx.cardId||tx.paymentMethod),tx.cancelled?'cancel':'approval'].join('|');
 }
