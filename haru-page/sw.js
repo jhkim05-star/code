@@ -1,5 +1,5 @@
 /* Versioned cache-first shell. Only this app's exact scope/prefix is owned. */
-const VERSION='1.0.0';
+const VERSION='1.1.0';
 const SCOPE=self.registration.scope;
 let h=2166136261;for(const c of SCOPE)h=Math.imul(h^c.charCodeAt(0),16777619)>>>0;
 const PREFIX=`haru-page-${h.toString(16)}-`,CACHE=PREFIX+VERSION;
