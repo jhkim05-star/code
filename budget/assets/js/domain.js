@@ -171,6 +171,10 @@ export function projectedCardTransactions(state,today){
   return [...transactions,...projected.values()];
 }
 export function monthBounds(month){const p=String(month).match(/^(\d{4})-(\d{2})$/);if(!p)throw new Error('월 형식이 올바르지 않아요.');return {from:`${month}-01`,to:isoDate(+p[1],+p[2],daysInMonth(+p[1],+p[2]))};}
+export function historyTransactions(transactions,{month,type='all'}={}){
+  const {from,to}=monthBounds(month);
+  return transactions.filter(tx=>tx.type!=='income'&&inRange(tx.date,from,to)&&(type==='all'||tx.type===type)).sort((a,b)=>`${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+}
 export function summarize(transactions,{month,categories=[]}={}){
   const {from,to}=monthBounds(month),rows=netTransactions(transactions,{from,to}),catMap=new Map(categories.map(c=>[c.id,c]));
   const out={expense:0,income:0,byCategory:{},byCard:{},byMerchant:{},fixed:0,variable:0};

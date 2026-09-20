@@ -1,4 +1,4 @@
-import{defaultState,duplicateCandidates,recurringTransactionsDue,uid,validateState,validateTransaction,zonedDate}from'./domain.js?v=1.6.4';
+import{defaultState,duplicateCandidates,recurringTransactionsDue,uid,validateState,validateTransaction,zonedDate}from'./domain.js?v=1.6.5';
 export class BudgetRepository{
   constructor(storage){this.storage=storage;this.state=null;this.warnings=[];}
   async init(){const loaded=await this.storage.load();if(loaded===null){const initial=defaultState();await this.storage.save(initial,0);this.state=initial;return this.state;}try{this.state=validateState(structuredClone(loaded));}catch(error){this.warnings.push(`저장된 데이터를 읽지 못했습니다. 자동 초기화하지 않았어요: ${error.message}`);throw error;}await this.materializeRecurringExpenses(zonedDate(new Date(),this.state.settings.timeZone));return this.state;}
