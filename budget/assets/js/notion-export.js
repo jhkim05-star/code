@@ -1,4 +1,4 @@
-import{duplicateCandidates,normalizeAmount,normalizeText,parseDate,uid}from'./domain.js?v=1.6.4';
+import{duplicateCandidates,normalizeAmount,normalizeText,parseDate,uid}from'./domain.js?v=1.6.5';
 
 const MAX_ZIP_ENTRIES=5000,MAX_CSV_BYTES=25*1024*1024,MAX_ZIP_BYTES=50*1024*1024;
 const MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};

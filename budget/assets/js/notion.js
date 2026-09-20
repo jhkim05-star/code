@@ -1,4 +1,4 @@
-import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js?v=1.6.4';
+import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js?v=1.6.5';
 const rich=value=>Array.isArray(value)?value.map(v=>v.plain_text||v.text?.content||'').join(''):'';
 export function notionValue(property){
   if(!property)return null;const type=property.type,value=property[type];
