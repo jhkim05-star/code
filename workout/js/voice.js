@@ -32,9 +32,21 @@ function audioContext() {
     }
     return context;
 }
+/** iOS Safari also uses 'interrupted' (calls, other apps) alongside the standard 'suspended'. */
+async function resumeIfNeeded(c) {
+    if (!c)
+        return false;
+    if (c.state === 'suspended' || c.state === 'interrupted') {
+        try {
+            await c.resume();
+        }
+        catch { /* checked by the caller via c.state below */ }
+    }
+    return c.state === 'running';
+}
 export function unlockAudio() {
     const c = audioContext();
-    if (c?.state === 'suspended')
+    if (c?.state === 'suspended' || c?.state === 'interrupted')
         c.resume().then(() => { unlocked = c.state === 'running'; }).catch(() => { });
     else
         unlocked = !!c;
@@ -99,11 +111,16 @@ async function clipBuffer(key) {
 }
 function useClips() { return hasClips() && (!settings().voiceURI || settings().voiceURI === CUSTOM_VOICE_ID); }
 async function playRecorded(key, epoch) {
+    const c = audioContext();
+    // Resume before fetch/decode: a suspended or interrupted context can otherwise
+    // sit idle through the whole download and never get a chance to recover.
+    await resumeIfNeeded(c);
     const buffer = await clipBuffer(key);
     if (!buffer || epoch !== generation)
         return false;
-    const c = audioContext();
-    if (c.state !== 'running')
+    // Re-check right before playback: decoding takes time, and mobile browsers can
+    // re-suspend the context (background return, other audio) while we waited.
+    if (!(await resumeIfNeeded(c)))
         throw new Error('audio locked');
     await new Promise(resolve => {
         if (epoch !== generation)
