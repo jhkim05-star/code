@@ -1,6 +1,8 @@
-const CACHE='budget-pwa-v13-comma-input';
-const VERSION='1.6.6';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json',`./assets/css/app.css?v=${VERSION}`,`./assets/js/app.js?v=${VERSION}`,`./assets/js/domain.js?v=${VERSION}`,`./assets/js/storage.js?v=${VERSION}`,`./assets/js/repository.js?v=${VERSION}`,`./assets/js/notion.js?v=${VERSION}`,`./assets/js/notion-export.js?v=${VERSION}`,`./assets/js/notifications.js?v=${VERSION}`,`./assets/js/platform.js?v=${VERSION}`,'./assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png'];
+const CACHE='budget-pwa-v14-cycle-summary';
+const VERSION='1.7.0';
+// Only changed modules get a new URL; unchanged dependencies keep their exact import URL.
+const BASE_VERSION='1.6.6';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json',`./assets/css/app.css?v=${BASE_VERSION}`,`./assets/css/cycle.css?v=${VERSION}`,`./assets/js/app.js?v=${VERSION}`,`./assets/js/cycles.js?v=${VERSION}`,`./assets/js/cycle-ui.js?v=${VERSION}`,`./assets/js/domain.js?v=${BASE_VERSION}`,`./assets/js/storage.js?v=${BASE_VERSION}`,`./assets/js/repository.js?v=${VERSION}`,`./assets/js/notion.js?v=${BASE_VERSION}`,`./assets/js/notion-export.js?v=${BASE_VERSION}`,`./assets/js/notifications.js?v=${BASE_VERSION}`,`./assets/js/platform.js?v=${BASE_VERSION}`,'./assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('budget-')&&key!==CACHE&&key!=='budget-share-inbox-v1').map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});
