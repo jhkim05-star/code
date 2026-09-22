@@ -1,4 +1,4 @@
-import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js?v=1.6.6';
+import{duplicateCandidates,normalizeAmount,normalizeText,uid}from'./domain.js?v=1.7.1';
 const rich=value=>Array.isArray(value)?value.map(v=>v.plain_text||v.text?.content||'').join(''):'';
 export function notionValue(property){
   if(!property)return null;const type=property.type,value=property[type];
@@ -14,8 +14,9 @@ export function mapNotionPage(page,mapping){
   const get=key=>notionValue(page.properties?.[mapping[key]]),rawType=String(get('type')||'지출').toLowerCase();
   if(/(수입|income)/.test(rawType))throw new Error('지원하지 않는 거래 유형이에요.');
   const type=/(이체|transfer)/.test(rawType)?'transfer':'expense',dateTime=String(get('date')||'').split('T');
-  const amount=normalizeAmount(get('amount')),date=dateTime[0],time=(dateTime[1]||'12:00').slice(0,5);
-  if(!date||!amount)throw new Error('날짜 또는 금액이 비어 있어요.');
+  const amountValue=get('amount'),amount=normalizeAmount(amountValue),date=dateTime[0],time=(dateTime[1]||'12:00').slice(0,5);
+  if(!date||amountValue===null||amountValue===undefined||String(amountValue).trim()==='')throw new Error('날짜 또는 금액이 비어 있어요.');
+  if(type!=='expense'&&amount===0)throw new Error('이체 금액은 0원보다 커야 해요.');
   return {id:uid('tx'),date,time,type,amount,merchant:String(get('merchant')||'가맹점 미입력'),categoryId:String(get('category')||'other'),paymentMethod:get('card')?'card':'other',cardId:null,cardAlias:String(get('card')||''),source:'notion',sourceId:`notion:${page.id}`,memo:String(get('memo')||''),installment:null,cancelled:false,linkedOriginal:null,createdAt:new Date().toISOString(),updatedAt:page.last_edited_time||new Date().toISOString()};
 }
 export async function queryAllNotion({proxyUrl,dataSourceId,clientToken,lastSync,fetcher=fetch}){
