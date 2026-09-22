@@ -1,5 +1,5 @@
 /** Product defaults, not individualized training prescriptions. Existing choices are migrated. */
-export const VERSION = '2.3.1-simple-planning';
+export const VERSION = '2.3.2-counter-audio-resume';
 export const GROUP_IDS = ['chest', 'back', 'delt_f', 'delt_sr', 'biceps', 'triceps', 'thighs', 'glutes', 'calves', 'core'];
 export const LEGACY_WEEKLY_TARGETS = Object.freeze({ chest: 8, back: 8, delt_f: 4, delt_sr: 6, biceps: 6, triceps: 6, thighs: 8, glutes: 6, calves: 6, core: 4 });
 export const DEFAULT_SETTINGS = {
