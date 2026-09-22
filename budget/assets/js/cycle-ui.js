@@ -1,6 +1,6 @@
 /** Small views for the billing-month page. No second store or automatic imports. */
-import {shiftMonths,zonedDate,validateState} from './domain.js?v=1.6.6';
-import {FIRST_MONTH,cashRuleForMonth,cashUsagePeriod,checkMonth,cycleSummary,validMonth,validateCycleExtras} from './cycles.js?v=1.7.0';
+import {shiftMonths,zonedDate,validateState} from './domain.js?v=1.7.1';
+import {FIRST_MONTH,cashRuleForMonth,cashUsagePeriod,checkMonth,cycleSummary,validMonth,validateCycleExtras} from './cycles.js?v=1.7.1';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const won=value=>`${Math.round(value||0).toLocaleString('ko-KR')}원`;
 const range=p=>p?`${p.start.replaceAll('-','. ')} ~ ${p.end.replaceAll('-','. ')}`:'기간 미설정';

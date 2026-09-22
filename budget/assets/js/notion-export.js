@@ -1,4 +1,4 @@
-import{duplicateCandidates,normalizeAmount,normalizeText,parseDate,uid}from'./domain.js?v=1.6.6';
+import{duplicateCandidates,normalizeAmount,normalizeText,parseDate,uid}from'./domain.js?v=1.7.1';
 
 const MAX_ZIP_ENTRIES=5000,MAX_CSV_BYTES=25*1024*1024,MAX_ZIP_BYTES=50*1024*1024;
 const MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
@@ -98,8 +98,8 @@ export function previewNotionExport(rows,{existing=[],cards=[],categories=[],fil
   for(const row of rows){
     try{
       const missing=required.filter(name=>!(name in row.values));if(missing.length)throw new Error(`필수 열이 없어요: ${missing.join(', ')}`);
-      const merchant=String(row.values['지출 내역']||'').trim(),date=parseNotionDate(row.values['날짜']),billingRaw=String(row.values['결제일']||'').trim(),billingDate=billingRaw?parseNotionDate(billingRaw):null,amount=normalizeAmount(row.values['금액']),categoryName=String(row.values['카테고리']||'기타').trim()||'기타',cardAlias=String(row.values['카드']||'').trim();
-      if(!merchant)throw new Error('지출 내역이 비어 있어요.');if(!date)throw new Error('날짜 형식이 올바르지 않아요.');if(billingRaw&&!billingDate)throw new Error('결제일 형식이 올바르지 않아요.');if(!amount)throw new Error('금액이 비어 있거나 0원이에요.');
+      const merchant=String(row.values['지출 내역']||'').trim(),date=parseNotionDate(row.values['날짜']),billingRaw=String(row.values['결제일']||'').trim(),billingDate=billingRaw?parseNotionDate(billingRaw):null,amountRaw=row.values['금액'],amount=normalizeAmount(amountRaw),categoryName=String(row.values['카테고리']||'기타').trim()||'기타',cardAlias=String(row.values['카드']||'').trim();
+      if(!merchant)throw new Error('지출 내역이 비어 있어요.');if(!date)throw new Error('날짜 형식이 올바르지 않아요.');if(billingRaw&&!billingDate)throw new Error('결제일 형식이 올바르지 않아요.');if(amountRaw===null||amountRaw===undefined||String(amountRaw).trim()==='')throw new Error('금액이 비어 있어요.');
       let category=categoryByName.get(normalizeText(categoryName));
       if(!category){category={id:categoryId(categoryName),name:categoryName,kind:'expense',fixed:categoryName==='고정비'};categoryByName.set(normalizeText(categoryName),category);createdCategories.push(category);}
       const signature=[date,billingDate||'',amount,merchant,categoryName,cardAlias,String(row.values['메모']||'')].join('|'),ordinal=(occurrences.get(signature)||0)+1;occurrences.set(signature,ordinal);

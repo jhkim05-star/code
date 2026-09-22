@@ -97,7 +97,8 @@ export function validateTransaction(input){
   const tx={...input};const errors=[];
   if(!tx.id)errors.push('id');if(!parseDate(tx.date))errors.push('date');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(tx.time||''))errors.push('time');
   if(tx.billingDate&&!parseDate(tx.billingDate))errors.push('billingDate');
-  if(!TYPES.includes(tx.type))errors.push('type');if(!Number.isFinite(Number(tx.amount))||Number(tx.amount)<=0)errors.push('amount');
+  const amountMissing=tx.amount===null||tx.amount===undefined||String(tx.amount).trim()==='',amount=Number(tx.amount);
+  if(!TYPES.includes(tx.type))errors.push('type');if(amountMissing||!Number.isFinite(amount)||amount<0||(tx.type!=='expense'&&amount===0))errors.push('amount');
   if(!SOURCES.includes(tx.source))errors.push('source');if(tx.cardId&&!tx.paymentMethod)tx.paymentMethod='card';
   if(tx.installment&&(!Number.isInteger(+tx.installment.months)||+tx.installment.months<1))errors.push('installment');
   if(errors.length)throw new Error(`거래 항목을 확인해 주세요: ${errors.join(', ')}`);return tx;

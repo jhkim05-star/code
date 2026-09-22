@@ -1,5 +1,5 @@
 /** Billing-month summaries. Pure functions; never infer a bank's real statement. */
-import {addDays,cardCycleEntries,cardCycleForBillingMonth,inRange,monthBounds,parseDate,shiftMonths,signedAmount,zonedDate} from './domain.js?v=1.6.6';
+import {addDays,cardCycleEntries,cardCycleForBillingMonth,inRange,monthBounds,parseDate,shiftMonths,signedAmount,zonedDate} from './domain.js?v=1.7.1';
 
 export const FIRST_MONTH='1900-01';
 export function validMonth(month){return typeof month==='string'&&/^\d{4}-(0[1-9]|1[0-2])$/.test(month)&&month>=FIRST_MONTH&&month<='2199-12';}
