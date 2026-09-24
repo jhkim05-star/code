@@ -18,3 +18,5 @@ test('history is month-scoped and exposes guarded edit and delete controls',asyn
 test('expense amount fields show thousands separators and save normalized numbers',async()=>{const app=await read('../assets/js/app.js');assert.match(app,/data-won-input/);assert.match(app,/function bindWonInputs/);assert.match(app,/formatAmountInput\(input\.value\)/);assert.ok((app.match(/amount:normalizeAmount\(fd\.get\('amount'\)\)/g)||[]).length>=3);});
 
 test('history search filters the selected month by merchant memo category card and amount',async()=>{const app=await read('../assets/js/app.js');assert.match(app,/id="history-search"/);assert.match(app,/historySearchText/);assert.match(app,/baseRows\.filter\(tx=>historySearchText\(tx,s\)\.includes\(query\)\)/);assert.match(app,/가맹점·메모·카테고리·금액 검색/);});
+
+test('history search waits for IME composition before rerendering',async()=>{const app=await read('../assets/js/app.js');assert.match(app,/oncompositionstart/);assert.match(app,/oncompositionend/);assert.match(app,/event\.isComposing/);assert.match(app,/if\(composing\|\|event\.isComposing\)return/);});
