@@ -56,11 +56,11 @@ test('precache contains every runtime module URL including unchanged dependencie
  const {default:vm}=await import('node:vm'),sw=await readFile(new URL('../sw.js',import.meta.url),'utf8'),context={self:{addEventListener(){}}};vm.runInNewContext(sw+';this.assets=ASSETS;',context);
  const assets=new Set(context.assets),seen=new Set();
  async function check(path){if(seen.has(path))return;seen.add(path);assert.ok(assets.has('./'+path),`missing precache ${path}`);const code=await readFile(new URL('../'+path.split('?')[0],import.meta.url),'utf8');for(const m of code.matchAll(/from\s*['"]\.\/([^'"]+)['"]/g))await check('assets/js/'+m[1]);}
- await check('assets/js/app.js?v=1.7.1');assert.ok(assets.has('./assets/css/cycle.css?v=1.7.1'));
+ await check('assets/js/app.js?v=1.7.2');assert.ok(assets.has('./assets/css/cycle.css?v=1.7.1'));
 });
 test('service-worker activation preserves other apps and the budget share inbox',async()=>{
  const {default:vm}=await import('node:vm'),handlers={},deleted=[],context={self:{addEventListener:(name,fn)=>handlers[name]=fn,clients:{claim:async()=>{}}},caches:{keys:async()=>['budget-pwa-v14-cycle-summary','budget-pwa-v15-zero-expense','budget-share-inbox-v1','bookshelf-reading-test','workout-log-test','haru-page-test'],delete:async key=>deleted.push(key)}};
- vm.runInNewContext(await readFile(new URL('../sw.js',import.meta.url),'utf8'),context);let pending;handlers.activate({waitUntil:p=>pending=p});await pending;assert.deepEqual(deleted,['budget-pwa-v14-cycle-summary']);
+ vm.runInNewContext(await readFile(new URL('../sw.js',import.meta.url),'utf8'),context);let pending;handlers.activate({waitUntil:p=>pending=p});await pending;assert.deepEqual(deleted,['budget-pwa-v14-cycle-summary','budget-pwa-v15-zero-expense']);
 });
 test('editing an earlier card period is not lost just because it matches the current rule',()=>{const old=card(),newValue={...old,cycleRule:{type:'previous-current',startDay:16,endDay:15}};const first=changedCard(old,newValue,'2026-09','2026-09'),earlier=changedCard(first,newValue,'2026-08','2026-09');assert.equal(cardUsagePeriod(earlier,'2026-08').start,'2026-07-16');assert.equal(cardUsagePeriod(earlier,'2026-07').start,'2026-06-11');});
 test('cash gaps are reported and unsupported cash rules cannot be silently reinterpreted',()=>{const s=fixture();s.settings.cashCycleHistory[0].rule.endDay=15;assert.ok(cycleSummary(s,'2026-09').warnings.some(w=>w.startsWith('현금·계좌')));assert.throws(()=>changedCashHistory({}, {type:'monthly-range',startDay:11,endDay:10,dueMonthOffset:1},'2026-09'));});
