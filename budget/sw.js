@@ -1,5 +1,5 @@
-const CACHE='budget-pwa-v15-zero-expense';
-const VERSION='1.7.1';
+const CACHE='budget-pwa-v16-history-search';
+const VERSION='1.7.2';
 // Only changed modules get a new URL; unchanged dependencies keep their exact import URL.
 const BASE_VERSION='1.7.1';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json',`./assets/css/app.css?v=${BASE_VERSION}`,`./assets/css/cycle.css?v=${VERSION}`,`./assets/js/app.js?v=${VERSION}`,`./assets/js/cycles.js?v=${VERSION}`,`./assets/js/cycle-ui.js?v=${VERSION}`,`./assets/js/domain.js?v=${BASE_VERSION}`,`./assets/js/storage.js?v=${BASE_VERSION}`,`./assets/js/repository.js?v=${VERSION}`,`./assets/js/notion.js?v=${BASE_VERSION}`,`./assets/js/notion-export.js?v=${BASE_VERSION}`,`./assets/js/notifications.js?v=${BASE_VERSION}`,`./assets/js/platform.js?v=${BASE_VERSION}`,'./assets/icons/icon.svg','./assets/icons/icon-180.png','./assets/icons/icon-192.png','./assets/icons/icon-512.png'];
