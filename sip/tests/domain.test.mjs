@@ -28,3 +28,5 @@ test('service worker does not cache authentication endpoints',async()=>{const co
 
 test('repeated import preserves an existing cover and label text',()=>{let s=putExperience(emptyState(),{title:'A',kind:'wine',cover:'data:image/png;base64,YQ==',labelText:'원래 라벨'},{date:'2026-09-20'});s=putExperience(s,{title:'A',kind:'wine'},{date:'2026-09-21'});assert.equal(s.bottles[0].cover,'data:image/png;base64,YQ==');assert.equal(s.bottles[0].labelText,'원래 라벨');});
 test('Google suggestions are isolated from the parent application',async()=>{const {suggestionsFrame}=await import('../assets/ui.js');const html=suggestionsFrame('<script>parent.localStorage.clear()</script>');assert.ok(html.includes('sandbox="allow-popups allow-popups-to-escape-sandbox"'));assert.ok(!html.includes('allow-scripts'));assert.ok(!html.includes('allow-same-origin'));assert.ok(html.includes('&lt;script&gt;'));});
+
+test('editor accepts string tags from a restored draft',async()=>{const {editor}=await import('../assets/ui.js');const html=editor({title:'A',kind:'wine'},{tags:'여행, 가족',photos:[]});assert.ok(html.includes('여행, 가족'));});
