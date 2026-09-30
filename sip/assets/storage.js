@@ -1,0 +1,15 @@
+import{emptyState,validateState}from'./domain.js';
+export class ConflictError extends Error{constructor(){super('다른 창에서 기록이 바뀌었어요. 작성 내용은 남겨두었습니다. 새로고침 후 다시 확인해 주세요.');this.name='ConflictError';}}
+export class JournalStore{
+  constructor(){this.db=null;this.opening=null;this.state=null;this.raw=null;this.readOnly=false;}
+  async open(){if(this.db)return this.db;if(this.opening)return this.opening;this.opening=new Promise((resolve,reject)=>{let req;try{req=indexedDB.open('sip-journal',1);}catch(e){reject(e);return;}let settled=false;const timer=setTimeout(()=>{settled=true;reject(new Error('저장소 열기가 지연되고 있어요. 다른 앱 창을 닫고 다시 열어 주세요.'));},5000);req.onupgradeneeded=()=>{for(const name of['kv','drafts'])if(!req.result.objectStoreNames.contains(name))req.result.createObjectStore(name);};req.onsuccess=()=>{clearTimeout(timer);if(settled){req.result.close();return;}this.db=req.result;const connection=this.db;connection.onversionchange=()=>{connection.close();if(this.db===connection)this.db=null;};connection.onclose=()=>{if(this.db===connection)this.db=null;};resolve(connection);};req.onerror=()=>{clearTimeout(timer);reject(req.error);};req.onblocked=()=>{};}).finally(()=>{this.opening=null;});return this.opening;}
+  async transaction(name,mode,fn){let tx;for(let i=0;i<2;i++){const db=await this.open();try{tx=db.transaction(name,mode);break;}catch(e){if(i===0&&e.name==='InvalidStateError'){try{db.close();}catch{}this.db=null;}else throw e;}}return new Promise((resolve,reject)=>{let result,customError;tx.oncomplete=()=>resolve(result);tx.onabort=tx.onerror=()=>reject(customError||tx.error||new Error('저장을 완료하지 못했어요. 입력은 그대로 남아 있어요.'));try{fn(tx.objectStore(name),v=>{result=v;},error=>{customError=error;tx.abort();});}catch(e){customError=e;try{tx.abort();}catch{reject(e);}}});}
+  get(name,key){return this.transaction(name,'readonly',(s,set)=>{const r=s.get(key);r.onsuccess=()=>set(r.result);});}
+  async init(){try{this.raw=await this.get('kv','state');this.state=this.raw===undefined?emptyState():validateState(this.raw);return this.state;}catch(e){this.readOnly=true;throw e;}}
+  async save(candidate,expected=this.state?.revision){if(this.readOnly)throw new Error('복구 확인 전에는 저장할 수 없어요.');const next=validateState(candidate);const value=await this.transaction('kv','readwrite',(s,set,abort)=>{const r=s.get('state');r.onsuccess=()=>{try{const prev=r.result===undefined?emptyState():validateState(r.result);if(prev.revision!==expected){abort(new ConflictError());return;}next.revision=prev.revision+1;s.put(prev,'previous');s.put(next,'state');set(next);}catch(e){abort(e);}};});this.state=value;return value;}
+  async reload(){const raw=await this.get('kv','state');this.state=raw===undefined?emptyState():validateState(raw);return this.state;}
+  async saveDraft(value){return this.transaction('drafts','readwrite',(s)=>s.put(value,'editor'));}
+  getDraft(){return this.get('drafts','editor');}
+  clearDraft(){return this.transaction('drafts','readwrite',s=>s.delete('editor'));}
+  async restorePrevious(){const prev=await this.get('kv','previous');if(!prev)throw new Error('이전 저장본이 없어요.');return this.save(prev);}
+}
