@@ -1,0 +1,82 @@
+name: Sip Release Preparation
+on:
+  push:
+    branches: [work/sip-journal-release]
+    paths: ['.github/workflows/sip-release-prep-temp.yml']
+permissions:
+  contents: write
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply scoped release corrections
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('sip')
+          def patch(file, old, new):
+              p=root/file
+              text=p.read_text()
+              if old not in text: raise RuntimeError('Missing anchor in '+file+': '+old[:60])
+              p.write_text(text.replace(old,new,1))
+          patch('assets/app.js','let sample=null,session=null,edit=null','let modalGeneration=0,pendingSaves=0,scanRevision=null;let sample=null,session=null,edit=null')
+          patch('assets/app.js','function open(title,html){lastFocus=document.activeElement;','function open(title,html){modalGeneration++;if(!sheet.open)lastFocus=document.activeElement;')
+          patch('assets/app.js','if(dirty)await saveDraftNow();pendingAI?.abort();',"if(dirty&&!await saveDraftNow()){toast('초안 저장 실패: 내용을 복사하거나 저장 후 닫아 주세요.');return false;}clearTimeout(draftTimer);modalGeneration++;pendingAI?.abort();")
+          patch('assets/app.js','lastFocus?.isConnected&&lastFocus.focus({preventScroll:true});','if(lastFocus?.isConnected)lastFocus.focus({preventScroll:true});else main.focus({preventScroll:true});')
+          patch('assets/app.js','async function persist(next,revision){if(view.demo){sample=validateState(next);sample.revision++;return;}await store.save(next,revision??store.state.revision);}','async function persist(next,revision){pendingSaves++;try{if(view.demo){sample=validateState(next);sample.revision++;return;}await store.save(next,revision??store.state.revision);}finally{pendingSaves--;}}')
+          patch('assets/app.js','if(view.demo||!edit)return;const data=collectEditor();if(!data)return;','if(view.demo||!edit)return true;const data=collectEditor();if(!data)return true;')
+          patch('assets/app.js','if(epoch!==draftEpoch)return;await store.saveDraft','if(epoch!==draftEpoch)return true;await store.saveDraft')
+          patch('assets/app.js',"textContent='초안을 이 기기에 저장했어요.';}).catch", "textContent='초안을 이 기기에 저장했어요.';return true;}).catch")
+          patch('assets/app.js',"textContent='초안 저장 실패 · 창을 닫지 말고 다시 저장해 주세요.';});return draftWrite;", "textContent='초안 저장 실패 · 창을 닫지 말고 다시 저장해 주세요.';return false;});return draftWrite;")
+          patch('assets/app.js','await draftWrite;if(!view.demo)await store.clearDraft();recoverDraft=null;dirty=false;',"await draftWrite;dirty=false;if(!view.demo)await store.clearDraft().catch(()=>toast('기록은 저장됐지만 초안 정리는 다시 확인해 주세요.'));recoverDraft=null;")
+          patch('assets/app.js','session=await getSession();if(!connected(state().settings.provider)){err.textContent=','const generation=modalGeneration;btn.disabled=true;session=await getSession();if(generation!==modalGeneration||!sheet.open)return;if(!connected(state().settings.provider)){btn.disabled=false;err.textContent=')
+          patch('assets/app.js','pendingAI=new AbortController();try{const data=','pendingAI=new AbortController();const controller=pendingAI;try{const data=')
+          patch('assets/app.js','signal:pendingAI.signal});scanResults=parseAiDraft(data);','signal:controller.signal});if(controller.signal.aborted||generation!==modalGeneration||!sheet.open)return;scanResults=parseAiDraft(data);')
+          patch('assets/app.js','function previewScan(){open(','function previewScan(){scanRevision=state().revision;open(')
+          patch('assets/app.js','await persist(next);if(!view.demo)await store.clearDraft();recoverDraft=null;scanResults=[];','await persist(next,scanRevision);if(!view.demo)await store.clearDraft().catch(()=>{});recoverDraft=null;scanResults=[];')
+          patch('assets/app.js',"if(dirty){e.preventDefault();e.returnValue='';}", "if(dirty||pendingSaves){e.preventDefault();e.returnValue='';}")
+          patch('assets/app.js',"recoverDraft=await store.getDraft();view.tab=location.hash.slice(1)||'collection';", "recoverDraft=await store.getDraft().catch(()=>{toast('초안을 읽지 못했지만 저장된 기록은 그대로예요.');return null;});view.tab=['collection','notes','search','insights','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'collection';")
+          patch('assets/domain.js','const aliases=',"const countryNames={일본:['일본','japan','日本'],독일:['독일','germany'],한국:['한국','korea','대한민국'],프랑스:['프랑스','france'],이탈리아:['이탈리아','italy'],스페인:['스페인','spain']};const aliases=")
+          patch('assets/domain.js',"for(const a of terms)q=q.split(a).join(' ');", "for(const a of countryNames[k]||[k])q=q.split(a).join(' ');")
+          patch('assets/domain.js',"t.visitCountry,t.city,t.venue,t.trip,t.note,t.tags.join(' ')", 't.visitCountry,t.city,t.venue,t.trip')
+          patch('index.html','rel="apple-touch-icon" href="assets/icon.svg"','rel="apple-touch-icon" href="assets/icon-180.png"')
+          p=root/'manifest.webmanifest';x=json.loads(p.read_text());x['icons']=[{'src':'assets/icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},{'src':'assets/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any maskable'}];p.write_text(json.dumps(x,ensure_ascii=False,indent=2)+'\n')
+          patch('sw.js',"'./assets/icon.svg'];", "'./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];")
+          PY
+      - name: Install browser tooling
+        working-directory: sip
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+          node tools/build-icons.mjs
+      - name: Syntax and unit regression
+        working-directory: sip
+        run: |
+          for f in assets/*.js server/*.mjs sw.js; do node --check "$f"; done
+          TZ=Asia/Seoul npm test
+          TZ=America/New_York npm test
+      - name: Browser and storage regression
+        working-directory: sip
+        run: node tests/browser.mjs
+      - name: Commit only tested journal files
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sip/assets sip/index.html sip/manifest.webmanifest sip/sw.js
+          git commit -m 'fix(sip): protect unfinished notes and finalize mobile release'
+          git push origin HEAD:work/sip-journal-release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sip-release-results
+          path: sip/test-results/
+          retention-days: 14
