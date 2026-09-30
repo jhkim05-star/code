@@ -1,0 +1,49 @@
+name: Sip Journal Tests
+on:
+  push:
+    branches: [work/sip-journal-v1]
+  pull_request:
+    paths: ['sip/**', '.github/workflows/sip-ci.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        working-directory: sip
+        run: npm run check
+      - name: Unit tests Seoul
+        working-directory: sip
+        run: TZ=Asia/Seoul npm test
+      - name: Unit tests New York
+        working-directory: sip
+        run: TZ=America/New_York npm test
+      - name: Install browser test dependencies
+        working-directory: sip
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Real browser regression
+        working-directory: sip
+        run: node tests/browser.mjs
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+      - name: Archive source
+        if: always()
+        run: git archive --format=zip --output=sip-source.zip HEAD sip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sip-validation
+          path: |
+            sip/test-results/
+            sip-source.zip
+          retention-days: 14

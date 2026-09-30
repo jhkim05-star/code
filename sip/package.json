@@ -1,0 +1,13 @@
+{
+  "name": "sip-journal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "잔의 기록 — 라벨보다 오래 남는 순간",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check assets/app.js && node --check assets/domain.js && node --check assets/storage.js && node --check server/index.mjs && node --check server/providers.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

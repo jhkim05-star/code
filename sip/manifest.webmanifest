@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "잔의 기록 · Sip Journal",
+  "short_name": "잔의 기록",
+  "description": "와인과 위스키, 그날의 기억을 남기는 개인 서재",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ed",
+  "theme_color": "#f6f4ed",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
