@@ -1,5 +1,5 @@
 const CACHE='sip-journal-v1.0.0';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json','./assets/style.css?v=1.0.0','./assets/app.js?v=1.0.0','./assets/domain.js','./assets/storage.js','./assets/ui.js','./assets/api.js','./assets/icon.svg'];
+const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json','./assets/style.css?v=1.0.0','./assets/app.js?v=1.0.0','./assets/domain.js','./assets/storage.js','./assets/ui.js','./assets/api.js','./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>{if(!self.registration.active)return self.skipWaiting();})));
 self.addEventListener('message',event=>{if(event.data?.type==='ACTIVATE')self.skipWaiting();});
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('sip-journal-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
