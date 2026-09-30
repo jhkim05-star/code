@@ -1,0 +1,53 @@
+name: Prepare family OpenAI
+on:
+  push:
+    branches: [work/sip-shared-openai]
+    paths: ['.github/workflows/sip-family-prepare-temp.yml', 'sip/tools/apply-family-client-temp.py']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply narrowly scoped client changes
+        run: python3 sip/tools/apply-family-client-temp.py
+      - name: Unit tests and syntax
+        working-directory: sip
+        run: |
+          npm run check
+          TZ=Asia/Seoul npm test
+          TZ=America/New_York npm test
+      - name: Browser dependencies
+        working-directory: sip
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Real local browser and mocked OpenAI regression
+        working-directory: sip
+        run: node tests/browser.mjs
+      - name: Commit tested client, remove one-time preparation
+        run: |
+          git restore sip/assets/icon-180.png sip/assets/icon-192.png sip/assets/icon-512.png
+          git diff --check
+          git add sip/assets/api.js sip/assets/app.js sip/assets/domain.js sip/assets/storage.js sip/assets/ui.js sip/index.html sip/package.json sip/sw.js sip/tests/browser.mjs sip/tests/domain.test.mjs sip/version.json
+          git rm sip/tools/apply-family-client-temp.py .github/workflows/sip-family-prepare-temp.yml
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat(sip): family approval UI with verified shared OpenAI flows'
+          git push origin HEAD:work/sip-shared-openai
+      - name: Archive current working source
+        if: always()
+        run: zip -qr sip-family-source.zip sip -x 'sip/node_modules/*' 'sip/test-results/*'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sip-family-validation
+          path: |
+            sip/test-results/
+            sip-family-source.zip
+          retention-days: 14
