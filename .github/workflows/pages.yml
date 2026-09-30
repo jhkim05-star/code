@@ -59,6 +59,11 @@ jobs:
           for app in reading workout budget haru-page; do
             if [ -d "$app" ]; then cp -R "$app" _site/; fi
           done
+          if [ -d sip ]; then
+            mkdir -p _site/sip
+            cp sip/index.html sip/manifest.webmanifest sip/sw.js sip/version.json sip/README.md _site/sip/
+            cp -R sip/assets _site/sip/assets
+          fi
           if [ -d family-roguelike/dist ]; then
             mkdir -p _site/family-roguelike
             cp -R family-roguelike/dist/. _site/family-roguelike/
