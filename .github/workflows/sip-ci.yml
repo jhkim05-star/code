@@ -1,9 +1,9 @@
 name: Sip Journal Tests
 on:
   push:
-    branches: [work/sip-journal-v1]
+    branches: [work/sip-journal-v1, work/sip-journal-release]
   pull_request:
-    paths: ['sip/**', '.github/workflows/sip-ci.yml']
+    paths: ['sip/**', '.github/workflows/sip-ci.yml', '.github/workflows/pages.yml']
 permissions:
   contents: read
 jobs:
@@ -19,7 +19,8 @@ jobs:
           node-version: '22'
       - name: Syntax
         working-directory: sip
-        run: npm run check
+        run: |
+          for f in assets/*.js server/*.mjs sw.js; do node --check "$f"; done
       - name: Unit tests Seoul
         working-directory: sip
         run: TZ=Asia/Seoul npm test
