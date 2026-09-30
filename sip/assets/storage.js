@@ -1,4 +1,4 @@
-import{emptyState,validateState}from'./domain.js';
+import{emptyState,validateState}from'./domain.js?v=1.1.0';
 export class ConflictError extends Error{constructor(){super('다른 창에서 기록이 바뀌었어요. 작성 내용은 남겨두었습니다. 새로고침 후 다시 확인해 주세요.');this.name='ConflictError';}}
 export class JournalStore{
   constructor(){this.db=null;this.opening=null;this.state=null;this.raw=null;this.readOnly=false;}

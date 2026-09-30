@@ -1,1 +1,5 @@
-{"version":"1.0.0","build":"sip-journal-v1","aiDeployment":"requires-server-configuration"}
+{
+  "version": "1.1.0",
+  "build": "sip-family-openai",
+  "aiDeployment": "requires-server-configuration"
+}
