@@ -1,0 +1,3 @@
+import{chromium}from'playwright';import{readFile}from'node:fs/promises';
+const svg=await readFile(new URL('../assets/icon.svg',import.meta.url),'utf8'),browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+try{for(const size of[180,192,512]){const page=await browser.newPage({viewport:{width:size,height:size},deviceScaleFactor:1});await page.setContent(`<style>html,body{margin:0}svg{display:block;width:100vw;height:100vh}</style>${svg}`);await page.screenshot({path:new URL(`../assets/icon-${size}.png`,import.meta.url).pathname});await page.close();}}finally{await browser.close();}

@@ -59,10 +59,13 @@ jobs:
           for app in reading workout budget haru-page; do
             if [ -d "$app" ]; then cp -R "$app" _site/; fi
           done
+          # 잔의 기록은 공개 파일만 배포합니다. 인증 서버·실행 데이터는 제외합니다.
           if [ -d sip ]; then
             mkdir -p _site/sip
             cp sip/index.html sip/manifest.webmanifest sip/sw.js sip/version.json sip/README.md _site/sip/
-            cp -R sip/assets _site/sip/assets
+            cp -R sip/assets _site/sip/
+            # 추적된 소스만 별도 내려받기용으로 제공합니다. 실제 키와 노트는 포함하지 않습니다.
+            git archive --format=zip --output=_site/sip/sip-source.zip HEAD sip
           fi
           if [ -d family-roguelike/dist ]; then
             mkdir -p _site/family-roguelike
@@ -81,3 +84,33 @@ jobs:
       - name: 배포
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: 잔의 기록 실제 배포 주소 확인
+        if: ${{ hashFiles('sip/version.json') != '' }}
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          from pathlib import Path
+          base=os.environ['PAGE_URL'].rstrip('/')+'/sip/'
+          expected=json.loads(Path('sip/version.json').read_text())
+          error=None
+          for attempt in range(18):
+              try:
+                  stamp='?verify='+str(int(time.time()))
+                  with urllib.request.urlopen(base+'version.json'+stamp, timeout=15) as r:
+                      actual=json.load(r)
+                  if actual!=expected: raise RuntimeError('배포 버전이 아직 일치하지 않습니다.')
+                  for name in ['index.html','assets/app.js','assets/domain.js','assets/icon-192.png','manifest.webmanifest','sw.js','sip-source.zip']:
+                      with urllib.request.urlopen(base+name+stamp, timeout=15) as r:
+                          if r.status!=200 or not r.read(32): raise RuntimeError(name+' 응답 오류')
+                  print('LIVE_URL='+base)
+                  print('LIVE_VERSION='+actual['version'])
+                  print('PUBLIC_FILES_OK=true; AI_SERVER_NOT_ACTIVATED=true')
+                  break
+              except Exception as exc:
+                  error=exc
+                  if attempt==17: raise
+                  time.sleep(5)
+          PY
