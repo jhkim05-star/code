@@ -16,31 +16,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply guarded journal-only fixes
+      - name: Guarded photo and draft fixes
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import json
           root=Path('sip')
-          def change(file, old, new):
-              p=root/file
-              s=p.read_text()
+          def change(file,old,new):
+              p=root/file;s=p.read_text()
               if old not in s: raise RuntimeError('Unexpected source: '+str(p))
               p.write_text(s.replace(old,new))
-          change('assets/domain.js', "webSummary:text(raw.webSummary,5000),sources:", "webSummary:text(raw.webSummary,5000),searchSuggestions:text(raw.searchSuggestions,20000),sources:")
-          change('assets/domain.js', "sources:[],webSummary:'',photos:[]", "sources:[],webSummary:'',searchSuggestions:'',photos:[]")
-          change('assets/domain.js', "if(found){next={...next,id:found.id,createdAt:found.createdAt,updatedAt:now};", "if(found){if(!existingTastingId&&next.id!==found.id){for(const k of ['cover','labelText','country','region','grape','cask'])if(!next[k])next[k]=found[k];}next={...next,id:found.id,createdAt:found.createdAt,updatedAt:now};")
-          change('assets/app.js', 'waitingWorker=null;', 'waitingWorker=null,preferenceWrite=Promise.resolve();')
-          change('assets/app.js', "open(id?'编辑这份记忆':'새로운 기억',UI.editor(edit.b,edit.t));$('#sheet-title').textContent=id?'기억 수정':'새로운 기억';", "open(id?'기억 수정':'새로운 기억',UI.editor(edit.b,edit.t));")
-          change('assets/app.js', "target.webSummary=result.summary||'';target.sources=result.sources||[];", "target.webSummary=result.summary||'';target.searchSuggestions=result.searchSuggestions||'';target.sources=result.sources||[];")
-          change('assets/app.js', "if(setting){const next=structuredClone(state());next.settings[setting.dataset.setting]=setting.dataset.value;await persist(next);render();return;}", "if(setting){const key=setting.dataset.setting,value=setting.dataset.value;preferenceWrite=preferenceWrite.catch(()=>{}).then(async()=>{const next=structuredClone(state());next.settings[key]=value;await persist(next);render();toast('설정을 저장했어요.');});await preferenceWrite;return;}")
-          change('assets/ui.js', "${button('출처와 함께 웹 평가 찾기','reviews'", "${t.searchSuggestions?suggestionsFrame(t.searchSuggestions):''}${button('출처와 함께 웹 평가 찾기','reviews'")
-          p=root/'assets/ui.js'
-          p.write_text(p.read_text()+'''\nexport function suggestionsFrame(html){const csp="default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https:; base-uri 'none'; form-action 'none'";const doc=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank"></head><body>${html}</body></html>`;return `<iframe title="Google 검색 제안" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" style="border:0;width:100%;min-height:120px" srcdoc="${esc(doc)}"></iframe>`;}\n''')
-          for key,value in [('accent','blue'),('background','dark'),('accent','red'),('background','cream')]:
-              old=f"await page.locator('[data-setting={key}][data-value={value}]').click();"
-              change('tests/browser.mjs',old,old+f"await page.waitForFunction(()=>document.body.dataset.{key}==='{value}');")
-          p=root/'tests/domain.test.mjs'
-          p.write_text(p.read_text()+'''\ntest('repeated import preserves an existing cover and label text',()=>{let s=putExperience(emptyState(),{title:'A',kind:'wine',cover:'data:image/png;base64,YQ==',labelText:'원래 라벨'},{date:'2026-09-20'});s=putExperience(s,{title:'A',kind:'wine'},{date:'2026-09-21'});assert.equal(s.bottles[0].cover,'data:image/png;base64,YQ==');assert.equal(s.bottles[0].labelText,'원래 라벨');});\ntest('Google suggestions are isolated from the parent application',async()=>{const {suggestionsFrame}=await import('../assets/ui.js');const html=suggestionsFrame('<script>parent.localStorage.clear()</script>');assert.ok(html.includes('sandbox="allow-popups allow-popups-to-escape-sandbox"'));assert.ok(!html.includes('allow-scripts'));assert.ok(!html.includes('allow-same-origin'));assert.ok(html.includes('&lt;script&gt;'));});\n''')
+          change('assets/ui.js',"(t.tags||[]).join(', ')","(Array.isArray(t.tags)?t.tags.join(', '):String(t.tags||''))")
+          change('index.html','rel="apple-touch-icon" href="assets/icon.svg"','rel="apple-touch-icon" href="assets/icon-180.png"')
+          p=root/'manifest.webmanifest';m=json.loads(p.read_text());m['icons']=[{'src':'assets/icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},{'src':'assets/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any maskable'}];p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+'\n')
+          change('sw.js',"'./assets/icon.svg'];","'./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];")
+          p=root/'tests/browser.mjs';s=p.read_text()
+          marker='try{\n await page.goto(base);'
+          assert marker in s
+          generate="""const svg=await readFile(new URL('../assets/icon.svg',import.meta.url),'utf8');
+          for(const size of [180,192,512]){const imagePage=await context.newPage();await imagePage.setViewportSize({width:size,height:size});await imagePage.setContent('<style>html,body{margin:0;padding:0;background:transparent}</style>'+svg.replace('width="512"',`width="${size}"`).replace('height="512"',`height="${size}"`));await imagePage.screenshot({path:new URL(`../assets/icon-${size}.png`,import.meta.url).pathname,omitBackground:true});await imagePage.close();}
+          try{
+           await page.goto(base);"""
+          s=s.replace(marker,generate)
+          marker="await p.locator('[name=rating]').fill('4.5');"
+          assert marker in s
+          s=s.replace(marker,marker+"await p.locator('[name=tags]').fill('여행, 가족');const picking=p.waitForEvent('filechooser');await p.locator('[data-act=editor-photo]').click();await (await picking).setFiles(new URL('../assets/icon-180.png',import.meta.url).pathname);await p.locator('.photo-strip img').waitFor();assert.equal(await p.locator('[name=tags]').inputValue(),'여행, 가족');")
+          s=s.replace("check('manual memory saves to real IndexedDB');","check('manual memory saves to real IndexedDB');check('photo attachment preserves tags and typed form values');")
+          s=s.replace("await page.locator('[name=note]').fill('저장하기 전 작성 중');","await page.locator('[name=note]').fill('저장하기 전 작성 중');await page.locator('[name=tags]').fill('초안, 여행');")
+          s=s.replace("check('draft is restored after interrupted editing');","assert.equal(await page.locator('[name=tags]').inputValue(),'초안, 여행');check('tagged draft is restored after interrupted editing');")
+          p.write_text(s)
+          p=root/'tests/domain.test.mjs';p.write_text(p.read_text()+'''\ntest('editor accepts string tags from a restored draft',async()=>{const {editor}=await import('../assets/ui.js');const html=editor({title:'A',kind:'wine'},{tags:'여행, 가족',photos:[]});assert.ok(html.includes('여행, 가족'));});\n''')
           PY
       - name: Syntax and unit regression
         working-directory: sip
@@ -53,14 +58,14 @@ jobs:
         run: |
           npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Real browser validation
+      - name: Real browser and PNG generation
         working-directory: sip
         run: node tests/browser.mjs
-      - name: Commit tested fixes on this branch only
+      - name: Commit tested journal fixes only
         run: |
           git diff --check
-          git add sip/assets/app.js sip/assets/domain.js sip/assets/ui.js sip/tests/browser.mjs sip/tests/domain.test.mjs
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(sip): preserve metadata and serialize settings; verify mobile flows'
+          git add sip/assets/ui.js sip/assets/icon-180.png sip/assets/icon-192.png sip/assets/icon-512.png sip/index.html sip/manifest.webmanifest sip/sw.js sip/tests/browser.mjs sip/tests/domain.test.mjs
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(sip): preserve tagged photo drafts and add install icons'
           git push origin HEAD:work/sip-journal-v1
       - name: Archive current source
         if: always()
