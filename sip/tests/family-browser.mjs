@@ -67,7 +67,7 @@ try {
   const cookies = await context.cookies(); const approved = cookies.find(c => c.name === 'sip_family_dev'); assert.ok(approved?.httpOnly && approved.sameSite === 'Strict');
   const stored = await page.evaluate(async () => {
     const raw = localStorage.length ? JSON.stringify(localStorage) : '';
-    const { JournalStore } = await import('./assets/storage.js?v=1.2.0'); const store = new JournalStore(); return raw + JSON.stringify(await store.init()) + JSON.stringify(await store.getDraft());
+    const { JournalStore } = await import('./assets/storage.js?v=1.2.1'); const store = new JournalStore(); return raw + JSON.stringify(await store.init()) + JSON.stringify(await store.getDraft());
   });
   assert.ok(!stored.includes(env.SIP_FAMILY_CODE)); assert.ok(!stored.includes(env.OPENAI_API_KEY)); pass('API key and family code are absent from client storage and record backups');
   await page.locator('[data-tab=settings]').click(); await page.locator('[data-act=connect]').click(); await page.locator('[data-act=logout]').click();
