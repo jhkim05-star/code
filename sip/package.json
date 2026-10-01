@@ -1,6 +1,6 @@
 {
   "name": "sip-journal",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "잔의 기록 — 라벨보다 오래 남는 순간",
