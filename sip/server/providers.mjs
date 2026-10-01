@@ -104,10 +104,10 @@ export async function reviews(input, env, fetcher = fetch) {
   return groundedSummary(result);
 }
 export async function checkConnection(env, fetcher = fetch) {
-  // Do not send a reasoning effort here. `none` is rejected by models such as
-  // gpt-5-mini, while omitting the option keeps this tiny health check model
-  // compatible without changing the analysis/review reasoning settings.
-  const result = await responses({ input: 'Reply with only OK.', max_output_tokens: 32 }, env, fetcher);
+  // gpt-5-mini rejects `none`, while its default reasoning can consume a
+  // 32-token health-check budget before producing text. Keep the check small
+  // but explicitly use its supported minimum effort and enough output room.
+  const result = await responses({ input: 'Reply with only OK.', max_output_tokens: 128, reasoning: { effort: 'minimal' } }, env, fetcher);
   if (!outputText(result).trim()) throw new AppError(502, 'EMPTY_RESPONSE', 'AI 연결 확인 응답이 비어 있습니다.');
   return { verified: true, checkedAt: new Date().toISOString() };
 }
