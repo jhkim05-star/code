@@ -1,4 +1,4 @@
-export const VERSION='1.1.0';
+export const VERSION='1.2.0';
 export const KINDS={wine:'와인',whisky:'위스키',other:'기타'};
 export const ACCENTS={red:'버건디',pink:'로제',blue:'블루',green:'세이지',yellow:'앰버'};
 export const BACKGROUNDS={cream:'베이지',white:'화이트',dark:'다크'};

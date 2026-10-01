@@ -30,6 +30,7 @@ try {
   await page.goto(base + '#settings');
   await page.locator('[data-act=connect]').waitFor();
   await page.locator('#family-status').filter({ hasText: '가족 이용 코드' }).waitFor();
+  await page.waitForLoadState('networkidle');
   assert.equal(await page.locator('[data-setting=provider]').count(), 0);
   assert.equal(calls.length, 0); pass('settings has no provider/account/key selection and makes no paid calls');
   await page.locator('[data-act=connect]').click();
@@ -60,13 +61,13 @@ try {
   assert.equal(await page.locator('[name=scanText]').inputValue(), '실패해도 남아야 하는 긴 기억'); assert.equal(calls.length, 4);
   await page.waitForTimeout(200); assert.equal(calls.length, 4); pass('quota errors keep typed notes, no fallback and no automatic retry');
   behavior = 'delayed'; await page.locator('#analyze-scan').click(); await page.waitForFunction(() => document.querySelector('#analyze-scan').disabled);
-  while (!release) await new Promise(r => setTimeout(r, 5)); await page.locator('#sheet-close').click(); release(); await page.waitForTimeout(200);
+  while (!release) await new Promise(r => setTimeout(r, 5)); await page.locator('#sheet-close').click(); await page.waitForFunction(() => !document.querySelector('#sheet').open); release(); await page.waitForTimeout(200);
   assert.equal(await page.locator('#scan-preview').count(), 0); assert.equal(await page.locator('#sheet').evaluate(el => el.open), false); pass('late AI response cannot reopen a closed scan or silently store records');
   behavior = 'success';
   const cookies = await context.cookies(); const approved = cookies.find(c => c.name === 'sip_family_dev'); assert.ok(approved?.httpOnly && approved.sameSite === 'Strict');
   const stored = await page.evaluate(async () => {
     const raw = localStorage.length ? JSON.stringify(localStorage) : '';
-    const { JournalStore } = await import('./assets/storage.js?v=1.1.0'); const store = new JournalStore(); return raw + JSON.stringify(await store.init()) + JSON.stringify(await store.getDraft());
+    const { JournalStore } = await import('./assets/storage.js?v=1.2.0'); const store = new JournalStore(); return raw + JSON.stringify(await store.init()) + JSON.stringify(await store.getDraft());
   });
   assert.ok(!stored.includes(env.SIP_FAMILY_CODE)); assert.ok(!stored.includes(env.OPENAI_API_KEY)); pass('API key and family code are absent from client storage and record backups');
   await page.locator('[data-tab=settings]').click(); await page.locator('[data-act=connect]').click(); await page.locator('[data-act=logout]').click();
