@@ -1,0 +1,56 @@
+/* Quiet journal surfaces layered over the established cream and burgundy theme. */
+#nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+.page-head{align-items:flex-start}
+.page-head .hint{max-width:38rem}
+.page-head>button{flex:none}
+.record-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--surface);border:1px solid var(--line);border-radius:21px;padding:20px 22px;box-shadow:var(--shadow)}
+.record-cta h2{font-family:Georgia,'Apple SD Gothic Neo',serif;font-weight:500;margin-bottom:3px}
+.record-cta .actions{flex:none}
+.record-cta .actions button{flex:none}
+.memory-row{display:flex;gap:16px;align-items:flex-start;min-width:0}
+.note-thumb{width:82px;height:93px;flex:none;object-fit:cover;border-radius:12px;background:var(--soft)}
+.memory-copy{min-width:0;flex:1}
+.memory-copy .row{align-items:baseline;gap:8px}
+.memory-copy .row .small{color:var(--accent);white-space:nowrap}
+.memory-copy h3{margin:4px 0 5px;overflow-wrap:anywhere}
+.memory-copy .excerpt{line-height:1.6;margin-bottom:5px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.memory-copy .hint{overflow-wrap:anywhere}
+.note-card{padding:17px 19px}
+.note-date{font-size:12px;letter-spacing:0}
+.bottle-card .hint{font-size:12px}
+.bottle-card .cover{margin-bottom:11px}
+.search-row button{width:48px;height:48px;padding:9px;display:grid;place-items:center}
+.search-filters{margin:9px 0 18px}
+.advanced-settings{margin-top:26px}
+.advanced-settings>.panel{box-shadow:none}
+.advanced-settings>.panel:last-child{border-color:var(--line);background:var(--bg)}
+.want-again{color:var(--accent);font-weight:700;font-size:14px}
+.want-again input{width:20px;height:20px;accent-color:var(--accent)}
+.taste-bottle{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;margin:7px 0}
+.taste-pattern{padding:9px 0;border-bottom:1px solid var(--line)}
+.taste-pattern .hint{float:right}
+.detail-title h2{word-break:keep-all;overflow-wrap:anywhere}
+@media(max-width:700px){
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:23px 14px}
+  .bottle-card strong{font-size:14px}
+  .record-cta{display:block;padding:18px}
+  .record-cta .actions{margin-top:13px}
+  .record-cta .actions button{min-width:0;white-space:normal}
+  .hero .actions{max-width:none}
+  .hero .actions button{white-space:normal}
+  .note-card{padding:16px}
+  .note-thumb{width:68px;height:80px}
+  .memory-row{gap:12px}
+  .page-head{gap:8px}
+  .page-head>button{white-space:normal}
+  .detail-title{min-width:0}
+  .detail-title>div:last-child{min-width:0;overflow-wrap:anywhere}
+  .detail-title h2{font-size:21px}
+}
+@media(max-width:360px){
+  .record-cta .actions{display:grid;grid-template-columns:1fr 1fr}
+  .record-cta .actions button{padding:10px 6px;font-size:12px}
+  .note-thumb{width:58px;height:70px}
+  .grid{gap:17px 11px}
+  .bottle-card strong{font-size:13px}
+}

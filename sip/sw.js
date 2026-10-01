@@ -1,5 +1,5 @@
-const CACHE='sip-journal-v1.2.1';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json','./assets/style.css?v=1.2.1','./assets/app.js?v=1.2.1','./assets/domain.js?v=1.2.1','./assets/storage.js?v=1.2.1','./assets/ui.js?v=1.2.1','./assets/api.js?v=1.2.1','./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];
+const CACHE='sip-journal-v1.3.0';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./version.json','./assets/style.css?v=1.3.0','./assets/journal.css?v=1.3.0','./assets/app.js?v=1.3.0','./assets/domain.js?v=1.3.0','./assets/storage.js?v=1.3.0','./assets/ui.js?v=1.3.0','./assets/api.js?v=1.3.0','./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>{if(!self.registration.active)return self.skipWaiting();})));
 self.addEventListener('message',event=>{if(event.data?.type==='ACTIVATE')self.skipWaiting();});
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('sip-journal-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
