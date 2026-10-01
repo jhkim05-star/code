@@ -85,6 +85,7 @@ test('check button executes a real server call, using only operator key and fixe
   let call; const h = await harness({}, async (url, opts) => { call = { url, opts }; return Response.json(completed('OK')); });
   try { const c = h.client(); await c.approve(); const r = await c.call('check', { requestId: randomUUID() }); assert.equal(r.data.verified, true); assert.equal(call.url, 'https://api.openai.com/v1/responses');
     const b = JSON.parse(call.opts.body); assert.equal(b.model, DEFAULT_MODEL); assert.equal(b.max_output_tokens, 32); assert.equal(b.store, false); assert.equal(b.stream, false); assert.ok(call.opts.headers.Authorization.endsWith(ENV.OPENAI_API_KEY));
+    assert.equal(b.reasoning, undefined);
     assert.ok((await c.call('session')).data.lastSuccessAt); assert.equal((await c.call('session')).data.usage.dailyAnalysis, 1);
   } finally { await h.stop(); }
 });
