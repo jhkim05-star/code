@@ -17,6 +17,7 @@ export interface Place {
   theme?: PlaceTheme; subcategory?: FoodCategory | ''; area?: string; localName?: string;
   recommendedMenu?: string; route?: string; mapQuery?: string; duration?: string;
   recommended?: boolean; reviewedAt?: string; archived?: boolean;
+  coverSource?: 'none' | 'catalog' | 'url' | 'upload'; coverImageUrl?: string; coverCredit?: string;
   // Older place cards may still have these fields until someone edits them.
   mapUrl?: string; officialUrl?: string; reservationNotes?: string;
   createdBy: string; createdAt: Timestamp; updatedAt: Timestamp;

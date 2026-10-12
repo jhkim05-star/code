@@ -49,6 +49,18 @@ assert.deepEqual((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().infoUr
 await updateDoc(doc(yeon.db,'places',placeDoc.id),{area:'Urayasu',updatedAt:serverTimestamp()});
 assert.equal((await getDoc(doc(jin.db,'places',placeDoc.id))).data().area,'Urayasu');
 await assert.rejects(updateDoc(doc(jin.db,'places',placeDoc.id),{infoUrls:[{label:'Bad',url:'javascript:alert(1)'}],updatedAt:serverTimestamp()}));
+await updateDoc(doc(yeon.db,'places',placeDoc.id),{coverSource:'url',coverImageUrl:'https://example.com/cover.jpg',coverCredit:'Example photo',updatedAt:serverTimestamp()});
+assert.equal((await getDoc(doc(jin.db,'places',placeDoc.id))).data().coverCredit,'Example photo');
+await assert.rejects(updateDoc(doc(yeon.db,'places',placeDoc.id),{coverImageUrl:'javascript:alert(1)',updatedAt:serverTimestamp()}));
+await updateDoc(doc(yeon.db,'places',placeDoc.id),{coverSource:'catalog',coverImageUrl:'',updatedAt:serverTimestamp()});
+const coverPath=`places/${placeDoc.id}/cover`;
+const coverBytes=new Uint8Array([255,216,255,224,12,34,56,78]);
+await assert.rejects(uploadBytes(ref(unknown.storage,coverPath),coverBytes,{contentType:'image/jpeg'}));
+await uploadBytes(ref(jin.storage,coverPath),coverBytes,{contentType:'image/jpeg'});
+await updateDoc(doc(jin.db,'places',placeDoc.id),{coverSource:'upload',coverImageUrl:'',updatedAt:serverTimestamp()});
+assert.deepEqual(new Uint8Array(await getBytes(ref(yeon.storage,coverPath))),coverBytes);
+await assert.rejects(getBytes(ref(unknown.storage,coverPath)));
+await assert.rejects(uploadBytes(ref(jin.storage,coverPath),coverBytes,{contentType:'text/plain'}));
 await assert.rejects(getDoc(doc(unknown.db,'places',placeDoc.id)));
 await addDoc(collection(soeun.db,`places/${placeDoc.id}/comments`),{authorUid:soeun.user.uid,text:'I would like to help plan',createdAt:serverTimestamp()});
 await setDoc(doc(jin.db,'tripInfo','summary'),{arrivalFlight:'TEST 100',coupleReturnFlight:'TEST 101',youngerReturnFlight:'',mainStay:'Needs booking check',extraStay:'',updatedAt:serverTimestamp()});

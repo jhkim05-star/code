@@ -28,7 +28,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasAll(['title','category','intro','visitNotes','toConfirm','createdBy','createdAt','updatedAt'])
         && (data.keys().hasAll(['additionalInfo','infoUrls']) || data.keys().hasAll(['mapUrl','officialUrl','reservationNotes']))
-        && data.keys().hasOnly(['title','category','intro','visitNotes','toConfirm','additionalInfo','infoUrls','mapUrl','officialUrl','reservationNotes','theme','subcategory','area','localName','recommendedMenu','route','mapQuery','duration','recommended','reviewedAt','archived','createdBy','createdAt','updatedAt'])
+        && data.keys().hasOnly(['title','category','intro','visitNotes','toConfirm','additionalInfo','infoUrls','mapUrl','officialUrl','reservationNotes','theme','subcategory','area','localName','recommendedMenu','route','mapQuery','duration','recommended','reviewedAt','archived','coverSource','coverImageUrl','coverCredit','createdBy','createdAt','updatedAt'])
         && smallText(data.title, 120) && data.title.size() > 0
         && smallText(data.category, 50) && smallText(data.intro, 2000)
         && smallText(data.visitNotes, 2000) && smallText(data.toConfirm, 2000)
@@ -48,6 +48,11 @@ service cloud.firestore {
         && (!('recommended' in data) || data.recommended is bool)
         && (!('reviewedAt' in data) || smallText(data.reviewedAt, 10))
         && (!('archived' in data) || data.archived is bool)
+        && (!('coverSource' in data) || data.coverSource in ['none','catalog','url','upload'])
+        && (!('coverImageUrl' in data) || (smallText(data.coverImageUrl, 1000) && (data.coverImageUrl == '' || data.coverImageUrl.matches('^https?://.+$'))))
+        && (!('coverCredit' in data) || smallText(data.coverCredit, 200))
+        && (data.get('coverSource', 'none') != 'url' || data.get('coverImageUrl', '') != '')
+        && (data.get('coverSource', 'none') == 'url' || data.get('coverImageUrl', '') == '')
         && data.createdBy is string && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }

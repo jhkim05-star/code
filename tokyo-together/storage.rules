@@ -19,5 +19,13 @@ service firebase.storage {
         && request.resource.contentType.matches('^image/(jpeg|png|webp|gif|avif|heic|heif)$');
       allow update, delete: if false;
     }
+    match /places/{placeId}/cover {
+      allow read: if member();
+      allow create, update: if member()
+        && firestore.exists(/databases/(default)/documents/places/$(placeId))
+        && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if false;
+    }
   }
 }

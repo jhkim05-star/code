@@ -1,0 +1,302 @@
+[
+  {
+    "id": "F01",
+    "asset": "/assets/place-covers/F01.jpg",
+    "commonsFile": "File:Cafe Kayaba 20211126.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Cafe_Kayaba_20211126.jpg",
+    "photographer": "先従隗始",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F02",
+    "asset": "/assets/place-covers/F02.jpg",
+    "commonsFile": "File:Cafe DEPOT Coffee & Pudding.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Cafe_DEPOT_Coffee_%26_Pudding.jpg",
+    "photographer": "電車(新幹線)でゴー！",
+    "license": "CC0",
+    "exact": false,
+    "context": "Another Tokyo cafe, not CIBI Tokyo Store."
+  },
+  {
+    "id": "F03",
+    "asset": "/assets/place-covers/F03.jpg",
+    "commonsFile": "File:Onigiri shop by jerone2 in Tsukiji Fish Market, Tokyo.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Onigiri_shop_by_jerone2_in_Tsukiji_Fish_Market,_Tokyo.jpg",
+    "photographer": "jerone2 from Onigiri shop Marutoyo in Tsukiji Fish Market, Chuo, Tokyo",
+    "license": "CC BY-SA 2.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F04",
+    "asset": "/assets/place-covers/F04.jpg",
+    "commonsFile": "File:Japanese set meal with tonkatsu.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Japanese_set_meal_with_tonkatsu.jpg",
+    "photographer": "Betsylavolette",
+    "license": "CC BY-SA 4.0",
+    "exact": false,
+    "context": "Tonkatsu meal, not the Yamabe Ueno restaurant."
+  },
+  {
+    "id": "F05",
+    "asset": "/assets/place-covers/F05.jpg",
+    "commonsFile": "File:Sushi Nemuro Hanamaru Tokei Dai (184517513).jpeg",
+    "source": "https://commons.wikimedia.org/wiki/File:Sushi_Nemuro_Hanamaru_Tokei_Dai_(184517513).jpeg",
+    "photographer": "Sorah Fukumori",
+    "license": "CC BY 3.0",
+    "exact": false,
+    "context": "Same restaurant chain, different Sapporo branch."
+  },
+  {
+    "id": "F06",
+    "asset": "/assets/place-covers/F06.jpg",
+    "commonsFile": "File:銀座篝拉麵 (49305069027).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:%E9%8A%80%E5%BA%A7%E7%AF%9D%E6%8B%89%E9%BA%B5_(49305069027).jpg",
+    "photographer": "Wei-Te Wong from Taipei City, Taiwan, Republic of China",
+    "license": "CC BY-SA 2.0",
+    "exact": false,
+    "context": "Ginza Kagari dish; the exact photographed branch is not confirmed."
+  },
+  {
+    "id": "F07",
+    "asset": "/assets/place-covers/F07.jpg",
+    "commonsFile": "File:Asakusa mugitoro head store 2014.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Asakusa_mugitoro_head_store_2014.jpg",
+    "photographer": "Kentin",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F08",
+    "asset": "/assets/place-covers/F08.jpg",
+    "commonsFile": "File:Hantei6.JPG",
+    "source": "https://commons.wikimedia.org/wiki/File:Hantei6.JPG",
+    "photographer": "江戸村のとくぞう (Edomura no Tokuzo)",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F09",
+    "asset": "/assets/place-covers/F09.jpg",
+    "commonsFile": "File:Asakusa Imahan Kokusai-dori main branch.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Asakusa_Imahan_Kokusai-dori_main_branch.jpg",
+    "photographer": "毒島みるく",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F10",
+    "asset": "/assets/place-covers/F10.jpg",
+    "commonsFile": "File:Monjayaki dish from Tsukishima, Tokyo, Japan; January 2013.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Monjayaki_dish_from_Tsukishima,_Tokyo,_Japan;_January_2013.jpg",
+    "photographer": "t-mizo from Japan",
+    "license": "CC BY 2.0",
+    "exact": false,
+    "context": "Monjayaki in Tsukishima, not Monja Kura."
+  },
+  {
+    "id": "F11",
+    "asset": "/assets/place-covers/F11.jpg",
+    "commonsFile": "File:Rainbow Bridge (28108827509).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Rainbow_Bridge_(28108827509).jpg",
+    "photographer": "mattvaux7",
+    "license": "CC BY 2.0",
+    "exact": false,
+    "context": "Odaiba area Rainbow Bridge, not the restaurant."
+  },
+  {
+    "id": "F12",
+    "asset": "/assets/place-covers/F12.jpg",
+    "commonsFile": "File:Kokyu Chocolate.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Kokyu_Chocolate.jpg",
+    "photographer": "Mr.ちゅらさん",
+    "license": "CC BY-SA 4.0",
+    "exact": false,
+    "context": "Chocolate, not the Dandelion Kuramae cafe."
+  },
+  {
+    "id": "F13",
+    "asset": "/assets/place-covers/F13.jpg",
+    "commonsFile": "File:Tokyo Parfait - lots of matcha with adzuki hidden on the bottom. (14226988754).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Tokyo_Parfait_-_lots_of_matcha_with_adzuki_hidden_on_the_bottom._(14226988754).jpg",
+    "photographer": "Arnold Gatilao from Oakland, CA, USA",
+    "license": "CC BY 2.0",
+    "exact": false,
+    "context": "Tokyo matcha dessert, not Nakamura Tokichi Ginza."
+  },
+  {
+    "id": "F14",
+    "asset": "/assets/place-covers/F14.jpg",
+    "commonsFile": "File:Shiseido Parlour 2019.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Shiseido_Parlour_2019.jpg",
+    "photographer": "毒島みるく",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "F15",
+    "asset": "/assets/place-covers/F15.jpg",
+    "commonsFile": "File:抹茶だけで7種類もあるジェラート屋さんでした。 (24406155972).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:%E6%8A%B9%E8%8C%B6%E3%81%A0%E3%81%91%E3%81%A77%E7%A8%AE%E9%A1%9E%E3%82%82%E3%81%82%E3%82%8B%E3%82%B8%E3%82%A7%E3%83%A9%E3%83%BC%E3%83%88%E5%B1%8B%E3%81%95%E3%82%93%E3%81%A7%E3%81%97%E3%81%9F%E3%80%82_(24406155972).jpg",
+    "photographer": "monoprixgourmet",
+    "license": "CC BY 2.0",
+    "exact": false,
+    "context": "Matcha gelato; the precise shop is not confirmed."
+  },
+  {
+    "id": "V01",
+    "asset": "/assets/place-covers/V01.jpg",
+    "commonsFile": "File:Sensoji 2023.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Sensoji_2023.jpg",
+    "photographer": "Akonnchiroll",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "V02",
+    "asset": "/assets/place-covers/V02.jpg",
+    "commonsFile": "File:Nezu-jinja 05.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Nezu-jinja_05.jpg",
+    "photographer": "Higa4",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "V03",
+    "asset": "/assets/place-covers/V03.jpg",
+    "commonsFile": "File:Tokyo National Museum, Honkan 2010.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Tokyo_National_Museum,_Honkan_2010.jpg",
+    "photographer": "Wiiii",
+    "license": "CC BY-SA 3.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "V04",
+    "asset": "/assets/place-covers/V04.jpg",
+    "commonsFile": "File:Tokio Hamarikyu-Garten-20091017-RM-142657.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Tokio_Hamarikyu-Garten-20091017-RM-142657.jpg",
+    "photographer": "Ermell",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "V05",
+    "asset": "/assets/place-covers/V05.jpg",
+    "commonsFile": "File:お台場海浜公園 - panoramio.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:%E3%81%8A%E5%8F%B0%E5%A0%B4%E6%B5%B7%E6%B5%9C%E5%85%AC%E5%9C%92_-_panoramio.jpg",
+    "photographer": "resource70",
+    "license": "CC BY 3.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "S01",
+    "asset": "/assets/place-covers/S01.jpg",
+    "commonsFile": "File:Lion statue at Ginza Mitsukoshi.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Lion_statue_at_Ginza_Mitsukoshi.jpg",
+    "photographer": "妖精書士",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "S02",
+    "asset": "/assets/place-covers/S02.jpg",
+    "commonsFile": "File:GINZA SIX Exterior view 2018.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:GINZA_SIX_Exterior_view_2018.jpg",
+    "photographer": "Wpcpey",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "S03",
+    "asset": "/assets/place-covers/S03.jpg",
+    "commonsFile": "File:Kappabashi-dori streetcorner (Kitchen town - southern end) Tokyo Japan.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Kappabashi-dori_streetcorner_(Kitchen_town_-_southern_end)_Tokyo_Japan.jpg",
+    "photographer": "Basile Morin",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "S04",
+    "asset": "/assets/place-covers/S04.jpg",
+    "commonsFile": "File:Japanese whisky.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Japanese_whisky.jpg",
+    "photographer": "Culture Japon",
+    "license": "CC BY-SA 4.0",
+    "exact": false,
+    "context": "Japanese whisky bottles, not Liquors Hasegawa."
+  },
+  {
+    "id": "S05",
+    "asset": "/assets/place-covers/S05.jpg",
+    "commonsFile": "File:Yanaka Ginza 2.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Yanaka_Ginza_2.jpg",
+    "photographer": "Christophe95",
+    "license": "CC BY-SA 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "E01",
+    "asset": "/assets/place-covers/E01.jpg",
+    "commonsFile": "File:Tokyo Disneyland 003.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Tokyo_Disneyland_003.jpg",
+    "photographer": "Emran Kassim",
+    "license": "CC BY 2.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "E02",
+    "asset": "/assets/place-covers/E02.jpg",
+    "commonsFile": "File:At teamLab Planets (48277793276).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:At_teamLab_Planets_(48277793276).jpg",
+    "photographer": "Big Ben in Japan",
+    "license": "CC BY-SA 2.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "E03",
+    "asset": "/assets/place-covers/E03.jpg",
+    "commonsFile": "File:\"Himiko\" Tokyo Cruise Boat @ Sumida River @ Tsukishima Island @ Tokyo (9493079356).jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:%22Himiko%22_Tokyo_Cruise_Boat_@_Sumida_River_@_Tsukishima_Island_@_Tokyo_(9493079356).jpg",
+    "photographer": "Guilhem Vellut from Annecy, France",
+    "license": "CC BY 2.0",
+    "exact": false,
+    "context": "A Tokyo Cruise boat on the Sumida River, not the Asakusa departure."
+  },
+  {
+    "id": "E04",
+    "asset": "/assets/place-covers/E04.jpg",
+    "commonsFile": "File:Tokyo Skytree Panorama.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Tokyo_Skytree_Panorama.jpg",
+    "photographer": "Manishprabhune",
+    "license": "CC0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  },
+  {
+    "id": "E05",
+    "asset": "/assets/place-covers/E05.jpg",
+    "commonsFile": "File:Yokohama Red brick warehouse Christmas market 2022 Dec 20 various.jpeg",
+    "source": "https://commons.wikimedia.org/wiki/File:Yokohama_Red_brick_warehouse_Christmas_market_2022_Dec_20_various.jpeg",
+    "photographer": "Nesnad",
+    "license": "CC BY 4.0",
+    "exact": true,
+    "context": "The photographed place or activity matches the catalog entry."
+  }
+]

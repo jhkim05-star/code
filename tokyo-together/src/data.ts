@@ -27,6 +27,7 @@ export interface PlaceFields {
   title: string; theme: PlaceTheme; subcategory: FoodCategory | ''; area: string; localName: string;
   intro: string; recommendedMenu: string; toConfirm: string; route: string; mapQuery: string;
   duration: string; recommended: boolean; additionalInfo: string; infoUrls: PlaceLink[]; visitNotes: string;
+  coverSource: 'none' | 'catalog' | 'url' | 'upload'; coverImageUrl: string; coverCredit: string;
 }
 export async function savePlace(db: Firestore, uid: string, fields: PlaceFields, placeId?: string): Promise<string> {
   const infoUrls = fields.infoUrls.map(item => ({ label: item.label.trim(), url: item.url.trim() }));
@@ -35,12 +36,19 @@ export async function savePlace(db: Firestore, uid: string, fields: PlaceFields,
     catch { return true; }
   })) throw new Error('Add up to 8 valid http:// or https:// URLs');
   const clean = { ...fields, title: fields.title.trim(), category: fields.theme, area: fields.area.trim(),
-    localName: fields.localName.trim(), mapQuery: fields.mapQuery.trim(), infoUrls };
+    localName: fields.localName.trim(), mapQuery: fields.mapQuery.trim(), infoUrls,
+    coverImageUrl: fields.coverImageUrl.trim(), coverCredit: fields.coverCredit.trim() };
   if (!clean.title) throw new Error('Place name is required');
   if (!clean.area) throw new Error('Area is required');
   if (!['food','sights','shopping','activities'].includes(clean.theme)) throw new Error('Choose a valid theme');
   if (clean.theme !== 'food' && clean.subcategory) throw new Error('Only food places have a meal category');
   if (clean.theme === 'food' && !['breakfast','lunch','dinner','cafe'].includes(clean.subcategory)) throw new Error('Choose a food category');
+  if (clean.coverImageUrl) {
+    try { if (!['http:', 'https:'].includes(new URL(clean.coverImageUrl).protocol)) throw new Error(); }
+    catch { throw new Error('Cover image must use an http or https URL'); }
+  }
+  if (clean.coverSource === 'url' && !clean.coverImageUrl) throw new Error('Add a cover image URL');
+  if (clean.coverSource !== 'url' && clean.coverImageUrl) throw new Error('Cover image URL does not match its source');
   if (placeId) {
     await updateDoc(doc(db, 'places', placeId), { ...clean, mapUrl: deleteField(), officialUrl: deleteField(),
       reservationNotes: deleteField(), updatedAt: serverTimestamp() });
@@ -49,6 +57,12 @@ export async function savePlace(db: Firestore, uid: string, fields: PlaceFields,
   const item = await addDoc(collection(db, 'places'), { ...clean, reviewedAt: '', archived: false,
     createdBy: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return item.id;
+}
+export async function uploadPlaceCover(storage: FirebaseStorage, placeId: string, image: Blob): Promise<void> {
+  await uploadBytes(ref(storage, `places/${placeId}/cover`), image, { contentType: 'image/jpeg' });
+}
+export async function getPlaceCoverBlob(storage: FirebaseStorage, placeId: string): Promise<Blob> {
+  return getBlob(ref(storage, `places/${placeId}/cover`));
 }
 export async function setPlaceArchived(db: Firestore, placeId: string, archived: boolean): Promise<void> {
   await updateDoc(doc(db, 'places', placeId), { archived, updatedAt: serverTimestamp() });

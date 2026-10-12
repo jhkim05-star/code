@@ -2,11 +2,13 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { doc, type Unsubscribe } from 'firebase/firestore';
 import { createServices } from './firebase';
 import {
-  addComment, createPastVisit, deleteComment, deleteReview, deleteOwnPhoto, downloadPhoto, getPhotoBlob, placeConnections, savePlace, saveProposal,
-  saveReview, saveTripInfo, setPlaceArchived, setProposalDisposition, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, watch, watchMember, watchTripInfo,
+  addComment, createPastVisit, deleteComment, deleteReview, deleteOwnPhoto, downloadPhoto, getPhotoBlob, getPlaceCoverBlob, placeConnections, savePlace, saveProposal,
+  saveReview, saveTripInfo, setPlaceArchived, setProposalDisposition, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, uploadPlaceCover, watch, watchMember, watchTripInfo,
   MAX_PLACE_LINKS, type PlaceFields, type ProposalFields, type TripInfoFields,
 } from './data';
 import { initialLocale, rememberLocale, t, type Locale } from './i18n';
+import { prepareCover } from './cover';
+import { catalogCovers } from './catalogCovers';
 import { dateLabel, FAMILY_ORDER, isTraveler, membersForDate, scheduledForDate, TRIP_DATES, visitsForPlace } from './model';
 import type { Comment, FoodCategory, Id, Member, Photo, Place, PlaceLink, PlaceTheme, Proposal, Review, Tab, TripInfo, Visit } from './types';
 import './style.css';
@@ -32,6 +34,8 @@ const agreementUnsubs = new Map<string,Unsubscribe>();
 const interestUnsubs = new Map<string,Unsubscribe>();
 const previewUrls = new Map<string,string>();
 const previewPending = new Set<string>();
+const coverUrls = new Map<string,{ version: number; url: string }>();
+const coverPending = new Set<string>();
 let memberUnsub: Unsubscribe | null = null;
 let memberWatchingUid: string | null = null;
 
@@ -86,6 +90,7 @@ function clearData(): void {
   agreementUnsubs.forEach(unsub => unsub()); agreementUnsubs.clear();
   interestUnsubs.forEach(unsub => unsub()); interestUnsubs.clear();
   previewUrls.forEach(url => URL.revokeObjectURL(url)); previewUrls.clear();
+  coverUrls.forEach(entry => URL.revokeObjectURL(entry.url)); coverUrls.clear(); coverPending.clear();
   state.members=[]; state.places=[]; state.proposals=[]; state.visits=[]; state.tripInfo=null; state.member=null;
   state.selectedPlaceId=null; state.selectedProposalId=null; state.selectedVisitId=null;
   state.agreements.clear(); state.interests.clear();
@@ -193,6 +198,13 @@ function homePlan(item: Id<Proposal>): string {
   return `<div class="agenda-item"><div class="agenda-dot ${item.status}"></div><div><strong>${esc(place(item.placeId)?.title || T('unknown'))}</strong><small>${esc(displayTime(item.time))} · ${who(item.participantUids)}</small></div>
     <button class="small-link" data-action="open-proposal" data-id="${attr(item.id)}">${tr('보기','View')} →</button></div>`;
 }
+function dayParticipantGroups(date: string): string {
+  const present=membersForDate(date,state.members);
+  return [['jinhyeok','yeonhwa'],['minseong','sophie']].map(group=>{
+    const pair=group.map(key=>present.find(member=>member.nameKey===key)).filter((member):member is Id<Member>=>Boolean(member));
+    return pair.length?`<span class="participant-pair">${pair.map(member=>esc(member.displayName)).join(' · ')}</span>`:'';
+  }).join('');
+}
 function home(): string {
   const currentPlans=activeProposals();
   const ideas = currentPlans.filter(item => item.status==='proposed').sort((a,b)=>a.date.localeCompare(b.date));
@@ -203,8 +215,7 @@ function home(): string {
     <div class="home-grid"><section class="card wide"><div class="section-title"><div><span class="kicker">01 / ITINERARY</span><h2>${T('homeConfirmed')}</h2></div></div>
       <div class="days">${TRIP_DATES.map(date => {
         const confirmed=scheduledForDate(currentPlans,date,'confirmed');
-        const participants=membersForDate(date,state.members);
-        return `<div class="day-row"><div class="day-date"><span>DEC</span><strong>${date.slice(-2)}</strong><small>${who(participants.map(x=>x.id))}</small></div><div class="day-content">${confirmed.length?confirmed.map(homePlan).join(''):`<p class="muted">${T('empty')}</p>`}
+        return `<div class="day-row"><div class="day-date"><span>DEC</span><strong>${date.slice(-2)}</strong><small class="participant-groups">${dayParticipantGroups(date)}</small></div><div class="day-content">${confirmed.length?confirmed.map(homePlan).join(''):`<p class="muted">${T('empty')}</p>`}
           ${date==='2026-12-21'?`<div class="travel-note">✈ ${tr('진혁·연화 귀국','Jinhyeok & Yeonhwa return')} · ${esc(state.tripInfo?.coupleReturnFlight || T('unknown'))}</div>`:''}
           ${date==='2026-12-22'?`<div class="travel-note">✈ ${tr('민성·소피 귀국','Minseong & Sophie return')} · ${esc(state.tripInfo?.youngerReturnFlight || T('unknown'))}</div>`:''}</div></div>`;
       }).join('')}</div></section>
@@ -273,11 +284,27 @@ function plans(): string {
     ${deleted.length?`<section class="plan-archive removed"><button class="archive-toggle" data-action="toggle-deleted" aria-expanded="${state.showDeleted}"><span>${tr('삭제된 제안 · 복구 가능','Removed ideas · recoverable')} <strong>${deleted.length}</strong></span><span aria-hidden="true">${state.showDeleted?'▴':'▾'}</span></button>
       ${state.showDeleted?`<div class="plan-grid">${deleted.map(planCard).join('')}</div>`:''}</section>`:''}`;
 }
+function coverMarkup(item: Id<Place>): string {
+  const preset=catalogCovers[item.id];
+  const remote=item.coverSource==='url'?safeUrl(item.coverImageUrl||''):null;
+  const uploaded=item.coverSource==='upload';
+  const catalog=(!item.coverSource || item.coverSource==='catalog') ? preset : undefined;
+  const version=item.updatedAt?.toMillis?.()??0;
+  const cached=uploaded && coverUrls.get(item.id)?.version===version?coverUrls.get(item.id)?.url:null;
+  const source=uploaded?cached:remote || catalog?.path;
+  const image=source || '/assets/tokyo-winter-hero.jpg';
+  const credit=uploaded?item.coverCredit||tr('가족 대표사진','Family cover photo'):
+    remote?item.coverCredit||tr('외부 이미지','External image'):
+    catalog?`${catalog.exact?'':tr('참고 사진 · ','Illustrative photo · ')}${catalog.credit}`:tr('대표사진 미등록','Cover photo not added');
+  const creditUrl=remote || catalog?.source;
+  return `<img class="cover-image" src="${attr(image)}" alt="" loading="lazy" referrerpolicy="no-referrer" ${uploaded?`data-cover-id="${attr(item.id)}"`:''} />
+    <span class="cover-credit" title="${attr(credit)}">${creditUrl?`<a href="${attr(creditUrl)}" target="_blank" rel="noopener noreferrer">${esc(credit)} ↗</a>`:esc(credit)}</span>`;
+}
 function placeCard(item: Id<Place>): string {
   const saved=Boolean(state.user && state.interests.get(item.id)?.has(state.user.uid));
   const count=visitsForPlace(state.visits,item.id).length;
   const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' · ');
-  return `<article class="card place-card"><div class="place-visual theme-${attr(item.theme || 'earlier')}"><span>${esc(kind)}</span><strong>${esc(item.title.slice(0,1))}</strong></div>
+  return `<article class="card place-card"><div class="place-visual theme-${attr(item.theme || 'earlier')}">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
     <div class="place-content"><div class="place-meta"><span>${esc(item.area || tr('지역 미입력','Area not added'))}</span><span>${saved?'♥':'♡'} ${state.interests.get(item.id)?.size||0}</span></div>
     <div class="place-badges">${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')}${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
     <h3>${esc(item.title)}</h3><p>${esc(item.intro || T('seedNote'))}</p><div class="card-actions"><button data-action="open-place" data-id="${attr(item.id)}">${tr('자세히 보기','Explore')} →</button><span class="muted">${T('album')} ${count}</span></div></div></article>`;
@@ -292,6 +319,7 @@ function placeDetail(): string {
   const map=mapLink(item.mapQuery||'');
   const archivedPlans=state.proposals.filter(plan=>plan.placeId===item.id && plan.archived);
   return `<section class="card detail"><button class="back-link" data-action="close-place">← ${T('places')}</button>
+    <div class="place-detail-cover">${coverMarkup(item)}</div>
     <div class="detail-heading"><div><span class="kicker">${esc(themeLabel(item.theme))}${item.subcategory?' / '+esc(mealLabel(item.subcategory)):''}</span><h2>${esc(item.title)}</h2>
       <p>${esc([item.localName,item.area].filter(Boolean).join(' · '))}</p>
       ${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')} ${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
@@ -379,6 +407,34 @@ function render(): void {
     ${state.busy?`<div class="busy-banner">${T('busy')}</div>`:''}${state.error?`<div class="toast error" role="alert">${esc(state.error)} <button data-action="dismiss-error">×</button></div>`:''}
     ${state.notice?`<div class="toast" role="status">${esc(state.notice)} <button data-action="dismiss-notice">×</button></div>`:''}`;
   void hydratePhotoPreviews();
+  void hydratePlaceCovers();
+}
+async function hydratePlaceCovers(): Promise<void> {
+  if (!services || state.tab!=='places') return;
+  for (const element of root.querySelectorAll<HTMLImageElement>('[data-cover-id]')) {
+    const id=element.dataset.coverId||'';
+    const item=place(id);
+    if (!item || item.coverSource!=='upload') continue;
+    const version=item.updatedAt?.toMillis?.()??0;
+    const cached=coverUrls.get(id);
+    if (cached?.version===version) { element.src=cached.url; continue; }
+    if (coverPending.has(id)) continue;
+    coverPending.add(id);
+    let changedDuringLoad=false;
+    try {
+      const blob=await getPlaceCoverBlob(services.storage,id);
+      const url=URL.createObjectURL(blob);
+      const latest=place(id);
+      if (!latest || latest.coverSource!=='upload' || (latest.updatedAt?.toMillis?.()??0)!==version) {
+        URL.revokeObjectURL(url); changedDuringLoad=true; continue;
+      }
+      const old=coverUrls.get(id);
+      if (old) URL.revokeObjectURL(old.url);
+      coverUrls.set(id,{version,url});
+      root.querySelectorAll<HTMLImageElement>('[data-cover-id]').forEach(image=>{if(image.dataset.coverId===id) image.src=url;});
+    } catch { /* The fallback remains visible if an upload cannot be loaded. */ }
+    finally { coverPending.delete(id); if (changedDuringLoad) queueMicrotask(()=>void hydratePlaceCovers()); }
+  }
 }
 async function hydratePhotoPreviews(): Promise<void> {
   if (!services || !state.selectedVisitId) return;
@@ -445,8 +501,17 @@ function placeModal(item?: Id<Place>): void {
   const links=item?placeLinks(item):[];
   const theme=item?.theme || (item?.category==='food'?'food':'sights');
   const subcategory=item?.subcategory || 'breakfast';
+  let persistedId=item?.id;
   modal(`<span class="kicker">PLACE</span><h2>${item?T('editPlace'):T('addPlace')}</h2>
     ${input(tr('장소 이름','Place name'),'title',item?.title||'','required maxlength="120"')}
+    <div class="cover-editor"><strong>${tr('장소 대표사진 (선택)','Place cover photo (optional)')}</strong>
+      <p class="muted">${tr('사진을 올리거나 이미지 URL을 입력하세요. 업로드 사진은 최대 25MB의 JPEG·PNG·WebP·HEIC를 선택할 수 있으며, 화면용 JPEG로 줄여 저장합니다. 방문 앨범의 원본 사진과는 별개입니다.','Upload a photo or add an image URL. JPEG, PNG, WebP and HEIC files up to 25 MB are converted to a smaller display JPEG. Visit album originals are separate.')}</p>
+      ${input(tr('이미지 URL (선택)','Image URL (optional)'),'coverImageUrl',item?.coverSource==='url'?item.coverImageUrl||'':'','type="url" inputmode="url" maxlength="1000" placeholder="https://"')}
+      <label>${tr('사진 업로드 (선택)','Upload photo (optional)')}<input name="coverFile" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" /></label>
+      ${input(tr('사진 출처·촬영자 (선택)','Photo credit (optional)'),'coverCredit',item?.coverCredit||'','maxlength="200"')}
+      ${item && item.coverSource!=='none' && (item.coverSource || catalogCovers[item.id])?`<label class="remove-cover"><input name="removeCover" type="checkbox" />${tr('현재 대표사진 해제','Remove current cover')}</label>`:''}
+      ${item?.id && catalogCovers[item.id] && item.coverSource && item.coverSource!=='catalog'?`<label class="remove-cover"><input name="useCatalogCover" type="checkbox" />${tr('기본 대표사진으로 되돌리기','Restore the default cover photo')}</label>`:''}
+      <small>${tr('URL 이미지는 외부 사이트에서 불러오며, 원본 사이트 사정에 따라 표시되지 않을 수 있습니다.','URL images load from another site and may stop displaying if that site changes.')}</small></div>
     ${input(tr('현지명 (선택)','Local name (optional)'),'localName',item?.localName||'','maxlength="120"')}
     <label>${tr('테마','Theme')}<select name="theme">
       ${(['food','sights','shopping','activities'] as PlaceTheme[]).map(value=>`<option value="${value}" ${theme===value?'selected':''}>${themeLabel(value)}</option>`).join('')}
@@ -478,14 +543,29 @@ function placeModal(item?: Id<Place>): void {
       infoUrls.push({label,url});
     }
     const selectedTheme=formText(form,'theme') as PlaceTheme;
+    const file=form.querySelector<HTMLInputElement>('[name="coverFile"]')?.files?.[0];
+    const imageUrl=formText(form,'coverImageUrl');
+    const removeCover=Boolean(form.querySelector<HTMLInputElement>('[name="removeCover"]')?.checked);
+    const useCatalogCover=Boolean(form.querySelector<HTMLInputElement>('[name="useCatalogCover"]')?.checked);
+    if (imageUrl && !file && !removeCover && !useCatalogCover && !safeUrl(imageUrl)) throw new Error(tr('이미지 URL은 http 또는 https 주소여야 합니다.','Image URL must use http or https.'));
+    const coverSource=file?'upload':useCatalogCover?'catalog':removeCover?'none':imageUrl?'url':item?.coverSource==='upload'?'upload':item?.id && catalogCovers[item.id]?'catalog':'none';
+    const coverCredit=formText(form,'coverCredit');
     const fields:PlaceFields={title:formText(form,'title'),theme:selectedTheme,
       subcategory:selectedTheme==='food'?formText(form,'subcategory') as FoodCategory:'',
       area:formText(form,'area'),localName:formText(form,'localName'),intro:formText(form,'intro'),
       recommendedMenu:formText(form,'recommendedMenu'),toConfirm:formText(form,'toConfirm'),route:formText(form,'route'),
       duration:formText(form,'duration'),mapQuery:formText(form,'mapQuery'),
       recommended:Boolean(form.querySelector<HTMLInputElement>('[name="recommended"]')?.checked),
-      additionalInfo:formText(form,'additionalInfo'),infoUrls,visitNotes:formText(form,'visitNotes')};
-    const id=await savePlace(services.db,state.user.uid,fields,item?.id); selectPlace(id);
+      additionalInfo:formText(form,'additionalInfo'),infoUrls,visitNotes:formText(form,'visitNotes'),
+      coverSource,coverImageUrl:coverSource==='url'?imageUrl:'',coverCredit};
+    const prepared=file?await prepareCover(file):null;
+    if (prepared) {
+      const interim:PlaceFields={...fields,coverSource:item?.coverSource || (item?.id && catalogCovers[item.id]?'catalog':'none'),coverImageUrl:item?.coverSource==='url'?item.coverImageUrl||'':'',coverCredit:item?.coverCredit||''};
+      persistedId=await savePlace(services.db,state.user.uid,interim,persistedId);
+      await uploadPlaceCover(services.storage,persistedId,prepared);
+    }
+    persistedId=await savePlace(services.db,state.user.uid,fields,persistedId);
+    selectPlace(persistedId);
   });
   const form=modalRoot.querySelector<HTMLFormElement>('form')!;
   const list=form.querySelector<HTMLDivElement>('[data-url-list]')!;
