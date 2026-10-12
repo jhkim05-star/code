@@ -5,16 +5,37 @@ service cloud.firestore {
       return request.auth != null && exists(/databases/$(database)/documents/members/$(request.auth.uid));
     }
     function smallText(value, max) { return value is string && value.size() <= max; }
+    function validPlaceLink(link) {
+      return link is map && link.keys().hasAll(['label','url']) && link.keys().hasOnly(['label','url'])
+        && smallText(link.label, 120) && smallText(link.url, 1000)
+        && link.url.matches('^https?://.+$');
+    }
+    function validPlaceLinks(links) {
+      return links is list && links.size() <= 8
+        && (links.size() < 1 || validPlaceLink(links[0]))
+        && (links.size() < 2 || validPlaceLink(links[1]))
+        && (links.size() < 3 || validPlaceLink(links[2]))
+        && (links.size() < 4 || validPlaceLink(links[3]))
+        && (links.size() < 5 || validPlaceLink(links[4]))
+        && (links.size() < 6 || validPlaceLink(links[5]))
+        && (links.size() < 7 || validPlaceLink(links[6]))
+        && (links.size() < 8 || validPlaceLink(links[7]));
+    }
     function validPlace() {
-      return request.resource.data.keys().hasAll(['title','category','intro','mapUrl','officialUrl','visitNotes','reservationNotes','toConfirm','createdBy','createdAt','updatedAt'])
-        && request.resource.data.keys().hasOnly(['title','category','intro','mapUrl','officialUrl','visitNotes','reservationNotes','toConfirm','createdBy','createdAt','updatedAt'])
-        && smallText(request.resource.data.title, 120) && request.resource.data.title.size() > 0
-        && smallText(request.resource.data.category, 50) && smallText(request.resource.data.intro, 2000)
-        && smallText(request.resource.data.mapUrl, 600) && smallText(request.resource.data.officialUrl, 600)
-        && smallText(request.resource.data.visitNotes, 2000) && smallText(request.resource.data.reservationNotes, 2000)
-        && smallText(request.resource.data.toConfirm, 2000)
-        && request.resource.data.createdBy is string && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+      let data = request.resource.data;
+      return data.keys().hasAll(['title','category','intro','visitNotes','toConfirm','createdBy','createdAt','updatedAt'])
+        && (data.keys().hasAll(['additionalInfo','infoUrls']) || data.keys().hasAll(['mapUrl','officialUrl','reservationNotes']))
+        && data.keys().hasOnly(['title','category','intro','visitNotes','toConfirm','additionalInfo','infoUrls','mapUrl','officialUrl','reservationNotes','createdBy','createdAt','updatedAt'])
+        && smallText(data.title, 120) && data.title.size() > 0
+        && smallText(data.category, 50) && smallText(data.intro, 2000)
+        && smallText(data.visitNotes, 2000) && smallText(data.toConfirm, 2000)
+        && (!('additionalInfo' in data) || smallText(data.additionalInfo, 4000))
+        && (!('infoUrls' in data) || validPlaceLinks(data.infoUrls))
+        && (!('mapUrl' in data) || smallText(data.mapUrl, 600))
+        && (!('officialUrl' in data) || smallText(data.officialUrl, 600))
+        && (!('reservationNotes' in data) || smallText(data.reservationNotes, 2000))
+        && data.createdBy is string && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
     function validComment() {
       return request.resource.data.keys().hasOnly(['authorUid','text','createdAt'])

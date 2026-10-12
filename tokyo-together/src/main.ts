@@ -4,11 +4,11 @@ import { createServices } from './firebase';
 import {
   addComment, createPastVisit, deleteOwnPhoto, downloadPhoto, getPhotoBlob, savePlace, saveProposal,
   saveReview, saveTripInfo, seedPlaces, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, watch, watchMember, watchTripInfo,
-  type PlaceFields, type ProposalFields, type TripInfoFields,
+  MAX_PLACE_LINKS, type PlaceFields, type ProposalFields, type TripInfoFields,
 } from './data';
 import { initialLocale, rememberLocale, t, type Locale } from './i18n';
 import { dateLabel, FAMILY_ORDER, membersForDate, scheduledForDate, TRIP_DATES, visitsForPlace } from './model';
-import type { Comment, Id, Member, Photo, Place, Proposal, Review, Tab, TripInfo, Visit } from './types';
+import type { Comment, Id, Member, Photo, Place, PlaceLink, Proposal, Review, Tab, TripInfo, Visit } from './types';
 import './style.css';
 
 const services = createServices();
@@ -42,9 +42,15 @@ function attr(value: unknown): string { return esc(value); }
 function safeUrl(value: string): string | null {
   try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) ? url.href : null; } catch { return null; }
 }
-function link(value: string, label: string): string {
-  const url = safeUrl(value);
-  return url ? `<a class="text-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>` : `<span class="muted">${T('noLink')}</span>`;
+function placeLinks(item: Place): PlaceLink[] {
+  const links = Array.isArray(item.infoUrls) ? [...item.infoUrls] : [];
+  if (item.mapUrl) links.push({ label: T('map'), url: item.mapUrl });
+  if (item.officialUrl) links.push({ label: T('official'), url: item.officialUrl });
+  return links.filter(link => safeUrl(link.url));
+}
+function additionalInfoText(item: Place): string {
+  const legacy = item.reservationNotes?.trim();
+  return [item.additionalInfo?.trim(), legacy ? `${T('reservation')}: ${legacy}` : ''].filter(Boolean).join('\n\n');
 }
 function name(uid: string): string { return state.members.find(item => item.id === uid)?.displayName || uid.slice(0,8); }
 function place(id: string): Id<Place> | undefined { return state.places.find(item => item.id === id); }
@@ -235,18 +241,22 @@ function placeDetail(): string {
   if (!item) return '';
   const saved=Boolean(state.user && state.interests.get(item.id)?.has(state.user.uid));
   const albums=visitsForPlace(state.visits,item.id);
+  const extra=additionalInfoText(item), links=placeLinks(item);
   return `<section class="card detail"><button class="back-link" data-action="close-place">← ${T('places')}</button>
     <div class="detail-heading"><div><span class="kicker">PLACE / ${esc(item.category || 'TOKYO')}</span><h2>${esc(item.title)}</h2></div><div class="inline-actions">
       <button data-action="interest" data-id="${attr(item.id)}">${saved?'♥ '+T('removeInterest'):'♡ '+T('interest')} · ${state.interests.get(item.id)?.size||0}</button>
       <button data-action="edit-place" data-id="${attr(item.id)}">${T('editPlace')}</button></div></div>
-    <div class="field-grid">${infoSection(T('intro'),item.intro)}${infoSection(T('notes'),item.visitNotes)}
-    <div class="detail-field"><h4>${T('map')}</h4>${link(item.mapUrl,T('map'))}</div><div class="detail-field"><h4>${T('official')}</h4>${link(item.officialUrl,T('official'))}</div>
-    ${infoSection(T('reservation'),item.reservationNotes)}${infoSection(T('toConfirm'),item.toConfirm)}</div>
+    <div class="field-grid">${infoSection(T('intro'),item.intro)}${infoSection(T('toConfirm'),item.toConfirm)}
+    <div class="detail-field extra-info"><h4>${T('additionalInfo')}</h4>
+      ${extra?`<p>${esc(extra)}</p>`:''}
+      ${links.length?`<ul class="place-links">${links.map(link=>{const url=safeUrl(link.url)!;return `<li><a class="text-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${esc(link.label || new URL(url).hostname)} ↗</a></li>`;}).join('')}</ul>`:''}
+      ${!extra&&!links.length?`<p class="muted">${T('empty')}</p>`:''}</div></div>
     <div class="detail-actions"><button class="primary" data-action="new-proposal" data-place-id="${attr(item.id)}">＋ ${T('fromPlace')}</button>
       <button data-action="new-past-visit" data-place-id="${attr(item.id)}">＋ ${T('addPastAlbum')}</button></div>
     <h3>${T('album')}</h3><div class="album-list">${albums.length?albums.map(item=>albumRow(item)).join(''):`<p class="muted">${T('noAlbum')}</p>`}</div>
     ${state.selectedVisitId && visit(state.selectedVisitId)?.placeId===item.id?albumDetail():''}
-    <h3>${T('comment')}</h3>${comments(state.placeComments,`places/${item.id}/comments`)}</section>`;
+    <h3>${T('comment')}</h3>${comments(state.placeComments,`places/${item.id}/comments`)}
+    <div class="visit-note"><h3>${T('notes')}</h3><p>${item.visitNotes?esc(item.visitNotes):`<span class="muted">${T('empty')}</span>`}</p></div></section>`;
 }
 function places(): string {
   const shown=state.placeFilter==='mine'?state.places.filter(item=>state.user && state.interests.get(item.id)?.has(state.user.uid)):state.places;
@@ -331,8 +341,13 @@ function modal(body: string, onSubmit: (form: HTMLFormElement) => Promise<void>)
 function input(label: string, field: string, value='', extra=''): string {
   return `<label>${esc(label)}<input name="${field}" value="${attr(value)}" ${extra} /></label>`;
 }
-function textarea(label: string, field: string, value=''): string { return `<label>${esc(label)}<textarea name="${field}" rows="3">${esc(value)}</textarea></label>`; }
+function textarea(label: string, field: string, value='', extra=''): string { return `<label>${esc(label)}<textarea name="${field}" rows="3" ${extra}>${esc(value)}</textarea></label>`; }
 function formText(form: HTMLFormElement, field: string): string { return String(new FormData(form).get(field) || '').trim(); }
+function placeLinkRow(link: PlaceLink = { label: '', url: '' }): string {
+  return `<div class="url-row">${input(T('urlTitle'),'urlLabel',link.label,'maxlength="120"')}
+    ${input(T('urlAddress'),'urlValue',link.url,'type="url" inputmode="url" maxlength="1000" placeholder="https://"')}
+    <button type="button" data-remove-url aria-label="${T('removeUrl')}">×</button></div>`;
+}
 function tripInfoModal(): void {
   const info=state.tripInfo;
   modal(`<span class="kicker">TRAVEL NOTES</span><h2>${T('bookings')}</h2>
@@ -348,19 +363,40 @@ function tripInfoModal(): void {
   });
 }
 function placeModal(item?: Id<Place>): void {
+  const links=item?placeLinks(item):[];
   modal(`<span class="kicker">PLACE</span><h2>${item?T('editPlace'):T('addPlace')}</h2>
     ${input(tr('장소 이름','Place name'),'title',item?.title||'','required maxlength="120"')}
     ${input(tr('분류','Category'),'category',item?.category||'','maxlength="50"')}
-    ${textarea(T('intro'),'intro',item?.intro||'')}
-    ${input(T('map'),'mapUrl',item?.mapUrl||'','type="url" maxlength="600"')}
-    ${input(T('official'),'officialUrl',item?.officialUrl||'','type="url" maxlength="600"')}
-    ${textarea(T('notes'),'visitNotes',item?.visitNotes||'')}
-    ${textarea(T('reservation'),'reservationNotes',item?.reservationNotes||'')}
-    ${textarea(T('toConfirm'),'toConfirm',item?.toConfirm||'')}`,async form=>{
+    ${textarea(T('intro'),'intro',item?.intro||'','maxlength="2000"')}
+    ${textarea(T('toConfirm'),'toConfirm',item?.toConfirm||'','maxlength="2000"')}
+    ${textarea(T('additionalInfo'),'additionalInfo',item?additionalInfoText(item):'','maxlength="4000"')}
+    <div class="url-editor"><span>${T('urlAddress')}</span><p class="muted">${T('urlHelp')}</p>
+      <div data-url-list>${links.map(placeLinkRow).join('')}</div>
+      <button type="button" class="outline" data-add-url>＋ ${T('addUrl')}</button></div>
+    ${textarea(T('notes'),'visitNotes',item?.visitNotes||'','maxlength="2000"')}`,async form=>{
     if (!services || !state.user) return;
-    const fields:PlaceFields={title:formText(form,'title'),category:formText(form,'category'),intro:formText(form,'intro'),mapUrl:formText(form,'mapUrl'),officialUrl:formText(form,'officialUrl'),visitNotes:formText(form,'visitNotes'),reservationNotes:formText(form,'reservationNotes'),toConfirm:formText(form,'toConfirm')};
+    const infoUrls:PlaceLink[]=[];
+    for (const row of form.querySelectorAll<HTMLElement>('.url-row')) {
+      const label=row.querySelector<HTMLInputElement>('[name="urlLabel"]')?.value.trim()||'';
+      const url=row.querySelector<HTMLInputElement>('[name="urlValue"]')?.value.trim()||'';
+      if (!label && !url) continue;
+      if (!url || !safeUrl(url)) throw new Error(T('invalidUrl'));
+      infoUrls.push({label,url});
+    }
+    const fields:PlaceFields={title:formText(form,'title'),category:formText(form,'category'),intro:formText(form,'intro'),
+      toConfirm:formText(form,'toConfirm'),additionalInfo:formText(form,'additionalInfo'),infoUrls,visitNotes:formText(form,'visitNotes')};
     const id=await savePlace(services.db,state.user.uid,fields,item?.id); selectPlace(id);
   });
+  const form=modalRoot.querySelector<HTMLFormElement>('form')!;
+  const list=form.querySelector<HTMLDivElement>('[data-url-list]')!;
+  const add=form.querySelector<HTMLButtonElement>('[data-add-url]')!;
+  const refreshAdd=():void=>{ add.disabled=list.querySelectorAll('.url-row').length>=MAX_PLACE_LINKS; };
+  add.addEventListener('click',()=>{ list.insertAdjacentHTML('beforeend',placeLinkRow());refreshAdd(); });
+  list.addEventListener('click',event=>{
+    const button=(event.target as Element).closest<HTMLButtonElement>('[data-remove-url]');
+    if (button) { button.closest('.url-row')?.remove();refreshAdd(); }
+  });
+  refreshAdd();
 }
 function proposalModal(preselectedPlaceId?: string, item?: Id<Proposal>): void {
   const date=item?.date||'2026-12-18';

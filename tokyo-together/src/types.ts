@@ -8,9 +8,12 @@ export interface TripInfo {
   arrivalFlight: string; coupleReturnFlight: string; youngerReturnFlight: string;
   mainStay: string; extraStay: string; updatedAt: Timestamp;
 }
+export interface PlaceLink { label: string; url: string }
 export interface Place {
-  title: string; category: string; intro: string; mapUrl: string; officialUrl: string;
-  visitNotes: string; reservationNotes: string; toConfirm: string;
+  title: string; category: string; intro: string; toConfirm: string;
+  additionalInfo?: string; infoUrls?: PlaceLink[]; visitNotes: string;
+  // Older place cards may still have these fields until someone edits them.
+  mapUrl?: string; officialUrl?: string; reservationNotes?: string;
   createdBy: string; createdAt: Timestamp; updatedAt: Timestamp;
 }
 export interface Proposal {

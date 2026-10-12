@@ -35,9 +35,13 @@ function client(user){
 const [jin,yeon,unknown]=[users[0],users[1],outsider].map(client);
 await Promise.all([jin,yeon,unknown].map(async actor=>signInWithEmailAndPassword(actor.auth,actor.user.email,'test-password-123')));
 const call=(actor,name,data)=>httpsCallable(actor.functions,name)(data).then(result=>result.data);
-const placeFields={title:'Tokyo Disneyland · 도쿄 디즈니랜드',category:'theme park',intro:'Family idea',mapUrl:'',officialUrl:'',visitNotes:'',reservationNotes:'',toConfirm:'',createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+const placeFields={title:'Tokyo Disneyland · 도쿄 디즈니랜드',category:'theme park',intro:'Family idea',
+  toConfirm:'Check booking',additionalInfo:'Family travel story',infoUrls:[{label:'Trip notes',url:'https://example.com/story'}],
+  visitNotes:'',createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 const placeDoc=await addDoc(collection(jin.db,'places'),placeFields);
 assert.equal((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().title,placeFields.title);
+assert.deepEqual((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().infoUrls,placeFields.infoUrls);
+await assert.rejects(updateDoc(doc(jin.db,'places',placeDoc.id),{infoUrls:[{label:'Bad',url:'javascript:alert(1)'}],updatedAt:serverTimestamp()}));
 await assert.rejects(getDoc(doc(unknown.db,'places',placeDoc.id)));
 await setDoc(doc(jin.db,'tripInfo','summary'),{arrivalFlight:'TEST 100',coupleReturnFlight:'TEST 101',youngerReturnFlight:'',mainStay:'Needs booking check',extraStay:'',updatedAt:serverTimestamp()});
 assert.equal((await getDoc(doc(yeon.db,'tripInfo','summary'))).data().arrivalFlight,'TEST 100');

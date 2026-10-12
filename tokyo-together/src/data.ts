@@ -1,11 +1,11 @@
 import {
-  addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, runTransaction,
+  addDoc, collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, runTransaction,
   serverTimestamp, setDoc, updateDoc, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { httpsCallable, type Functions } from 'firebase/functions';
 import { getBlob, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import type { Services } from './firebase';
-import type { Comment, Id, Member, Photo, Place, Proposal, Review, TripInfo, Visit } from './types';
+import type { Comment, Id, Member, Photo, Place, PlaceLink, Proposal, Review, TripInfo, Visit } from './types';
 import { isTripDate } from './model';
 
 export type Listener<T> = (items: Id<T>[]) => void;
@@ -22,11 +22,21 @@ export type TripInfoFields = Pick<TripInfo, 'arrivalFlight' | 'coupleReturnFligh
 export async function saveTripInfo(db: Firestore, fields: TripInfoFields): Promise<void> {
   await setDoc(doc(db, 'tripInfo', 'summary'), { ...fields, updatedAt: serverTimestamp() });
 }
-export interface PlaceFields { title: string; category: string; intro: string; mapUrl: string; officialUrl: string; visitNotes: string; reservationNotes: string; toConfirm: string }
+export const MAX_PLACE_LINKS = 8;
+export interface PlaceFields { title: string; category: string; intro: string; toConfirm: string; additionalInfo: string; infoUrls: PlaceLink[]; visitNotes: string }
 export async function savePlace(db: Firestore, uid: string, fields: PlaceFields, placeId?: string): Promise<string> {
-  const clean = { ...fields, title: fields.title.trim(), category: fields.category.trim() };
+  const infoUrls = fields.infoUrls.map(item => ({ label: item.label.trim(), url: item.url.trim() }));
+  if (infoUrls.length > MAX_PLACE_LINKS || infoUrls.some(item => {
+    try { const url = new URL(item.url); return !['http:', 'https:'].includes(url.protocol); }
+    catch { return true; }
+  })) throw new Error('Add up to 8 valid http:// or https:// URLs');
+  const clean = { ...fields, title: fields.title.trim(), category: fields.category.trim(), infoUrls };
   if (!clean.title) throw new Error('Place name is required');
-  if (placeId) { await updateDoc(doc(db, 'places', placeId), { ...clean, updatedAt: serverTimestamp() }); return placeId; }
+  if (placeId) {
+    await updateDoc(doc(db, 'places', placeId), { ...clean, mapUrl: deleteField(), officialUrl: deleteField(),
+      reservationNotes: deleteField(), updatedAt: serverTimestamp() });
+    return placeId;
+  }
   const item = await addDoc(collection(db, 'places'), { ...clean, createdBy: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return item.id;
 }
@@ -44,8 +54,8 @@ export async function seedPlaces(db: Firestore, uid: string): Promise<void> {
     const placeRef = doc(db, 'places', item.id);
     await runTransaction(db, async tx => {
       if ((await tx.get(placeRef)).exists()) return;
-      tx.set(placeRef, { title: item.title, category: item.category, intro: '', mapUrl: '', officialUrl: '',
-        visitNotes: '', reservationNotes: '', toConfirm: '', createdBy: uid,
+      tx.set(placeRef, { title: item.title, category: item.category, intro: '', toConfirm: '',
+        additionalInfo: '', infoUrls: [], visitNotes: '', createdBy: uid,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     });
   }
