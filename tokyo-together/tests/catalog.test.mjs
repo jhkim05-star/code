@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const catalog = JSON.parse(await readFile(new URL('../data/place-catalog.json', import.meta.url), 'utf8'));
+const english = JSON.parse(await readFile(new URL('../data/place-catalog.en.json', import.meta.url), 'utf8'));
 const covers = JSON.parse(await readFile(new URL('../data/place-cover-sources.json', import.meta.url), 'utf8'));
 
 test('the one-time catalog contains the requested unique candidate places', () => {
@@ -21,6 +22,21 @@ test('the one-time catalog contains the requested unique candidate places', () =
     assert.equal(typeof item.recommended, 'boolean');
     assert.equal(item.date, undefined);
     assert.equal(item.status, undefined);
+  }
+});
+
+test('all imported place details have English copy without changing the Korean source', () => {
+  assert.deepEqual(new Set(Object.keys(english)), new Set(catalog.map(item => item.id)));
+  for (const item of catalog) {
+    for (const field of ['title','area','intro','recommendedMenu','route','duration']) {
+      if (!item[field]) continue;
+      assert.ok(english[item.id][field], `${item.id} is missing ${field}`);
+      assert.doesNotMatch(english[item.id][field], /[가-힣]/, `${item.id} ${field} still contains Korean`);
+    }
+    if (item.visitTips) {
+      assert.ok(english[item.id].toConfirm, `${item.id} is missing visit tips`);
+      assert.doesNotMatch(english[item.id].toConfirm, /[가-힣]/);
+    }
   }
 });
 

@@ -1,0 +1,233 @@
+{
+  "F01": {
+    "title": "Kayaba Coffee",
+    "area": "Yanaka",
+    "intro": "A cafe in an old wooden house, good for breakfast while enjoying the neighborhood atmosphere.",
+    "recommendedMenu": "Egg sandwich, coffee",
+    "route": "Walk around Nippori and Yanaka → Ueno",
+    "toConfirm": "This small, popular cafe may have a wait. Check its current Monday closing schedule before visiting."
+  },
+  "F02": {
+    "title": "CIBI Tokyo Store",
+    "area": "Sendagi",
+    "intro": "A cafe and lifestyle store for a Western-style breakfast between Japanese meals.",
+    "recommendedMenu": "Sourdough bread, breakfast dishes, coffee",
+    "route": "Nippori → Sendagi → Yanaka Ginza",
+    "toConfirm": "This card is for the Sendagi store. Check that you have not selected another CIBI location."
+  },
+  "F03": {
+    "title": "Marutoyo",
+    "area": "Tsukiji",
+    "intro": "An onigiri shop for a quick breakfast while exploring the Tsukiji market area.",
+    "recommendedMenu": "Japanese rice balls (onigiri)",
+    "route": "Tsukiji → Hamarikyu Gardens → Ginza",
+    "toConfirm": "Mainly for takeaway. Check Sundays, public holidays, and market closure days before visiting."
+  },
+  "F04": {
+    "title": "Tonkatsu Yamabe Ueno",
+    "area": "Ueno and Okachimachi",
+    "intro": "A casual tonkatsu meal option that fits well with sightseeing in Ueno.",
+    "recommendedMenu": "Pork loin cutlet set, pork fillet cutlet set",
+    "route": "Tokyo National Museum → Ueno and Ameyoko",
+    "toConfirm": "There may be a wait. Whether four people can sit together depends on availability at the time."
+  },
+  "F05": {
+    "title": "Nemuro Hanamaru KITTE Marunouchi",
+    "area": "Tokyo Station and Marunouchi",
+    "intro": "A Hokkaido-style sushi restaurant where everyone can choose from different kinds of sushi.",
+    "recommendedMenu": "Conveyor-belt sushi",
+    "route": "Tokyo Station → KITTE → Liquors Hasegawa → Ginza",
+    "toConfirm": "The listing says reservations are unavailable and guests take a queue number on site. Four-person booths may be available, with a possible wait. Do not confuse it with the closed Ginza branch."
+  },
+  "F06": {
+    "title": "Ginza Kagari Main Store",
+    "area": "Ginza",
+    "intro": "A candidate for rich, creamy chicken-broth ramen.",
+    "recommendedMenu": "Tori paitan ramen",
+    "route": "A meal during a Ginza shopping visit",
+    "toConfirm": "Allow for a possible wait; choose a day without a tightly scheduled reservation afterward."
+  },
+  "F07": {
+    "title": "Asakusa Mugitoro Main Store",
+    "area": "Asakusa",
+    "intro": "A restaurant for trying traditional Japanese dishes beyond sushi and meat.",
+    "recommendedMenu": "Barley rice with grated yam, tororo dishes",
+    "route": "Senso-ji → lunch → Sumida River",
+    "toConfirm": "The sticky texture of grated yam may not suit everyone. The first-floor lunch buffet is listed for weekdays only; check it separately from other floors and courses."
+  },
+  "F08": {
+    "title": "Hantei Nezu Main Store",
+    "area": "Nezu",
+    "intro": "A family dinner option for skewered fried shrimp, vegetables, and meat in an atmospheric old building.",
+    "recommendedMenu": "Kushiage (fried skewer) course",
+    "route": "Yanaka and Nezu Shrine → dinner",
+    "toConfirm": "Reservations are recommended. Check the current notice about regular Monday closures."
+  },
+  "F09": {
+    "title": "Asakusa Imahan Kokusai-dori Main Store",
+    "area": "Asakusa",
+    "intro": "A meat-focused option for a special family meal during the trip.",
+    "recommendedMenu": "Wagyu sukiyaki, shabu-shabu",
+    "route": "Asakusa sightseeing → dinner",
+    "toConfirm": "Plan for a larger meal budget. Check the branch name so it is not confused with similarly named Imahan restaurants."
+  },
+  "F10": {
+    "title": "Monja Kura",
+    "area": "Tsukishima",
+    "intro": "A restaurant where the family can share food cooked on a griddle.",
+    "recommendedMenu": "Monjayaki, okonomiyaki",
+    "route": "Tsukishima ↔ Toyosu or Ginza",
+    "toConfirm": "Check whether everyone likes monjayaki's soft texture. Confirm weekend waits and reservation options before visiting."
+  },
+  "F11": {
+    "title": "Gonpachi Odaiba",
+    "area": "Odaiba",
+    "intro": "A restaurant with a broad menu for dinner after sightseeing in Odaiba.",
+    "recommendedMenu": "Soba, grilled skewers, Japanese pub dishes",
+    "route": "Odaiba Marine Park → Aqua City → dinner",
+    "toConfirm": "Reservations are recommended. Ask separately about seats with a view. This is a different branch from Nishi-Azabu."
+  },
+  "F12": {
+    "title": "Dandelion Chocolate Factory & Cafe Kuramae",
+    "area": "Kuramae",
+    "intro": "A chocolate cafe for a warm break during winter sightseeing.",
+    "recommendedMenu": "Hot chocolate, chocolate desserts",
+    "route": "Asakusa and Kappabashi → Kuramae",
+    "toConfirm": "Allow extra travel time from central Asakusa."
+  },
+  "F13": {
+    "title": "Nakamura Tokichi Ginza",
+    "area": "Ginza and GINZA SIX",
+    "intro": "A cafe for Japanese tea and desserts during a shopping break.",
+    "recommendedMenu": "Matcha desserts, fresh tea jelly",
+    "route": "GINZA SIX shopping → fourth-floor cafe",
+    "toConfirm": "When busy, the cafe may stop taking names before the posted closing time."
+  },
+  "F14": {
+    "title": "Shiseido Parlour Ginza Main Store Salon de Cafe",
+    "area": "Southern Ginza and Shimbashi",
+    "intro": "A candidate for elaborate desserts at a long-established Ginza cafe.",
+    "recommendedMenu": "Fruit parfait, pudding",
+    "route": "Ginza shopping → dessert → Shimbashi",
+    "toConfirm": "Budget more than for a typical cafe. If also visiting Nakamura Tokichi that day, consider choosing one of the two."
+  },
+  "F15": {
+    "title": "Suzukien Asakusa Main Store",
+    "area": "Asakusa",
+    "intro": "A snack stop for anyone who enjoys a strong matcha flavor.",
+    "recommendedMenu": "Matcha gelato",
+    "route": "A walk north of Senso-ji",
+    "toConfirm": "In winter, plan this as a quick snack stop rather than a cafe for a long seated break."
+  },
+  "V01": {
+    "title": "Senso-ji Temple",
+    "area": "Asakusa",
+    "intro": "A well-known Tokyo temple to explore together with Kaminarimon Gate and Nakamise Shopping Street.",
+    "route": "Combine with an Asakusa meal, Kappabashi, or Tokyo Skytree",
+    "duration": "1.5–2 hours"
+  },
+  "V02": {
+    "title": "Nezu Shrine",
+    "area": "Nezu",
+    "intro": "A peaceful place to walk past red torii gates and around the shrine grounds.",
+    "route": "Combine with Yanaka, Sendagi, and Hantei",
+    "toConfirm": "This is a December trip, so do not expect the spring azalea scenery.",
+    "duration": "40–60 minutes"
+  },
+  "V03": {
+    "title": "Tokyo National Museum",
+    "area": "Ueno",
+    "intro": "A museum for exploring Japanese art, crafts, and history.",
+    "route": "Combine with Ueno Park and Tonkatsu Yamabe",
+    "toConfirm": "Mondays are normally closed. Some galleries are listed as closed during the December 2026 trip; the open area is more limited from December 22 to 25. Check the official notice before visiting.",
+    "duration": "2–3 hours"
+  },
+  "V04": {
+    "title": "Hamarikyu Gardens",
+    "area": "Near Tsukiji and Shiodome",
+    "intro": "A quiet walk through a Japanese garden with skyscrapers in the background.",
+    "route": "Tsukiji breakfast → gardens → Ginza",
+    "toConfirm": "A daytime visit is recommended.",
+    "duration": "1–1.5 hours"
+  },
+  "V05": {
+    "title": "Odaiba Marine Park",
+    "area": "Odaiba",
+    "intro": "A place to take family photos with views of Tokyo Bay and Rainbow Bridge.",
+    "route": "Water bus → waterfront walk → Gonpachi",
+    "toConfirm": "Plan an indoor break as well in case of cold winter winds.",
+    "duration": "1–1.5 hours"
+  },
+  "S01": {
+    "title": "Ginza Mitsukoshi",
+    "area": "Ginza",
+    "intro": "A department store for shopping and browsing Japanese sweets, desserts, and food gifts in the basement food hall.",
+    "route": "Combine with Ginza restaurants and cafes"
+  },
+  "S02": {
+    "title": "GINZA SIX",
+    "area": "Ginza",
+    "intro": "A shopping complex for fashion and design, with the Ginza Tsutaya Books store on the sixth floor.",
+    "route": "Shopping → sixth-floor Tsutaya Books → fourth-floor Nakamura Tokichi",
+    "toConfirm": "Tsutaya Books is an attraction inside this venue, not a separate duplicate place card."
+  },
+  "S03": {
+    "title": "Kappabashi Kitchenware Street",
+    "area": "Near Asakusa and Tawaramachi",
+    "intro": "A street for browsing Japanese tableware, chopsticks, kitchen tools, and realistic food models.",
+    "route": "Asakusa → Kappabashi → Kuramae",
+    "toConfirm": "Opening days and hours vary by individual shop."
+  },
+  "S04": {
+    "title": "Liquors Hasegawa Main Store",
+    "area": "Yaesu Underground Mall, Tokyo Station",
+    "intro": "A candidate for comparing and buying whisky and other spirits.",
+    "route": "Tokyo Station and KITTE → Yaesu Underground Mall",
+    "toConfirm": "This is a liquor shop, not a bar. Check stock and prices of rare bottles and whether tastings are offered."
+  },
+  "S05": {
+    "title": "Yanaka Ginza Shopping Street",
+    "area": "Yanaka and Nippori",
+    "intro": "A shopping street for local snacks, small gifts, and a feel for old Tokyo.",
+    "route": "Nippori hotel → Yanaka → Sendagi and Nezu"
+  },
+  "E01": {
+    "title": "Tokyo Disneyland",
+    "area": "Maihama",
+    "intro": "A theme park that could connect memories of an earlier family trip with this one.",
+    "route": "Candidate for a full-day outing",
+    "toConfirm": "The catalog lists the 2026 Christmas event as November 11–December 25. Decide on the visit date and tickets separately; nothing is booked automatically.",
+    "duration": "Full day"
+  },
+  "E02": {
+    "title": "teamLab Planets TOKYO",
+    "area": "Toyosu",
+    "intro": "An interactive digital art exhibition for moving around together and taking photos.",
+    "route": "Toyosu → Odaiba or Tsukishima",
+    "toConfirm": "Consider booking a timed ticket. Some areas involve bare feet and water. Do not confuse this with teamLab exhibitions elsewhere.",
+    "duration": "2–3 hours"
+  },
+  "E03": {
+    "title": "Tokyo Cruise Water Bus from Asakusa",
+    "area": "Asakusa → Odaiba",
+    "intro": "A water bus ride where the journey itself offers views of the Sumida River and Tokyo Bay.",
+    "route": "Asakusa sightseeing → water bus → Odaiba",
+    "toConfirm": "The map points to the Asakusa boarding area. Check sailings, direct routes, and weather for the chosen day before confirming."
+  },
+  "E04": {
+    "title": "Tokyo Skytree Observation Deck",
+    "area": "Oshiage",
+    "intro": "An observation deck for taking in Tokyo's scale and night views.",
+    "route": "Asakusa → Tokyo Skytree",
+    "toConfirm": "Choose a day based on the weather and visibility. Decide on tickets separately.",
+    "duration": "1–1.5 hours"
+  },
+  "E05": {
+    "title": "Yokohama Red Brick Warehouse Christmas Market",
+    "area": "Yokohama and Minato Mirai",
+    "intro": "A possible day trip for harbor night views and a Christmas market.",
+    "route": "Minato Mirai walk → Red Brick Warehouse",
+    "toConfirm": "The catalog lists the 2026 event as November 20–December 25. Weigh this trip against time available for Tokyo sightseeing.",
+    "duration": "Half a day to a full day, including nearby walks and travel"
+  }
+}

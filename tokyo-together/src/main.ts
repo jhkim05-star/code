@@ -9,6 +9,7 @@ import {
 import { initialLocale, rememberLocale, t, type Locale } from './i18n';
 import { prepareCover } from './cover';
 import { catalogCovers } from './catalogCovers';
+import { placeCopy, type PlaceCopyField } from './placeCopy';
 import { dateLabel, FAMILY_ORDER, isTraveler, membersForDate, scheduledForDate, TRIP_DATES, visitsForPlace } from './model';
 import type { Comment, FoodCategory, Id, Member, Photo, Place, PlaceLink, PlaceTheme, Proposal, Review, Tab, TripInfo, Visit } from './types';
 import './style.css';
@@ -77,6 +78,10 @@ function activeProposals(): Id<Proposal>[] { return state.proposals.filter(item 
 function name(uid: string): string { return state.members.find(item => item.id === uid)?.displayName || uid.slice(0,8); }
 function canDeleteWrittenBy(uid: string): boolean { return Boolean(state.user && (state.user.uid === uid || state.member?.nameKey === 'jinhyeok')); }
 function place(id: string): Id<Place> | undefined { return state.places.find(item => item.id === id); }
+function placeText(item: Id<Place> | undefined, field: PlaceCopyField): string {
+  return item ? placeCopy(item,field,state.locale) : '';
+}
+function placeTitle(id: string): string { return placeText(place(id),'title') || T('unknown'); }
 function visit(id: string): Id<Visit> | undefined { return state.visits.find(item => item.id === id); }
 function proposal(id: string): Id<Proposal> | undefined { return state.proposals.find(item => item.id === id); }
 function displayDate(value: string): string { return dateLabel(value, state.locale); }
@@ -195,7 +200,7 @@ function loginScreen(): string {
 }
 function deniedScreen(): string { return `<main class="main single"><div class="alert"><h2>${T('notMember')}</h2><p class="muted">UID: ${esc(state.user?.uid)}</p><button data-action="signout">${T('signOut')}</button></div></main>`; }
 function homePlan(item: Id<Proposal>): string {
-  return `<div class="agenda-item"><div class="agenda-dot ${item.status}"></div><div><strong>${esc(place(item.placeId)?.title || T('unknown'))}</strong><small>${esc(displayTime(item.time))} · ${who(item.participantUids)}</small></div>
+  return `<div class="agenda-item"><div class="agenda-dot ${item.status}"></div><div><strong>${esc(placeTitle(item.placeId))}</strong><small>${esc(displayTime(item.time))} · ${who(item.participantUids)}</small></div>
     <button class="small-link" data-action="open-proposal" data-id="${attr(item.id)}">${tr('보기','View')} →</button></div>`;
 }
 function dayParticipantGroups(date: string): string {
@@ -220,7 +225,7 @@ function home(): string {
           ${date==='2026-12-22'?`<div class="travel-note">✈ ${tr('민성·소피 귀국','Minseong & Sophie return')} · ${esc(state.tripInfo?.youngerReturnFlight || T('unknown'))}</div>`:''}</div></div>`;
       }).join('')}</div></section>
       <div class="home-aside"><section class="card"><span class="kicker">02 / IDEAS</span><h2>${T('homeIdeas')}</h2>
-      ${ideas.length?ideas.map(item=>`<button class="idea-row" data-action="open-proposal" data-id="${attr(item.id)}"><span>${esc(displayDate(item.date))}</span><strong>${esc(place(item.placeId)?.title || T('unknown'))}</strong><small>→</small></button>`).join(''):`<p class="muted">${T('empty')}</p>`}</section>
+      ${ideas.length?ideas.map(item=>`<button class="idea-row" data-action="open-proposal" data-id="${attr(item.id)}"><span>${esc(displayDate(item.date))}</span><strong>${esc(placeTitle(item.placeId))}</strong><small>→</small></button>`).join(''):`<p class="muted">${T('empty')}</p>`}</section>
       <section class="card"><span class="kicker">03 / TRAVEL NOTES</span><div class="section-title"><h2>${T('bookings')}</h2><button class="small-link" data-action="edit-trip-info">${tr('정보 수정','Edit details')}</button></div>
       <div class="info-row"><span>12/17</span><div><strong>${tr('진혁·연화 입국편','Jinhyeok & Yeonhwa arrival')}</strong><small>${esc(state.tripInfo?.arrivalFlight || T('unknown'))}</small></div></div>
       <div class="info-row"><span>12/21</span><div><strong>${tr('진혁·연화 귀국편','Jinhyeok & Yeonhwa return')}</strong><small>${esc(state.tripInfo?.coupleReturnFlight || T('unknown'))}</small></div></div>
@@ -238,7 +243,7 @@ function planCard(item: Id<Proposal>): string {
   const agreed = state.agreements.get(item.id) ?? new Set<string>();
   const placeReady=Boolean(place(item.placeId) && !place(item.placeId)?.archived);
   return `<article class="card plan-card"><div class="plan-card-top"><div>${proposalPill(item)}<span class="date-chip">${esc(displayDate(item.date))} · ${esc(displayTime(item.time))}</span></div><span class="count">✓ ${T('agreeCount')} ${agreed.size}</span></div>
-    <h3>${esc(place(item.placeId)?.title || T('unknown'))}</h3><p class="muted">${T('participants')}: ${who(item.participantUids)}</p>
+    <h3>${esc(placeTitle(item.placeId))}</h3><p class="muted">${T('participants')}: ${who(item.participantUids)}</p>
     <div class="card-actions"><button data-action="open-proposal" data-id="${attr(item.id)}">${tr('의견 보기','View discussion')} →</button>
     ${item.disposition==='deleted'?canDeleteWrittenBy(item.createdBy)?`<button class="outline" data-action="restore-proposal" data-id="${attr(item.id)}">${tr('미반영 목록으로 복구','Restore to not included')}</button>`:'':
       item.disposition==='deferred'?placeReady?`<button class="outline" data-action="confirm" data-id="${attr(item.id)}">${tr('지금 최종일정에 반영','Add to final plan now')}</button>`:'':
@@ -258,7 +263,7 @@ function proposalDetail(): string {
   const isDeferred=!item.archived && item.disposition==='deferred';
   const isDeleted=!item.archived && item.disposition==='deleted';
   return `<section class="card detail"><button class="back-link" data-action="close-proposal">← ${T('plans')}</button>
-    <div class="detail-heading"><div>${proposalPill(item)}<h2>${esc(place(item.placeId)?.title || T('unknown'))}</h2><p>${esc(displayDate(item.date))} · ${esc(displayTime(item.time))} · ${who(item.participantUids)}</p></div>
+    <div class="detail-heading"><div>${proposalPill(item)}<h2>${esc(placeTitle(item.placeId))}</h2><p>${esc(displayDate(item.date))} · ${esc(displayTime(item.time))} · ${who(item.participantUids)}</p></div>
     ${(isActive||isDeferred)&&item.status==='proposed'&&placeReady?`<button data-action="edit-proposal" data-id="${attr(item.id)}">${T('editProposal')}</button>`:''}</div>
     <div class="agreement-box"><strong>${T('agreeCount')} ${agreed.size}</strong><p>${agreed.size?who([...agreed]):T('empty')}</p>
     ${isActive?`<button class="outline" data-action="agree" data-id="${attr(item.id)}">${mine?T('unagree'):T('agree')}</button>`:''}</div>
@@ -305,9 +310,9 @@ function placeCard(item: Id<Place>): string {
   const count=visitsForPlace(state.visits,item.id).length;
   const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' / ');
   return `<article class="card place-card"><div class="place-visual theme-${attr(item.theme || 'earlier')}">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
-    <div class="place-content"><div class="place-meta"><span>${esc(item.area || tr('지역 미입력','Area not added'))}</span><span>${saved?'♥':'♡'} ${state.interests.get(item.id)?.size||0}</span></div>
+    <div class="place-content"><div class="place-meta"><span>${esc(placeText(item,'area') || tr('지역 미입력','Area not added'))}</span><span>${saved?'♥':'♡'} ${state.interests.get(item.id)?.size||0}</span></div>
     <div class="place-badges">${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')}${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
-    <h3>${esc(item.title)}</h3><p>${esc(item.intro || T('seedNote'))}</p><div class="card-actions"><button data-action="open-place" data-id="${attr(item.id)}">${tr('자세히 보기','Explore')} →</button><span class="muted">${T('album')} ${count}</span></div></div></article>`;
+    <h3>${esc(placeText(item,'title'))}</h3><p>${esc(placeText(item,'intro') || T('seedNote'))}</p><div class="card-actions"><button data-action="open-place" data-id="${attr(item.id)}">${tr('자세히 보기','Explore')} →</button><span class="muted">${T('album')} ${count}</span></div></div></article>`;
 }
 function infoSection(label: string, value: string): string { return `<div class="detail-field"><h4>${esc(label)}</h4><p>${value?esc(value):`<span class="muted">${T('empty')}</span>`}</p></div>`; }
 function placeDetail(): string {
@@ -321,21 +326,21 @@ function placeDetail(): string {
   const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' / ');
   return `<section class="card detail"><button class="back-link" data-action="close-place">← ${T('places')}</button>
     <div class="place-detail-cover">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
-    <div class="detail-heading"><div><h2>${esc(item.title)}</h2>
-      <p>${esc([item.localName,item.area].filter(Boolean).join(' · '))}</p>
+    <div class="detail-heading"><div><h2>${esc(placeText(item,'title'))}</h2>
+      <p>${esc([item.localName,placeText(item,'area')].filter(Boolean).join(' · '))}</p>
       ${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')} ${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
       <div class="inline-actions">${item.archived?'':`<button data-action="interest" data-id="${attr(item.id)}">${saved?'♥ '+T('removeInterest'):'♡ '+T('interest')} · ${state.interests.get(item.id)?.size||0}</button>`}
       <button data-action="edit-place" data-id="${attr(item.id)}">${T('editPlace')}</button>
       ${canDeleteWrittenBy(item.createdBy)?`<button class="${item.archived?'outline':'danger'}" data-action="${item.archived?'restore-place':'delete-place'}" data-id="${attr(item.id)}">${item.archived?tr('장소 복원','Restore place'):tr('장소 삭제','Delete place')}</button>`:''}</div></div>
-    <div class="field-grid">${infoSection(tr('소개 및 추천 이유','Introduction & why visit'),item.intro)}
-    ${item.recommendedMenu?infoSection(tr('추천 메뉴','Recommended menu'),item.recommendedMenu):''}
-    ${infoSection(tr('방문 시 참고사항','Visit tips'),item.toConfirm)}
-    ${item.route?infoSection(tr('관련 동선','Nearby route'),item.route):''}
-    ${item.duration?infoSection(tr('권장 체류','Suggested duration'),item.duration):''}
-    ${map?`<div class="detail-field"><h4>${tr('지도','Map')}</h4><a class="text-link" href="${attr(map)}" target="_blank" rel="noopener noreferrer">${esc(item.mapQuery||tr('지도 열기','Open map'))} ↗</a></div>`:''}
+    <div class="field-grid">${infoSection(tr('소개 및 추천 이유','Introduction & why visit'),placeText(item,'intro'))}
+    ${item.recommendedMenu?infoSection(tr('추천 메뉴','Recommended menu'),placeText(item,'recommendedMenu')):''}
+    ${infoSection(tr('방문 시 참고사항','Visit tips'),placeText(item,'toConfirm'))}
+    ${item.route?infoSection(tr('관련 동선','Nearby route'),placeText(item,'route')):''}
+    ${item.duration?infoSection(tr('권장 체류','Suggested duration'),placeText(item,'duration')):''}
+    ${map?`<div class="detail-field"><h4>${tr('지도','Map')}</h4><a class="text-link" href="${attr(map)}" target="_blank" rel="noopener noreferrer">${esc(state.locale==='en'?placeText(item,'title'):item.mapQuery||tr('지도 열기','Open map'))} ↗</a></div>`:''}
     <div class="detail-field extra-info"><h4>${T('additionalInfo')}</h4>
       ${extra?`<p>${esc(extra)}</p>`:''}
-      ${links.length?`<ul class="place-links">${links.map(link=>{const url=safeUrl(link.url)!;return `<li><a class="text-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${esc(link.label || new URL(url).hostname)} ↗</a></li>`;}).join('')}</ul>`:''}
+      ${links.length?`<ul class="place-links">${links.map(link=>{const url=safeUrl(link.url)!;const label=link.label==='참고 링크'?tr('참고 링크','Reference link'):link.label;return `<li><a class="text-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${esc(label || new URL(url).hostname)} ↗</a></li>`;}).join('')}</ul>`:''}
       ${!extra&&!links.length?`<p class="muted">${T('empty')}</p>`:''}</div>
     ${item.reviewedAt?`<div class="detail-field"><h4>${tr('정보 검토일','Information reviewed')}</h4><p>${esc(item.reviewedAt)}</p></div>`:''}</div>
     ${item.archived?`<p class="muted">${tr('일반 장소 목록과 새 일정 제안에서 숨겨졌습니다. 연결된 기록은 보존됩니다.','Hidden from the main list and new plans. Linked records are preserved.')}</p>`:
@@ -353,7 +358,8 @@ function places(): string {
   const needle=state.placeSearch.trim().toLocaleLowerCase();
   const scoped=initial.filter(item=>{
     if (!archived && state.placeFilter==='mine' && !state.interests.get(item.id)?.has(state.user?.uid||'')) return false;
-    return !needle || [item.title,item.localName,item.area].some(value=>value?.toLocaleLowerCase().includes(needle));
+    return !needle || [item.title,item.localName,item.area,placeCopy(item,'title','en'),placeCopy(item,'area','en')]
+      .some(value=>value?.toLocaleLowerCase().includes(needle));
   });
   const matchesTag=(item: Place, theme: 'all'|PlaceTheme|'uncategorized', food: 'all'|FoodCategory): boolean =>
     theme==='all' || (theme==='uncategorized' ? !item.theme : item.theme===theme && (theme!=='food' || food==='all' || item.subcategory===food));
@@ -378,14 +384,14 @@ function places(): string {
     <div class="place-grid">${shown.length?shown.map(placeCard).join(''):`<div class="card empty-card">${!initial.length && archived?tr('보관된 장소가 없습니다.','No archived places.'):tr('조건에 맞는 장소가 없습니다.','No places match these filters.')}</div>`}</div>`;
 }
 function albumRow(item: Id<Visit>): string {
-  return `<button class="album-row ${state.selectedVisitId===item.id?'active':''}" data-action="open-visit" data-id="${attr(item.id)}"><span class="album-icon">${item.kind==='past'?'◌':'✦'}</span><span><strong>${esc(item.label)}</strong><small>${item.kind==='past'?T('past'):T('tripAlbum')} · ${esc(place(item.placeId)?.title || T('unknown'))}</small></span><span>→</span></button>`;
+  return `<button class="album-row ${state.selectedVisitId===item.id?'active':''}" data-action="open-visit" data-id="${attr(item.id)}"><span class="album-icon">${item.kind==='past'?'◌':'✦'}</span><span><strong>${esc(item.label)}</strong><small>${item.kind==='past'?T('past'):T('tripAlbum')} · ${esc(placeTitle(item.placeId))}</small></span><span>→</span></button>`;
 }
 function albumDetail(): string {
   const item=state.selectedVisitId && visit(state.selectedVisitId);
   if (!item) return '';
   const myPhotos=state.photos.filter(photo=>photo.ownerUid===state.user?.uid);
   const myReview=state.reviews.find(review=>review.authorUid===state.user?.uid);
-  return `<section class="album-detail"><div class="album-heading"><div><span class="kicker">${item.kind==='past'?T('past'):T('tripAlbum')}</span><h3>${esc(item.label)}</h3><p>${esc(place(item.placeId)?.title || T('unknown'))}</p></div><button data-action="export-reviews">${T('exportReviews')}</button></div>
+  return `<section class="album-detail"><div class="album-heading"><div><span class="kicker">${item.kind==='past'?T('past'):T('tripAlbum')}</span><h3>${esc(item.label)}</h3><p>${esc(placeTitle(item.placeId))}</p></div><button data-action="export-reviews">${T('exportReviews')}</button></div>
     <div class="photo-toolbar"><div><h4>${T('photo')} ${state.photos.length}</h4><p>${T('photoRule')}</p><small>${esc(name(state.user?.uid||''))}: ${myPhotos.length}/20</small></div>
       <label class="upload-button ${myPhotos.length>=20?'disabled':''}">＋ ${T('upload')}<input id="photo-input" type="file" accept="image/*,.heic,.heif" multiple ${myPhotos.length>=20?'disabled':''} /></label></div>
     <div class="photo-grid">${state.photos.length?state.photos.map((photo,index)=>`<div class="photo-card"><div class="photo-frame" data-photo-preview="${attr(photo.id)}">
@@ -510,6 +516,9 @@ function placeModal(item?: Id<Place>): void {
   const subcategory=item?.subcategory || 'breakfast';
   let persistedId=item?.id;
   modal(`<span class="kicker">PLACE</span><h2>${item?T('editPlace'):T('addPlace')}</h2>
+    ${state.locale==='en'?`<p class="muted">${item?.createdBy==='catalog-import'
+      ?'Starter place fields are shared in Korean. Unchanged fields show prepared English text on cards and details; edits appear as entered.'
+      :'Place details you enter appear as written for everyone.'}</p>`:''}
     ${input(tr('장소 이름','Place name'),'title',item?.title||'','required maxlength="120"')}
     <div class="cover-editor"><strong>${tr('장소 대표사진 (선택)','Place cover photo (optional)')}</strong>
       <p class="muted">${tr('사진을 올리거나 이미지 URL을 입력하세요. 업로드 사진은 최대 25MB의 JPEG·PNG·WebP·HEIC를 선택할 수 있으며, 화면용 JPEG로 줄여 저장합니다. 방문 앨범의 원본 사진과는 별개입니다.','Upload a photo or add an image URL. JPEG, PNG, WebP and HEIC files up to 25 MB are converted to a smaller display JPEG. Visit album originals are separate.')}</p>
@@ -594,7 +603,7 @@ function proposalModal(preselectedPlaceId?: string, item?: Id<Proposal>): void {
   const date=item?.date||'2026-12-18';
   const chosen=item?.participantUids||membersForDate(date,state.members).map(member=>member.id);
   modal(`<span class="kicker">PLAN</span><h2>${item?T('editProposal'):T('addProposal')}</h2>
-    <label>${T('choosePlace')}<select name="placeId" ${item?'disabled':''} required><option value="">—</option>${activePlaces().map(p=>`<option value="${attr(p.id)}" ${p.id===(item?.placeId||preselectedPlaceId)?'selected':''}>${esc(p.title)}</option>`).join('')}</select></label>
+    <label>${T('choosePlace')}<select name="placeId" ${item?'disabled':''} required><option value="">—</option>${activePlaces().map(p=>`<option value="${attr(p.id)}" ${p.id===(item?.placeId||preselectedPlaceId)?'selected':''}>${esc(placeText(p,'title'))}</option>`).join('')}</select></label>
     ${input(T('date'),'date',date,`type="date" min="2026-12-17" max="2026-12-22" required`)}
     ${input(T('time'),'time',item?.time||'','type="time"')}
     <fieldset><legend>${T('participants')}</legend><div class="checkbox-grid">${state.members.filter(isTraveler).map(member=>`<label><input type="checkbox" name="participants" value="${attr(member.id)}" data-key="${attr(member.nameKey)}" ${chosen.includes(member.id)?'checked':''} />${esc(member.displayName)}</label>`).join('')}</div></fieldset>`,async form=>{
@@ -631,7 +640,7 @@ function reviewModal(): void {
 }
 function exportReviews(): void {
   const item=state.selectedVisitId && visit(state.selectedVisitId); if (!item) return;
-  const contents={album:item.label,place:place(item.placeId)?.title||'',kind:item.kind,exportedAt:new Date().toISOString(),reviews:state.reviews.map(review=>({author:name(review.authorUid),text:review.text,updatedAt:review.updatedAt?.toDate?.()?.toISOString?.()||null}))};
+  const contents={album:item.label,place:placeText(place(item.placeId),'title'),kind:item.kind,exportedAt:new Date().toISOString(),reviews:state.reviews.map(review=>({author:name(review.authorUid),text:review.text,updatedAt:review.updatedAt?.toDate?.()?.toISOString?.()||null}))};
   const blob=new Blob([JSON.stringify(contents,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`tokyo-together-reviews-${item.id}.json`;document.body.append(link);link.click();link.remove();
   window.setTimeout(()=>URL.revokeObjectURL(url),60_000);
@@ -657,7 +666,7 @@ root.addEventListener('click',event=>{
           `연결된 일정 ${related.proposals}건 · 댓글 ${related.comments}개 · 방문 앨범 ${related.visits}개 · 사진 ${related.photos}장 · 후기 ${related.reviews}개`,
           `Linked plans ${related.proposals} · comments ${related.comments} · visits ${related.visits} · photos ${related.photos} · reviews ${related.reviews}`);
         const message=tr(`‘${item.title}’ 장소를 보관할까요?\n${summary}\n일반 목록과 새 일정 제안에서 숨겨집니다. 연결된 기록은 삭제되지 않으며 보관함에서 복원할 수 있습니다.`,
-          `Archive “${item.title}”?\n${summary}\nIt will be hidden from the main list and new plans. Linked records stay intact and can be restored from Archive.`);
+          `Archive “${placeText(item,'title')}”?\n${summary}\nIt will be hidden from the main list and new plans. Linked records stay intact and can be restored from Archive.`);
         if (!window.confirm(message)) return;
         await setPlaceArchived(services.db,id,true);
         state.selectedPlaceId=null; state.selectedVisitId=null; watchDetails();
