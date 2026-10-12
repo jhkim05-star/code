@@ -1,6 +1,6 @@
 # Tokyo Together
 
-2026년 12월 17–22일 도쿄 여행을 위한 가족 공동 계획·사진 웹앱입니다. **현재 이 저장소에는 Firebase 코드와 규칙이 준비되어 있지만, 실제 Firebase 프로젝트나 가족 계정은 연결되어 있지 않습니다.** `.env.local`을 입력하지 않으면 연결 안내 화면만 나타납니다. 로컬 에뮬레이터 데이터는 다른 기기와 공유되지 않습니다.
+2026년 12월 17–22일 도쿄 여행을 위한 가족 공동 계획·사진 웹앱입니다. **2026년 10월 12일 `tokyo-together-57264` 프로젝트에 보안 규칙, 함수 7개, 웹 화면을 배포했습니다.** 주소는 [tokyo-together-57264.web.app](https://tokyo-together-57264.web.app/)입니다. 현재 가족 계정과 `members` 문서는 아직 없어 로그인 후 공동 기능을 실서비스에서 검증하지 못했습니다. `.env.local`은 로컬 설정으로만 보관합니다. 로컬 에뮬레이터 데이터는 다른 기기와 공유되지 않습니다.
 
 ## 구현 범위
 
@@ -13,7 +13,7 @@
 
 앨범 전체 ZIP 다운로드는 아직 없습니다. 사진은 개별 다운로드해 주세요. 댓글 자동 번역과 여행기 자동 생성도 없습니다.
 
-## 내 Firebase 프로젝트에 연결하기
+## 가족 계정 연결 및 다른 프로젝트에 재배포하기
 
 이 단계는 프로젝트 소유자가 Firebase Console에서 직접 해야 합니다. **Blaze 요금제와 결제 계정 연결이 필요합니다.** Cloud Storage for Firebase는 현재 Blaze가 필요하며, 이 앱은 Cloud Functions도 사용합니다. Blaze에는 일부 무료 사용량이 있지만 실제 이용량에 따라 요금이 생길 수 있습니다. [Storage 요금제 변경](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024), [Firebase 요금](https://firebase.google.com/pricing).
 
@@ -33,11 +33,11 @@
    | 소피 | `sophie` | `Sophie` |
 
    `email`은 해당 Authentication 계정의 이메일로 입력합니다. `members` 문서는 관리자만 만들 수 있고 앱 사용자는 수정할 수 없습니다. UID를 잘못 연결하면 의도한 사람이 접근하지 못하거나 다른 사람이 그 가족으로 표시될 수 있으므로 계정을 대조해 주세요.
-8. 원본 다운로드/미리보기에 `getBlob()`을 쓰므로 **Storage CORS**를 설정합니다. `storage.cors.example.json`의 `YOUR_PROJECT_ID`를 실제 ID로 바꾸고 `gcloud storage buckets update gs://실제버킷명 --cors-file=storage.cors.example.json`을 실행합니다. 다른 Hosting 도메인을 쓰면 해당 출처도 넣으세요. CORS는 브라우저 허용 출처 설정이며, 접근 권한은 Storage Rules가 검사합니다. [Firebase 원본 다운로드 안내](https://firebase.google.com/docs/storage/web/download-files), [Google Cloud CORS 설정](https://cloud.google.com/storage/docs/configuring-cors).
+8. 원본 다운로드/미리보기에 `getBlob()`을 쓰므로 **Storage CORS**를 설정합니다. 현재 프로젝트에는 `web.app`과 `firebaseapp.com`의 두 Hosting 출처, GET, Content-Type, 3600초가 적용됐습니다. 다른 프로젝트에서는 Google Cloud Console의 **버킷 → 구성 → 교차 출처 리소스 공유**에서 같은 항목을 입력하거나 `storage.cors.example.json`의 `YOUR_PROJECT_ID`를 바꿔 `gcloud storage buckets update gs://실제버킷명 --cors-file=storage.cors.example.json`을 실행합니다. CORS는 브라우저 허용 출처 설정이며, 접근 권한은 Storage Rules가 검사합니다. [Firebase 원본 다운로드 안내](https://firebase.google.com/docs/storage/web/download-files), [Google Cloud CORS 설정](https://docs.cloud.google.com/storage/docs/using-cors).
 9. 가족 계정으로 로그인한 뒤 홈의 **항공·숙소 → 정보 수정**에서 확인된 항공편 2개와 임시 숙소 정보를 입력합니다. 민성·소피 항공편과 추가 숙소처럼 모르는 항목은 비워 두세요. 앱은 `tripInfo/summary`에 저장하고 가족 계정에만 읽기를 허용합니다. 숙소 이름과 예약 조건은 예약메일을 대조하기 전까지 화면에서도 확인 필요로 표시됩니다.
 10. 네 계정 중 두 계정으로 각각 로그인해 장소·댓글·사진 변경이 실시간으로 보이는지 확인합니다. 회원이 아닌 계정에서 접근 거부, 타인 사진 삭제 거부도 확인한 뒤 가족에게 링크를 공유하세요. 실제 기기에서 iPhone HEIC 업로드와 원본 다운로드를 한 번 확인하는 것이 좋습니다.
 
-Firebase 프로젝트 연결과 배포는 아직 수행하지 않았으므로 위 절차를 마칠 때까지 실제 가족 공동 사용은 불가능합니다.
+현재 프로젝트는 배포됐지만 위 6–7단계의 계정 및 UID 연결은 아직 수행하지 않았습니다. 이 단계를 마치고 두 계정으로 실제 공동 저장을 확인하기 전까지 가족이 사용할 수 있는 상태라고 판단하지 마세요.
 
 Firebase Hosting의 로그인 화면과 정적 JavaScript 파일 자체는 URL을 아는 사람에게 제공됩니다. 장소·일정·댓글·항공·숙소 상세·사진 데이터는 Firebase 규칙으로 가족 계정에 제한하지만, 정적 코드에 포함된 여행 기간과 가족 역할 문구까지 감춰지는 것은 아닙니다. 그 정보도 비회원에게 숨겨야 한다면 인증을 거친 뒤 HTML/JavaScript를 제공하는 별도 호스팅 구성이 필요합니다.
 
