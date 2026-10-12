@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase/firestore';
 
-export type MemberKey = 'jinhyeok' | 'yeonhwa' | 'minseong' | 'sophie';
+export type MemberKey = 'jinhyeok' | 'yeonhwa' | 'minseong' | 'sophie' | 'soeun';
 export type Tab = 'home' | 'plans' | 'places' | 'memories';
 export type Id<T> = T & { id: string };
 export interface Member { nameKey: MemberKey; displayName: string; email: string }

@@ -6,7 +6,7 @@ if (!process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIRESTORE_EMULATOR_
 }
 const app=initializeApp({projectId:'demo-tokyo-together'});
 const auth=getAuth(app),db=getFirestore(app);
-for(const [key,name] of [['jinhyeok','진혁'],['yeonhwa','연화'],['minseong','민성'],['sophie','Sophie']]){
+for(const [key,name] of [['jinhyeok','진혁'],['yeonhwa','연화'],['minseong','민성'],['sophie','Sophie'],['soeun','소은']]){
   const email=`demo-${key}@example.test`;
   let user;
   try { user=await auth.createUser({email,password:'demo-password-123'}); }

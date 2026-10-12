@@ -8,6 +8,7 @@ const family = [
   {id:'b',nameKey:'yeonhwa',displayName:'연화'},
   {id:'c',nameKey:'minseong',displayName:'민성'},
   {id:'d',nameKey:'sophie',displayName:'Sophie'},
+  {id:'e',nameKey:'soeun',displayName:'소은'},
 ];
 test('trip dates and different return dates stay distinct',()=>{
   assert.equal(TRIP_DATES.length,6);

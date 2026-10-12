@@ -10,7 +10,7 @@
 - 장소 추가는 선택 사항으로 표시합니다. 장소 카드에는 확인할 사항, 추가정보와 최대 8개의 제목·URL 링크를 저장할 수 있고, 방문 메모는 방문 후 작성하도록 맨 아래에 둡니다. 기존 지도·공식 사이트·예약 메모가 있는 카드는 편집 전까지 추가정보에 표시하며, 편집하면 새 형식으로 저장합니다.
 - 과거 방문 앨범과 일정 확정 시 생성되는 이번 방문 앨범. 장소 상세와 추억 탭이 같은 `visits/{visitId}` 및 사진 데이터를 읽습니다. 같은 제안을 여러 번 확정해도 방문 ID와 앨범은 그대로입니다.
 - 개인별 후기 수정, 원본 사진 개별 다운로드, 앨범별 후기 JSON 내보내기.
-- Firebase Authentication 계정에 연결된 네 가족만 Firestore와 Storage에 접근. 사진은 서버의 Firestore 트랜잭션으로 **방문 ID × 계정당 최대 20장**을 예약·확정합니다. 다른 사람이 올린 사진 삭제는 서버에서 거부합니다.
+- Firebase Authentication 계정과 `members/{UID}`에 연결된 가족만 Firestore와 Storage에 접근. 소은은 여행 동행자가 아닌 가족 참여자로서 장소·일정 제안·동의·댓글·앨범·사진을 함께 이용할 수 있지만 날짜별 여행자나 일정의 방문 참여자에는 들어가지 않습니다. 사진은 서버의 Firestore 트랜잭션으로 **방문 ID × 계정당 최대 20장**을 예약·확정합니다. 다른 사람이 올린 사진 삭제는 서버에서 거부합니다.
 
 앨범 전체 ZIP 다운로드는 아직 없습니다. 사진은 개별 다운로드해 주세요. 댓글 자동 번역과 여행기 자동 생성도 없습니다.
 
@@ -23,8 +23,8 @@
 3. **Project settings → Your apps**에서 웹앱을 등록하고 웹 설정 값을 확인합니다. `cp .env.example .env.local` 후 `VITE_FIREBASE_*` 값을 채우고 `VITE_USE_EMULATORS=false`로 둡니다. 웹 설정 값은 비밀번호가 아니지만, 관리자 서비스 계정 키나 가족 비밀번호를 코드·환경 파일에 넣지 마세요.
 4. `cp functions/.env.example functions/.env` 후 `TOKYO_STORAGE_BUCKET`을 실제 기본 버킷명으로 바꿉니다. 예: `프로젝트ID.firebasestorage.app`. `.env.local`과 `functions/.env`는 Git에서 제외됩니다.
 5. Node.js 22와 npm을 설치한 뒤 이 폴더에서 `npm install`, `npm --prefix functions install`, `npm run build`, `npm --prefix functions run build`를 실행합니다. `npx firebase login`, `npx firebase use --add`로 방금 만든 프로젝트를 선택한 뒤 `npm run deploy`로 규칙·함수·호스팅을 배포합니다. 배포 스크립트가 데모 설정과 프로젝트·버킷 불일치를 검사합니다. 프로젝트 ID가 설정되지 않은 상태에서 배포하지 마세요. `firebase.json`은 Hosting에 `dist/`를 게시합니다.
-6. Firebase Console **Authentication → Users**에서 네 사람의 이메일 계정을 만듭니다. 가족에게 각자의 로그인 정보만 전달하고 임시 비밀번호는 별도 안전한 방법으로 바꾸도록 안내합니다. 앱 화면에서는 임의 가입이나 가족 이름 선택을 허용하지 않습니다.
-7. 생성된 각 사용자의 **UID**를 복사해 Firestore에 `members/{UID}` 문서를 직접 만듭니다. 각 문서 필드는 `nameKey`(문자열), `displayName`(문자열), `email`(문자열)입니다. 정확히 네 문서를 만듭니다:
+6. Firebase Console **Authentication → Users**에서 가족의 이메일 계정을 만듭니다. 가족에게 각자의 로그인 정보만 전달하고 임시 비밀번호는 별도 안전한 방법으로 바꾸도록 안내합니다. 앱 화면에서는 임의 가입이나 가족 이름 선택을 허용하지 않습니다.
+7. 생성된 각 사용자의 **UID**를 복사해 Firestore에 `members/{UID}` 문서를 직접 만듭니다. 각 문서 필드는 `nameKey`(문자열), `displayName`(문자열), `email`(문자열)입니다. 여행자 네 명과 가족 참여자 소은의 문서는 다음과 같습니다:
 
    | 사람 | `nameKey` | `displayName` |
    | --- | --- | --- |
@@ -32,13 +32,14 @@
    | 연화 | `yeonhwa` | `연화` |
    | 민성 | `minseong` | `민성` |
    | 소피 | `sophie` | `Sophie` |
+   | 소은 | `soeun` | `소은` |
 
-   `email`은 해당 Authentication 계정의 이메일로 입력합니다. `members` 문서는 관리자만 만들 수 있고 앱 사용자는 수정할 수 없습니다. UID를 잘못 연결하면 의도한 사람이 접근하지 못하거나 다른 사람이 그 가족으로 표시될 수 있으므로 계정을 대조해 주세요.
+   `email`은 해당 Authentication 계정의 이메일로 입력합니다. `members` 문서는 관리자만 만들 수 있고 앱 사용자는 수정할 수 없습니다. UID를 잘못 연결하면 의도한 사람이 접근하지 못하거나 다른 사람이 그 가족으로 표시될 수 있으므로 계정을 대조해 주세요. 소은의 계정은 로그인과 공동 편집 권한이 있지만 여행 날짜별 참가자에 포함되지 않습니다.
 8. 원본 다운로드/미리보기에 `getBlob()`을 쓰므로 **Storage CORS**를 설정합니다. 현재 프로젝트에는 `web.app`과 `firebaseapp.com`의 두 Hosting 출처, GET, Content-Type, 3600초가 적용됐습니다. 다른 프로젝트에서는 Google Cloud Console의 **버킷 → 구성 → 교차 출처 리소스 공유**에서 같은 항목을 입력하거나 `storage.cors.example.json`의 `YOUR_PROJECT_ID`를 바꿔 `gcloud storage buckets update gs://실제버킷명 --cors-file=storage.cors.example.json`을 실행합니다. CORS는 브라우저 허용 출처 설정이며, 접근 권한은 Storage Rules가 검사합니다. [Firebase 원본 다운로드 안내](https://firebase.google.com/docs/storage/web/download-files), [Google Cloud CORS 설정](https://docs.cloud.google.com/storage/docs/using-cors).
 9. 다른 프로젝트에서는 가족 계정으로 로그인한 뒤 홈의 **항공·숙소 → 정보 수정**에서 확인된 항공편 2개와 임시 숙소 정보를 입력합니다. 현재 프로젝트에는 이미 입력했습니다. 민성·소피 항공편과 추가 숙소처럼 모르는 항목은 비워 두세요. 앱은 `tripInfo/summary`에 저장하고 가족 계정에만 읽기를 허용합니다. 숙소 이름과 예약 조건은 예약메일을 대조하기 전까지 화면에서도 확인 필요로 표시됩니다.
-10. 네 계정 중 두 계정으로 각각 로그인해 장소·댓글·사진 변경이 실시간으로 보이는지 확인합니다. 회원이 아닌 계정에서 접근 거부, 타인 사진 삭제 거부도 확인한 뒤 가족에게 링크를 공유하세요. 실제 기기에서 iPhone HEIC 업로드와 원본 다운로드를 한 번 확인하는 것이 좋습니다.
+10. 두 계정으로 각각 로그인해 장소·댓글·사진 변경이 실시간으로 보이는지 확인합니다. 회원이 아닌 계정에서 접근 거부, 타인 사진 삭제 거부도 확인한 뒤 가족에게 링크를 공유하세요. 실제 기기에서 iPhone HEIC 업로드와 원본 다운로드를 한 번 확인하는 것이 좋습니다.
 
-현재 프로젝트는 위 6–7단계의 계정 4개와 UID 연결을 마쳤고, 네 문서의 UID·이름·이메일을 관리자 읽기로 대조했습니다. 두 계정으로 실제 공동 저장을 확인하기 전까지 가족 공동 사용 검증이 끝난 상태로 판단하지 마세요.
+현재 프로젝트는 기존 여행자 네 계정의 UID 연결을 마쳤습니다. 소은 계정은 Authentication 사용자 생성 후 별도로 `members/{UID}` 문서를 연결해야 앱에 접근할 수 있습니다. 두 계정으로 실제 공동 저장을 확인하기 전까지 가족 공동 사용 검증이 끝난 상태로 판단하지 마세요.
 
 2026년 10월 12일, 인증 정보 없이 `tripInfo/summary`를 읽는 실서비스 요청은 `403 PERMISSION_DENIED`로 거부됐습니다. 소피 계정의 화면에서는 항공·숙소, 네 가족 이름, 후보 장소 7개가 표시됐고 네 탭과 한영 전환이 동작했습니다. 디즈니랜드 관심 표시를 저장한 뒤 새로고침해 유지되는 것을 확인하고 원래의 관심 없음 상태로 되돌렸습니다. 브라우저에서 844×390과 1024×768 크기의 가로 넘침이 없음을 확인했습니다. 실제 기기 사용성, 두 계정 간 동기화, 사진 업로드·다운로드는 별도로 확인해야 합니다.
 
@@ -49,7 +50,7 @@ Firebase Hosting의 로그인 화면과 정적 JavaScript 파일 자체는 URL�
 ## 로컬 개발 및 검증
 
 - 일반 개발: `npm install`, `npm --prefix functions install`, `npm run dev`. `.env.local`에 실제 Firebase 값을 넣었다면 개발 서버도 실제 데이터에 연결됩니다. 실데이터를 시험 목적으로 수정하지 않도록 주의하세요.
-- 로컬 에뮬레이터: Java 21, Node 22, Firebase CLI가 필요합니다. `.env.local`에 `demo-tokyo-together`의 데모 값과 `VITE_USE_EMULATORS=true`를 입력하고, `TOKYO_STORAGE_BUCKET=demo-tokyo-together.firebasestorage.app npx firebase emulators:start --project demo-tokyo-together --only auth,firestore,storage,functions`를 실행합니다. 다른 터미널에서 `GCLOUD_PROJECT=demo-tokyo-together FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node tests/seed-emulator.mjs`를 실행하면 데모 네 계정이 생성됩니다. 예시 로그인이 스크립트에 표시됩니다. **데모 비밀번호를 실제 Firebase 계정에 쓰지 마세요.** `npm run dev`로 화면을 엽니다.
+- 로컬 에뮬레이터: Java 21, Node 22, Firebase CLI가 필요합니다. `.env.local`에 `demo-tokyo-together`의 데모 값과 `VITE_USE_EMULATORS=true`를 입력하고, `TOKYO_STORAGE_BUCKET=demo-tokyo-together.firebasestorage.app npx firebase emulators:start --project demo-tokyo-together --only auth,firestore,storage,functions`를 실행합니다. 다른 터미널에서 `GCLOUD_PROJECT=demo-tokyo-together FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node tests/seed-emulator.mjs`를 실행하면 데모 다섯 계정이 생성됩니다. 예시 로그인이 스크립트에 표시됩니다. **데모 비밀번호를 실제 Firebase 계정에 쓰지 마세요.** `npm run dev`로 화면을 엽니다.
 - 단위 테스트: `npm test`. 통합 테스트는 데모 에뮬레이터가 실행 중일 때 `GCLOUD_PROJECT=demo-tokyo-together FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199 FIREBASE_STORAGE_BUCKET=demo-tokyo-together.firebasestorage.app FIREBASE_FUNCTIONS_EMULATOR_HOST=127.0.0.1:5001 node tests/integration.mjs`로 실행합니다. 테스트가 데모 에뮬레이터 데이터에 쓰므로 별도 실행 환경을 권장합니다.
 
 사진은 원본 그대로 저장하며 파일당 최대 **25 MiB**입니다. JPEG/PNG/WebP/GIF/AVIF/HEIC/HEIF를 허용합니다. 파일 크기 상한은 업로드 실패와 저장비 증가를 줄이기 위한 MVP 기준입니다. 더 큰 원본은 업로드할 수 없으므로 필요하면 상한과 비용을 함께 재검토하세요. HEIC는 원본으로 내려받을 수 있지만 브라우저별로 미리보기가 없을 수 있습니다. 현재 미리보기는 앨범의 앞 8장 원본을 불러오므로 모바일 데이터 사용량이 늘 수 있습니다.

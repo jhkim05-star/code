@@ -7,7 +7,7 @@ import {
   MAX_PLACE_LINKS, type PlaceFields, type ProposalFields, type TripInfoFields,
 } from './data';
 import { initialLocale, rememberLocale, t, type Locale } from './i18n';
-import { dateLabel, FAMILY_ORDER, membersForDate, scheduledForDate, TRIP_DATES, visitsForPlace } from './model';
+import { dateLabel, FAMILY_ORDER, isTraveler, membersForDate, scheduledForDate, TRIP_DATES, visitsForPlace } from './model';
 import type { Comment, Id, Member, Photo, Place, PlaceLink, Proposal, Review, Tab, TripInfo, Visit } from './types';
 import './style.css';
 
@@ -405,7 +405,7 @@ function proposalModal(preselectedPlaceId?: string, item?: Id<Proposal>): void {
     <label>${T('choosePlace')}<select name="placeId" ${item?'disabled':''} required><option value="">—</option>${state.places.map(p=>`<option value="${attr(p.id)}" ${p.id===(item?.placeId||preselectedPlaceId)?'selected':''}>${esc(p.title)}</option>`).join('')}</select></label>
     ${input(T('date'),'date',date,`type="date" min="2026-12-17" max="2026-12-22" required`)}
     ${input(T('time'),'time',item?.time||'','type="time"')}
-    <fieldset><legend>${T('participants')}</legend><div class="checkbox-grid">${state.members.map(member=>`<label><input type="checkbox" name="participants" value="${attr(member.id)}" data-key="${attr(member.nameKey)}" ${chosen.includes(member.id)?'checked':''} />${esc(member.displayName)}</label>`).join('')}</div></fieldset>`,async form=>{
+    <fieldset><legend>${T('participants')}</legend><div class="checkbox-grid">${state.members.filter(isTraveler).map(member=>`<label><input type="checkbox" name="participants" value="${attr(member.id)}" data-key="${attr(member.nameKey)}" ${chosen.includes(member.id)?'checked':''} />${esc(member.displayName)}</label>`).join('')}</div></fieldset>`,async form=>{
     if (!services || !state.user) return;
     const date=formText(form,'date');
     const participants=Array.from(form.querySelectorAll<HTMLInputElement>('input[name="participants"]:checked')).map(input=>input.value);

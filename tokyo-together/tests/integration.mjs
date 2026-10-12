@@ -22,6 +22,8 @@ for (const [key,name] of [['jinhyeok','진혁'],['yeonhwa','연화'],['minseong'
   await adminDb.doc(`members/${user.uid}`).set({nameKey:key,displayName:name,email:user.email});
   users.push(user);
 }
+const contributor=await adminAuth.createUser({email:`soeun-${suffix}@example.test`,password:'test-password-123'});
+await adminDb.doc(`members/${contributor.uid}`).set({nameKey:'soeun',displayName:'소은',email:contributor.email});
 const outsider=await adminAuth.createUser({email:`outsider-${suffix}@example.test`,password:'test-password-123'});
 function client(user){
   const app=initializeApp({apiKey:'fake',authDomain:`${projectId}.firebaseapp.com`,projectId,storageBucket:`${projectId}.firebasestorage.app`,appId:'test-app'},`client-${user.uid}`);
@@ -32,17 +34,19 @@ function client(user){
   connectFunctionsEmulator(functions,'127.0.0.1',5001);
   return {app,auth,db,storage,functions,user};
 }
-const [jin,yeon,unknown]=[users[0],users[1],outsider].map(client);
-await Promise.all([jin,yeon,unknown].map(async actor=>signInWithEmailAndPassword(actor.auth,actor.user.email,'test-password-123')));
+const [jin,yeon,soeun,unknown]=[users[0],users[1],contributor,outsider].map(client);
+await Promise.all([jin,yeon,soeun,unknown].map(async actor=>signInWithEmailAndPassword(actor.auth,actor.user.email,'test-password-123')));
 const call=(actor,name,data)=>httpsCallable(actor.functions,name)(data).then(result=>result.data);
 const placeFields={title:'Tokyo Disneyland · 도쿄 디즈니랜드',category:'theme park',intro:'Family idea',
   toConfirm:'Check booking',additionalInfo:'Family travel story',infoUrls:[{label:'Trip notes',url:'https://example.com/story'}],
   visitNotes:'',createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 const placeDoc=await addDoc(collection(jin.db,'places'),placeFields);
 assert.equal((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().title,placeFields.title);
+assert.equal((await getDoc(doc(soeun.db,'places',placeDoc.id))).data().title,placeFields.title);
 assert.deepEqual((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().infoUrls,placeFields.infoUrls);
 await assert.rejects(updateDoc(doc(jin.db,'places',placeDoc.id),{infoUrls:[{label:'Bad',url:'javascript:alert(1)'}],updatedAt:serverTimestamp()}));
 await assert.rejects(getDoc(doc(unknown.db,'places',placeDoc.id)));
+await addDoc(collection(soeun.db,`places/${placeDoc.id}/comments`),{authorUid:soeun.user.uid,text:'I would like to help plan',createdAt:serverTimestamp()});
 await setDoc(doc(jin.db,'tripInfo','summary'),{arrivalFlight:'TEST 100',coupleReturnFlight:'TEST 101',youngerReturnFlight:'',mainStay:'Needs booking check',extraStay:'',updatedAt:serverTimestamp()});
 assert.equal((await getDoc(doc(yeon.db,'tripInfo','summary'))).data().arrivalFlight,'TEST 100');
 await assert.rejects(getDoc(doc(unknown.db,'tripInfo','summary')));
@@ -53,6 +57,8 @@ assert.notEqual(past.id,sameYear.id);
 await addDoc(collection(yeon.db,`visits/${past.id}/comments`),{authorUid:yeon.user.uid,text:'Great memory',createdAt:serverTimestamp()});
 assert.equal((await getDocs(collection(jin.db,`visits/${past.id}/comments`))).size,1);
 const proposal=await addDoc(collection(jin.db,'proposals'),{placeId:placeDoc.id,date:'2026-12-18',time:'',participantUids:users.map(u=>u.uid),status:'proposed',visitId:null,createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+await assert.rejects(addDoc(collection(soeun.db,'proposals'),{placeId:placeDoc.id,date:'2026-12-18',time:'',participantUids:[soeun.user.uid],status:'proposed',visitId:null,createdBy:soeun.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+await setDoc(doc(soeun.db,`proposals/${proposal.id}/agreements/${soeun.user.uid}`),{uid:soeun.user.uid,createdAt:serverTimestamp()});
 await setDoc(doc(yeon.db,`proposals/${proposal.id}/agreements/${yeon.user.uid}`),{uid:yeon.user.uid,createdAt:serverTimestamp()});
 await addDoc(collection(yeon.db,`proposals/${proposal.id}/comments`),{authorUid:yeon.user.uid,text:'I agree',createdAt:serverTimestamp()});
 const first=await call(yeon,'setProposalStatus',{proposalId:proposal.id,status:'confirmed'});
@@ -98,4 +104,4 @@ assert.equal((await getDoc(doc(jin.db,`visits/${tripVisitId}/photos/${ticket.pho
 const reused=await call(jin,'reservePhotoUpload',{visitId:tripVisitId,name:'replacement.jpg',contentType:'image/jpeg',size:bytes.length});
 await call(jin,'cancelPhotoUpload',{visitId:tripVisitId,photoId:reused.photoId});
 console.log('PASS: deleting own photo releases capacity');
-await Promise.all([jin,yeon,unknown].map(actor=>deleteApp(actor.app)));
+await Promise.all([jin,yeon,soeun,unknown].map(actor=>deleteApp(actor.app)));
