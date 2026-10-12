@@ -303,7 +303,7 @@ function coverMarkup(item: Id<Place>): string {
 function placeCard(item: Id<Place>): string {
   const saved=Boolean(state.user && state.interests.get(item.id)?.has(state.user.uid));
   const count=visitsForPlace(state.visits,item.id).length;
-  const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' · ');
+  const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' / ');
   return `<article class="card place-card"><div class="place-visual theme-${attr(item.theme || 'earlier')}">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
     <div class="place-content"><div class="place-meta"><span>${esc(item.area || tr('지역 미입력','Area not added'))}</span><span>${saved?'♥':'♡'} ${state.interests.get(item.id)?.size||0}</span></div>
     <div class="place-badges">${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')}${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
@@ -318,9 +318,10 @@ function placeDetail(): string {
   const extra=additionalInfoText(item), links=placeLinks(item);
   const map=mapLink(item.mapQuery||'');
   const archivedPlans=state.proposals.filter(plan=>plan.placeId===item.id && plan.archived);
+  const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' / ');
   return `<section class="card detail"><button class="back-link" data-action="close-place">← ${T('places')}</button>
-    <div class="place-detail-cover">${coverMarkup(item)}</div>
-    <div class="detail-heading"><div><span class="kicker">${esc(themeLabel(item.theme))}${item.subcategory?' / '+esc(mealLabel(item.subcategory)):''}</span><h2>${esc(item.title)}</h2>
+    <div class="place-detail-cover">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
+    <div class="detail-heading"><div><h2>${esc(item.title)}</h2>
       <p>${esc([item.localName,item.area].filter(Boolean).join(' · '))}</p>
       ${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')} ${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
       <div class="inline-actions">${item.archived?'':`<button data-action="interest" data-id="${attr(item.id)}">${saved?'♥ '+T('removeInterest'):'♡ '+T('interest')} · ${state.interests.get(item.id)?.size||0}</button>`}

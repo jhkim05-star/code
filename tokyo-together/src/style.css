@@ -120,7 +120,7 @@ h1,h2,h3,.tokyo-hero h1{letter-spacing:-.045em}
 .place-visual:after,.place-visual strong{display:none}
 .place-visual:before,.place-detail-cover:before{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,#0d203a65,transparent 48%,#0d203a88)}
 .cover-image{display:block;width:100%;height:100%;object-fit:cover}
-.place-kind{position:absolute;z-index:2;top:13px;left:14px;border-radius:100px;background:#fffdf4ed;color:#24394c;padding:6px 10px;font-size:.7rem;font-weight:700;letter-spacing:0;text-transform:none;box-shadow:0 2px 8px #0d203a20}
+.place-visual .place-kind,.place-detail-cover .place-kind{position:absolute;z-index:2;top:13px;left:14px;display:inline-block;max-width:calc(100% - 28px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #ffffff66;border-radius:100px;background:#172b43eb;color:#fff;padding:7px 12px;font-size:.75rem;font-weight:700;line-height:1.4;letter-spacing:0;text-transform:none;box-shadow:0 3px 12px #0d203a55}
 .cover-credit{position:absolute;z-index:2;right:12px;bottom:10px;color:#fff;font-size:.64rem;font-weight:600;letter-spacing:0;text-shadow:0 1px 5px #0d203a;max-width:calc(100% - 24px);text-align:right;line-height:1.35}
 .cover-credit a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .cover-credit{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
