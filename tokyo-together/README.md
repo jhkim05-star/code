@@ -21,7 +21,7 @@
 2. **Authentication → Sign-in method**에서 Email/Password를 사용 설정합니다. **Firestore Database**를 만들고 **Storage** 기본 버킷을 만듭니다. Cloud Functions 배포에도 Blaze가 필요합니다. 실제 위치와 과금 조건은 콘솔에서 확인하세요.
 3. **Project settings → Your apps**에서 웹앱을 등록하고 웹 설정 값을 확인합니다. `cp .env.example .env.local` 후 `VITE_FIREBASE_*` 값을 채우고 `VITE_USE_EMULATORS=false`로 둡니다. 웹 설정 값은 비밀번호가 아니지만, 관리자 서비스 계정 키나 가족 비밀번호를 코드·환경 파일에 넣지 마세요.
 4. `cp functions/.env.example functions/.env` 후 `TOKYO_STORAGE_BUCKET`을 실제 기본 버킷명으로 바꿉니다. 예: `프로젝트ID.firebasestorage.app`. `.env.local`과 `functions/.env`는 Git에서 제외됩니다.
-5. Node.js 22와 npm을 설치한 뒤 이 폴더에서 `npm install`, `npm --prefix functions install`, `npm run build`, `npm --prefix functions run build`를 실행합니다. `npx firebase login`, `npx firebase use --add`로 방금 만든 프로젝트를 선택한 뒤 `npm run deploy`로 규칙·함수·호스팅을 배포합니다. 프로젝트 ID가 설정되지 않은 상태에서 배포하지 마세요. `firebase.json`은 Hosting에 `dist/`를 게시합니다.
+5. Node.js 22와 npm을 설치한 뒤 이 폴더에서 `npm install`, `npm --prefix functions install`, `npm run build`, `npm --prefix functions run build`를 실행합니다. `npx firebase login`, `npx firebase use --add`로 방금 만든 프로젝트를 선택한 뒤 `npm run deploy`로 규칙·함수·호스팅을 배포합니다. 배포 스크립트가 데모 설정과 프로젝트·버킷 불일치를 검사합니다. 프로젝트 ID가 설정되지 않은 상태에서 배포하지 마세요. `firebase.json`은 Hosting에 `dist/`를 게시합니다.
 6. Firebase Console **Authentication → Users**에서 네 사람의 이메일 계정을 만듭니다. 가족에게 각자의 로그인 정보만 전달하고 임시 비밀번호는 별도 안전한 방법으로 바꾸도록 안내합니다. 앱 화면에서는 임의 가입이나 가족 이름 선택을 허용하지 않습니다.
 7. 생성된 각 사용자의 **UID**를 복사해 Firestore에 `members/{UID}` 문서를 직접 만듭니다. 각 문서 필드는 `nameKey`(문자열), `displayName`(문자열), `email`(문자열)입니다. 정확히 네 문서를 만듭니다:
 
