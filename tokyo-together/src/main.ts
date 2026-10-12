@@ -324,7 +324,8 @@ function placeDetail(): string {
   const map=mapLink(item.mapQuery||'');
   const archivedPlans=state.proposals.filter(plan=>plan.placeId===item.id && plan.archived);
   const kind=[themeLabel(item.theme),mealLabel(item.subcategory)].filter(Boolean).join(' / ');
-  return `<section class="card detail"><button class="back-link" data-action="close-place">← ${T('places')}</button>
+  const backButton=()=>`<button type="button" class="place-list-back" data-action="close-place"><span class="back-arrow" aria-hidden="true">←</span>${tr('장소 목록으로 돌아가기','Back to all places')}</button>`;
+  return `<section class="card detail">${backButton()}
     <div class="place-detail-cover">${coverMarkup(item)}<span class="place-kind">${esc(kind)}</span></div>
     <div class="detail-heading"><div><h2>${esc(placeText(item,'title'))}</h2>
       <p>${esc([item.localName,placeText(item,'area')].filter(Boolean).join(' · '))}</p>
@@ -350,9 +351,11 @@ function placeDetail(): string {
     <h3>${T('album')}</h3><div class="album-list">${albums.length?albums.map(item=>albumRow(item)).join(''):`<p class="muted">${T('noAlbum')}</p>`}</div>
     ${state.selectedVisitId && visit(state.selectedVisitId)?.placeId===item.id?albumDetail():''}
     <h3>${T('comment')}</h3>${comments(state.placeComments,`places/${item.id}/comments`)}
-    <div class="visit-note"><h3>${T('notes')}</h3><p>${item.visitNotes?esc(item.visitNotes):`<span class="muted">${T('empty')}</span>`}</p></div></section>`;
+    <div class="visit-note"><h3>${T('notes')}</h3><p>${item.visitNotes?esc(item.visitNotes):`<span class="muted">${T('empty')}</span>`}</p></div>
+    <div class="place-detail-footer">${backButton()}</div></section>`;
 }
 function places(): string {
+  if (state.selectedPlaceId && place(state.selectedPlaceId)) return `<div class="place-detail-view">${placeDetail()}</div>`;
   const archived=state.placeFilter==='archived';
   const initial=archived?state.places.filter(item=>item.archived):activePlaces();
   const needle=state.placeSearch.trim().toLocaleLowerCase();
@@ -376,7 +379,7 @@ function places(): string {
       <div class="place-tag-list">${tags.map(({label,theme,food})=>{const selected=state.themeFilter===theme && state.foodFilter===food;
         return `<button type="button" class="place-tag ${selected?'active':''}" data-action="tag-filter" data-theme="${theme}" data-food="${food}" aria-pressed="${selected}">${esc(label)} <span class="tag-count">${scoped.filter(item=>matchesTag(item,theme,food)).length}</span></button>`;
       }).join('')}</div></section>
-    ${placeDetail()}<div class="place-toolbar"><div class="filters"><button class="filter ${state.placeFilter==='all'?'active':''}" data-action="place-filter" data-filter="all">${T('filterAll')}</button>
+    <div class="place-toolbar"><div class="filters"><button class="filter ${state.placeFilter==='all'?'active':''}" data-action="place-filter" data-filter="all">${T('filterAll')}</button>
       <button class="filter ${state.placeFilter==='mine'?'active':''}" data-action="place-filter" data-filter="mine">${T('filterMine')}</button>
       <button class="filter ${archived?'active':''}" data-action="place-filter" data-filter="archived">${tr('보관함','Archive')}</button></div>
       <label class="place-search">${tr('이름·지역 검색','Search name or area')}<input id="place-search" type="search" value="${attr(state.placeSearch)}" placeholder="${tr('장소명 또는 지역','Name or area')}" /></label></div>
@@ -676,7 +679,7 @@ root.addEventListener('click',event=>{
     case 'restore-place': { const item=place(id);if(item?.archived && canDeleteWrittenBy(item.createdBy))
       void action(async()=>{await setPlaceArchived(services.db,id,false);state.placeFilter='all';watchDetails();});break; }
     case 'open-place': selectPlace(id); break;
-    case 'close-place': state.selectedPlaceId=null;state.selectedVisitId=null;watchDetails();break;
+    case 'close-place': state.selectedPlaceId=null;state.selectedVisitId=null;watchDetails();window.scrollTo(0,0);break;
     case 'new-proposal': proposalModal(target.dataset.placeId); break;
     case 'edit-proposal': { const item=proposal(id);if(item && !item.archived && item.disposition!=='deleted' && item.status==='proposed' && place(item.placeId) && !place(item.placeId)?.archived) proposalModal(undefined,item);break; }
     case 'open-proposal': selectProposal(id);break;
