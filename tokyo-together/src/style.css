@@ -20,3 +20,90 @@ input,textarea,select{border:1px solid #ccdbdd;border-radius:10px;background:#ff
 @media(max-width:650px){.place-toolbar{display:block}.place-toolbar .filters{margin-bottom:14px}.place-search{width:100%}.filter{padding:8px 12px;font-size:.79rem}}
 .comment-content{flex:1;min-width:0}.comment-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.comment-delete{background:transparent;color:#ad5151;font-size:.75rem;padding:4px 6px;flex:none}.comment-delete:hover,.comment-delete:focus-visible{background:#fbecec}.comment p,.review p{overflow-wrap:anywhere}
 .pill.deferred{background:#edf0fa;color:#586d9b}.plan-archive{margin-top:30px}.plan-archive.removed{margin-top:12px}.archive-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;text-align:left;background:#e9f0f0;color:#315f68;padding:17px 20px;font-size:1rem}.archive-toggle strong{display:inline-block;min-width:25px;text-align:center;background:#fff;border-radius:100px;padding:2px 7px;margin-left:5px;font-size:.83rem}.plan-archive>.muted{margin:14px 2px}.plan-archive>.plan-grid{margin-top:16px}.plan-card .card-actions{flex-wrap:wrap}.detail-actions .danger{margin-left:auto}
+
+/* Tokyo winter travel journal theme */
+:root{color:#172b43;background:#f7f2e9}
+body{background:radial-gradient(circle at 100% 0%,#e9dacc66,transparent 420px),#f7f2e9}
+h1,h2,h3{color:#172b43}
+h1,.section-title h2,.home-aside h2,.page-head h1{font-family:Georgia,'Noto Serif KR',serif}
+.muted,.page-head p{color:#667487}
+.kicker,.eyebrow{color:#b8533e}
+button{background:#eee8dd;color:#263c53}
+button:hover{background:#e4dbcd}
+.primary,.upload-button{background:#bf5842;color:#fff;box-shadow:0 5px 18px #a7463530}
+.primary:hover,.upload-button:hover{background:#a74635}
+.outline{border-color:#b9ad9d}
+.text-link,.small-link,.card-actions button,.back-link{color:#9d4634}
+.topbar,.tabs{background:#fffdf8;border-color:#e8ddd0}
+.topbar-inner{padding-top:15px;padding-bottom:15px}
+.brand-mark{background:#c75c46;border-radius:8px;box-shadow:0 4px 13px #9d463433}
+.brand strong{color:#172b43;font-family:Georgia,'Noto Serif KR',serif;letter-spacing:-.025em}
+.brand small{color:#76808b}
+.locale{border-color:#cfc2b5}
+.tab{color:#687586}
+.tab:hover{background:#f7f0e7}
+.tab.active{color:#a64633;border-bottom-color:#c75c46}
+.main{padding-top:30px}
+.tokyo-hero{position:relative;isolation:isolate;min-height:355px;display:flex;align-items:center;overflow:hidden;border-radius:23px;margin:0 0 24px;padding:42px clamp(30px,5vw,68px);color:#fff;background:#172b43 url('/assets/tokyo-winter-hero.jpg') center center/cover no-repeat;box-shadow:0 20px 40px #22385224}
+.tokyo-hero:before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#10243de8 0%,#10243db8 34%,#10243d20 66%,#10243d00 100%)}
+.hero-copy{max-width:min(490px,68%)}
+.hero-eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:22px;color:#fff2de;font-size:.73rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
+.hero-eyebrow span{color:#e89a79}
+.tokyo-hero h1{color:#fff;font-family:Georgia,'Noto Serif KR',serif;font-size:clamp(2.5rem,5vw,4.3rem);font-weight:700;line-height:1.13;letter-spacing:-.055em;text-shadow:0 2px 12px #11233744}
+.tokyo-hero p{font-size:1rem;color:#f5e9db;line-height:1.65;margin:0 0 24px}
+.hero-button{background:#f6eadb;color:#633328;box-shadow:0 9px 20px #07172d36}
+.hero-button:hover{background:#fff7ec}
+.hero-caption{position:absolute;right:24px;bottom:20px;font-size:.66rem;font-weight:800;letter-spacing:.2em;color:#fff5e8;text-shadow:0 1px 5px #15263a}
+.hero-caption span{color:#e89879;margin:0 5px}
+.card{background:#fffdfa;border-color:#ece1d3;box-shadow:0 11px 28px #4935250c}
+.section-title h2{margin-top:7px}
+.day-row,.idea-row,.info-row{border-color:#eee4d9}
+.day-date{border-color:#eaded2}
+.day-date span,.info-row>span,.idea-row span{color:#b85540}
+.day-date strong{color:#172b43}
+.day-date small,.agenda-item small,.info-row small{color:#728092}
+.agenda-dot{background:#bf5842;box-shadow:0 0 0 4px #f7dfd7}
+.agenda-dot.proposed{background:#dca365;box-shadow:0 0 0 4px #f8ead8}
+.travel-note{background:#f7efe5;color:#5d5860}
+.idea-row:hover{background:#fbf5ed}
+.idea-row small{color:#b85540}
+.caution{background:#fff9f2}
+.pill,.pill.confirmed{background:#e5edea;color:#36655f}
+.pill.proposed{background:#fbebd7;color:#97612e}
+.filter{background:#efe8de;color:#647184}
+.filter.active{background:#172b43}
+.place-visual{background:linear-gradient(135deg,#e9d0b8,#d7997b);color:#8d3d2b}
+.place-card .place-visual.theme-sights{background:linear-gradient(135deg,#ebcbb5,#cf8770);color:#813f34}
+.place-card .place-visual.theme-food{background:linear-gradient(135deg,#f1dec7,#deb18b);color:#8b5b3c}
+.place-card .place-visual.theme-shopping{background:linear-gradient(135deg,#dadfe2,#9baebe);color:#435b70}
+.place-card .place-visual.theme-activities{background:linear-gradient(135deg,#dce5df,#a7c0b6);color:#466b62}
+.place-card .place-visual.theme-earlier{background:linear-gradient(135deg,#e8e1d8,#c8b9a7);color:#706253}
+.place-visual:after{border-color:#fff7ee83}
+.place-content p,.place-meta{color:#74808c}
+.agreement-box,.photo-toolbar,.review{background:#f8f3ed}
+.album-row{background:#f6f0e8}.album-row:hover,.album-row.active{background:#efe1d4}
+.album-icon,.avatar{background:#f2dfd5;color:#9e4939}
+.archive-toggle{background:#eee8df;color:#263c53}
+.archive-toggle:hover{background:#e7ddcf}
+.setup-shell{background:#f7f2e9}
+.intro-art{background:#172b43 url('/assets/tokyo-winter-hero.jpg') center center/cover no-repeat;color:#fff6eb;text-shadow:0 3px 20px #10243d}
+.intro-art:before{content:'';position:absolute;inset:0;background:#10243d55}
+.intro-art:after{display:none}
+.intro-art span{position:relative}
+.setup-card{background:#fffdfa;box-shadow:0 18px 40px #1a2e4824}
+input,textarea,select{border-color:#cfc5ba;color:#172b43;background:#fffefa}
+input:focus,textarea:focus,select:focus{border-color:#bf5842}
+input[type=checkbox]{accent-color:#bf5842}
+.modal{background:#fffdfa}
+.toast,.busy-banner{background:#172b43}
+@media(max-width:650px){
+  .main{padding-top:16px}
+  .tokyo-hero{min-height:360px;padding:30px 24px;align-items:flex-start;margin:0 0 17px;border-radius:17px;background-position:58% center}
+  .tokyo-hero:before{background:linear-gradient(90deg,#10243df0 0%,#10243dcc 50%,#10243d52 100%)}
+  .hero-copy{max-width:90%}
+  .hero-eyebrow{font-size:.62rem;letter-spacing:.1em;gap:7px;margin-bottom:19px}
+  .tokyo-hero h1{font-size:clamp(2.2rem,9vw,3.2rem)}
+  .tokyo-hero p{font-size:.86rem;max-width:300px}
+  .hero-caption{right:17px;bottom:15px;font-size:.54rem}
+  .intro-art{background-position:58% center}
+}

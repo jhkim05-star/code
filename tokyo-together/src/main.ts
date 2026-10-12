@@ -196,8 +196,10 @@ function homePlan(item: Id<Proposal>): string {
 function home(): string {
   const currentPlans=activeProposals();
   const ideas = currentPlans.filter(item => item.status==='proposed').sort((a,b)=>a.date.localeCompare(b.date));
-  return `<div class="page-head"><div><div class="eyebrow">${T('tripDates')} · JAPAN</div><h1>${T('homeIntro')}</h1><p>${T('subtitle')}</p></div>
-    <button class="primary" data-action="new-proposal">＋ ${T('addProposal')}</button></div>
+  return `<section class="tokyo-hero" aria-labelledby="home-title"><div class="hero-copy"><div class="hero-eyebrow">TOKYO TOGETHER <span>✦</span> ${T('tripDates')}</div>
+    <h1 id="home-title">${T('homeIntro')}</h1><p>${T('subtitle')}</p>
+    <button class="hero-button" data-action="new-proposal">＋ ${T('addProposal')}</button></div>
+    <div class="hero-caption" aria-hidden="true">冬の東京 <span>·</span> WINTER IN TOKYO</div></section>
     <div class="home-grid"><section class="card wide"><div class="section-title"><div><span class="kicker">01 / ITINERARY</span><h2>${T('homeConfirmed')}</h2></div></div>
       <div class="days">${TRIP_DATES.map(date => {
         const confirmed=scheduledForDate(currentPlans,date,'confirmed');
