@@ -69,7 +69,7 @@ service cloud.firestore {
         && (date != '2026-12-22' || get(/databases/$(database)/documents/members/$(uid)).data.nameKey in ['minseong','sophie']);
     }
     function validProposal() {
-      return request.resource.data.keys().hasOnly(['placeId','date','time','participantUids','status','visitId','archived','createdBy','createdAt','updatedAt'])
+      return request.resource.data.keys().hasOnly(['placeId','date','time','participantUids','status','visitId','archived','disposition','createdBy','createdAt','updatedAt'])
         && request.resource.data.keys().hasAll(['placeId','date','time','participantUids','status','visitId','createdBy','createdAt','updatedAt'])
         && request.resource.data.placeId is string
         && exists(/databases/$(database)/documents/places/$(request.resource.data.placeId))
@@ -82,7 +82,16 @@ service cloud.firestore {
         && (request.resource.data.participantUids.size() < 3 || validTraveler(request.resource.data.participantUids[2], request.resource.data.date))
         && (request.resource.data.participantUids.size() < 4 || validTraveler(request.resource.data.participantUids[3], request.resource.data.date))
         && (!('archived' in request.resource.data) || request.resource.data.archived is bool)
+        && (!('disposition' in request.resource.data) || request.resource.data.disposition in ['deferred','deleted'])
         && request.resource.data.createdBy is string && request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp;
+    }
+    function proposalAcceptsComments(proposalId) {
+      let data = get(/databases/$(database)/documents/proposals/$(proposalId)).data;
+      return data.get('archived', false) == false && data.get('disposition', 'active') != 'deleted';
+    }
+    function proposalAcceptsAgreement(proposalId) {
+      let data = get(/databases/$(database)/documents/proposals/$(proposalId)).data;
+      return data.get('archived', false) == false && data.get('disposition', 'active') == 'active';
     }
     match /members/{uid} {
       allow get: if request.auth != null && (request.auth.uid == uid || member());
@@ -131,14 +140,34 @@ service cloud.firestore {
       allow read: if member();
       allow create: if member() && validProposal() && activePlace(request.resource.data.placeId) && request.resource.data.createdBy == request.auth.uid
         && (!('archived' in request.resource.data) || request.resource.data.archived == false)
+        && !('disposition' in request.resource.data)
         && request.resource.data.status == 'proposed' && request.resource.data.visitId == null;
-      allow update: if member() && resource.data.status == 'proposed' && validProposal()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date','time','participantUids','updatedAt'])
-        && request.resource.data.placeId == resource.data.placeId;
+      allow update: if member() && validProposal() && resource.data.status == 'proposed'
+        && resource.data.get('archived', false) == false
+        && request.resource.data.placeId == resource.data.placeId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.visitId == resource.data.visitId
+        && request.resource.data.get('archived', false) == resource.data.get('archived', false)
+        && (
+          (resource.data.get('disposition', 'active') != 'deleted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date','time','participantUids','updatedAt']))
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disposition','updatedAt'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['disposition'])
+            && (
+              (resource.data.get('disposition', 'active') == 'active' && request.resource.data.get('disposition', 'active') == 'deferred')
+              || (resource.data.get('disposition', 'active') == 'deferred' && request.resource.data.get('disposition', 'active') == 'active' && activePlace(resource.data.placeId))
+              || (resource.data.get('disposition', 'active') in ['active','deferred'] && request.resource.data.get('disposition', 'active') == 'deleted'
+                && (resource.data.createdBy == request.auth.uid || ownerAccount()))
+              || (resource.data.get('disposition', 'active') == 'deleted' && request.resource.data.get('disposition', 'active') == 'deferred'
+                && (resource.data.createdBy == request.auth.uid || ownerAccount()))
+            ))
+        );
       allow delete: if false;
       match /agreements/{uid} {
         allow read: if member();
-        allow create: if member() && request.auth.uid == uid
+        allow create: if member() && proposalAcceptsAgreement(proposalId) && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['uid','createdAt'])
           && request.resource.data.uid == uid && request.resource.data.createdAt is timestamp;
         allow delete: if member() && request.auth.uid == uid;
@@ -146,7 +175,7 @@ service cloud.firestore {
       }
       match /comments/{commentId} {
         allow read: if member();
-        allow create: if member() && validComment();
+        allow create: if member() && proposalAcceptsComments(proposalId) && validComment();
         allow update: if member() && resource.data.authorUid == request.auth.uid && validComment()
           && request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if member() && (resource.data.authorUid == request.auth.uid || ownerAccount());

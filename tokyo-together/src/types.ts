@@ -26,6 +26,7 @@ export interface Proposal {
   status: 'proposed' | 'confirmed'; visitId: string | null;
   createdBy: string; createdAt: Timestamp; updatedAt: Timestamp;
   archived?: boolean;
+  disposition?: 'deferred' | 'deleted';
 }
 export interface Visit {
   placeId: string; label: string; kind: 'past' | 'trip'; year: string;

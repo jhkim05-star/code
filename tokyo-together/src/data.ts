@@ -85,6 +85,12 @@ export async function setProposalStatus(functions: Functions, proposalId: string
   const call = httpsCallable<{ proposalId: string; status: string }, { status: string; visitId: string | null }>(functions, 'setProposalStatus');
   return (await call({ proposalId, status })).data.visitId;
 }
+export async function setProposalDisposition(db: Firestore, proposalId: string, disposition: 'active'|'deferred'|'deleted'): Promise<void> {
+  await updateDoc(doc(db, 'proposals', proposalId), {
+    disposition: disposition === 'active' ? deleteField() : disposition,
+    updatedAt: serverTimestamp(),
+  });
+}
 export async function toggleAgreement(db: Firestore, proposalId: string, uid: string, agreed: boolean): Promise<void> {
   const target = doc(db, 'proposals', proposalId, 'agreements', uid);
   if (agreed) await deleteDoc(target);

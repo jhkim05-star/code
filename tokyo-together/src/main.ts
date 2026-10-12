@@ -3,7 +3,7 @@ import { doc, type Unsubscribe } from 'firebase/firestore';
 import { createServices } from './firebase';
 import {
   addComment, createPastVisit, deleteComment, deleteReview, deleteOwnPhoto, downloadPhoto, getPhotoBlob, placeConnections, savePlace, saveProposal,
-  saveReview, saveTripInfo, setPlaceArchived, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, watch, watchMember, watchTripInfo,
+  saveReview, saveTripInfo, setPlaceArchived, setProposalDisposition, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, watch, watchMember, watchTripInfo,
   MAX_PLACE_LINKS, type PlaceFields, type ProposalFields, type TripInfoFields,
 } from './data';
 import { initialLocale, rememberLocale, t, type Locale } from './i18n';
@@ -23,6 +23,7 @@ const state = {
   agreements: new Map<string,Set<string>>(), interests: new Map<string,Set<string>>(),
   placeFilter: 'all' as 'all'|'mine'|'archived', themeFilter: 'all' as 'all'|PlaceTheme,
   foodFilter: 'all' as 'all'|FoodCategory, placeSearch: '', drafts: new Map<string,string>(),
+  showDeferred: false, showDeleted: false,
   busy: false, notice: '', error: '', loading: true,
 };
 const baseUnsubs: Unsubscribe[] = [];
@@ -68,7 +69,7 @@ function mapLink(value: string): string | null {
   return safeUrl(value) || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value.trim())}`;
 }
 function activePlaces(): Id<Place>[] { return state.places.filter(item => !item.archived); }
-function activeProposals(): Id<Proposal>[] { return state.proposals.filter(item => !item.archived); }
+function activeProposals(): Id<Proposal>[] { return state.proposals.filter(item => !item.archived && !item.disposition); }
 function name(uid: string): string { return state.members.find(item => item.id === uid)?.displayName || uid.slice(0,8); }
 function canDeleteWrittenBy(uid: string): boolean { return Boolean(state.user && (state.user.uid === uid || state.member?.nameKey === 'jinhyeok')); }
 function place(id: string): Id<Place> | undefined { return state.places.find(item => item.id === id); }
@@ -154,6 +155,12 @@ else { state.loading=false; render(); }
 function pill(text: string, kind=''): string { return `<span class="pill ${kind}">${esc(text)}</span>`; }
 function who(uids: string[]): string { return uids.map(name).map(esc).join(' · ') || T('unknown'); }
 function statusPill(status: Proposal['status']): string { return pill(status==='confirmed' ? T('confirmed') : T('proposed'), status); }
+function proposalPill(item: Proposal): string {
+  if (item.archived) return pill(tr('보관된 이전 제안','Archived earlier plan'),'archived');
+  if (item.disposition==='deferred') return pill(tr('이번에는 미반영','Not included this time'),'deferred');
+  if (item.disposition==='deleted') return pill(tr('삭제됨 · 복구 가능','Removed · recoverable'),'archived');
+  return statusPill(item.status);
+}
 function nav(): string {
   return `<nav class="tabs" aria-label="${tr('메인 메뉴','Main menu')}">
     ${(['home','plans','places','memories'] as Tab[]).map(tab => `<button class="tab ${state.tab===tab?'active':''}" data-action="tab" data-tab="${tab}" aria-current="${state.tab===tab?'page':'false'}">${T(tab)}</button>`).join('')}
@@ -216,10 +223,13 @@ function home(): string {
 }
 function planCard(item: Id<Proposal>): string {
   const agreed = state.agreements.get(item.id) ?? new Set<string>();
-  return `<article class="card plan-card"><div class="plan-card-top"><div>${statusPill(item.status)}<span class="date-chip">${esc(displayDate(item.date))} · ${esc(displayTime(item.time))}</span></div><span class="count">✓ ${T('agreeCount')} ${agreed.size}</span></div>
+  const placeReady=Boolean(place(item.placeId) && !place(item.placeId)?.archived);
+  return `<article class="card plan-card"><div class="plan-card-top"><div>${proposalPill(item)}<span class="date-chip">${esc(displayDate(item.date))} · ${esc(displayTime(item.time))}</span></div><span class="count">✓ ${T('agreeCount')} ${agreed.size}</span></div>
     <h3>${esc(place(item.placeId)?.title || T('unknown'))}</h3><p class="muted">${T('participants')}: ${who(item.participantUids)}</p>
     <div class="card-actions"><button data-action="open-proposal" data-id="${attr(item.id)}">${tr('의견 보기','View discussion')} →</button>
-    ${item.status==='proposed'?`<button class="outline" data-action="confirm" data-id="${attr(item.id)}">${T('confirmPlan')}</button>`:`<button class="outline" data-action="reconsider" data-id="${attr(item.id)}">${T('reconsider')}</button>`}</div></article>`;
+    ${item.disposition==='deleted'?canDeleteWrittenBy(item.createdBy)?`<button class="outline" data-action="restore-proposal" data-id="${attr(item.id)}">${tr('미반영 목록으로 복구','Restore to not included')}</button>`:'':
+      item.disposition==='deferred'?placeReady?`<button class="outline" data-action="confirm" data-id="${attr(item.id)}">${tr('지금 최종일정에 반영','Add to final plan now')}</button>`:'':
+      item.status==='proposed'?placeReady?`<button class="outline" data-action="confirm" data-id="${attr(item.id)}">${T('confirmPlan')}</button>`:'':`<button class="outline" data-action="reconsider" data-id="${attr(item.id)}">${T('reconsider')}</button>`}</div></article>`;
 }
 function comments(items: Id<Comment>[], key: string, editable = true): string {
   return `<div class="comments">${items.length?items.map(item=>`<div class="comment"><div class="avatar">${esc(name(item.authorUid).slice(0,1))}</div><div class="comment-content"><div class="comment-heading"><strong>${esc(name(item.authorUid))}</strong>${canDeleteWrittenBy(item.authorUid)?`<button type="button" class="comment-delete" data-action="delete-comment" data-path="${attr(key)}" data-id="${attr(item.id)}" aria-label="${attr(tr(`${name(item.authorUid)}의 댓글 삭제`,`Delete comment by ${name(item.authorUid)}`))}">${tr('삭제','Delete')}</button>`:''}</div><p>${esc(item.text)}</p></div></div>`).join(''):`<p class="muted">${T('empty')}</p>`}
@@ -230,19 +240,36 @@ function proposalDetail(): string {
   if (!item) return '';
   const agreed=state.agreements.get(item.id) ?? new Set<string>();
   const mine=Boolean(state.user && agreed.has(state.user.uid));
+  const placeReady=Boolean(place(item.placeId) && !place(item.placeId)?.archived);
+  const isActive=!item.archived && !item.disposition;
+  const isDeferred=!item.archived && item.disposition==='deferred';
+  const isDeleted=!item.archived && item.disposition==='deleted';
   return `<section class="card detail"><button class="back-link" data-action="close-proposal">← ${T('plans')}</button>
-    <div class="detail-heading"><div>${item.archived?pill(tr('보관된 이전 제안','Archived earlier plan'),'archived'):statusPill(item.status)}<h2>${esc(place(item.placeId)?.title || T('unknown'))}</h2><p>${esc(displayDate(item.date))} · ${esc(displayTime(item.time))} · ${who(item.participantUids)}</p></div>
-    ${!item.archived&&item.status==='proposed'?`<button data-action="edit-proposal" data-id="${attr(item.id)}">${T('editProposal')}</button>`:''}</div>
+    <div class="detail-heading"><div>${proposalPill(item)}<h2>${esc(place(item.placeId)?.title || T('unknown'))}</h2><p>${esc(displayDate(item.date))} · ${esc(displayTime(item.time))} · ${who(item.participantUids)}</p></div>
+    ${(isActive||isDeferred)&&item.status==='proposed'&&placeReady?`<button data-action="edit-proposal" data-id="${attr(item.id)}">${T('editProposal')}</button>`:''}</div>
     <div class="agreement-box"><strong>${T('agreeCount')} ${agreed.size}</strong><p>${agreed.size?who([...agreed]):T('empty')}</p>
-    ${item.archived?'':`<button class="outline" data-action="agree" data-id="${attr(item.id)}">${mine?T('unagree'):T('agree')}</button>`}</div>
-    <h3>${T('comment')}</h3>${comments(state.proposalComments,`proposals/${item.id}/comments`,!item.archived)}
-    <div class="detail-actions">${item.archived?'':item.status==='proposed'?`<button class="primary" data-action="confirm" data-id="${attr(item.id)}">${T('confirmPlan')}</button>`:`<button class="outline" data-action="reconsider" data-id="${attr(item.id)}">${T('reconsider')}</button>`}
+    ${isActive?`<button class="outline" data-action="agree" data-id="${attr(item.id)}">${mine?T('unagree'):T('agree')}</button>`:''}</div>
+    ${isDeferred?`<p class="muted">${tr('이번 일정에서는 제외했지만 의견과 댓글은 보존됩니다. 날짜와 시간을 고쳐 다시 반영할 수 있어요.','This idea was not included, but its discussion remains. You can adjust the date and time before adding it later.')}</p>`:''}
+    ${isDeleted?`<p class="muted">${tr('삭제된 제안입니다. 작성자 또는 진혁이 미반영 목록으로 복구할 수 있습니다.','This removed idea can be restored to the not included list by its author or Jinhyeok.')}</p>`:''}
+    ${!placeReady&&!isDeleted&&!item.archived?`<p class="muted">${tr('연결된 장소를 먼저 복원해야 일정을 반영할 수 있습니다.','Restore the linked place before adding this plan.')}</p>`:''}
+    <h3>${T('comment')}</h3>${comments(state.proposalComments,`proposals/${item.id}/comments`,!item.archived&&!isDeleted)}
+    <div class="detail-actions">${isActive?(item.status==='proposed'?`${placeReady?`<button class="primary" data-action="confirm" data-id="${attr(item.id)}">${T('confirmPlan')}</button>`:''}<button class="outline" data-action="defer-proposal" data-id="${attr(item.id)}">${tr('이번에는 미반영','Mark not included')}</button>`:`<button class="outline" data-action="reconsider" data-id="${attr(item.id)}">${T('reconsider')}</button>`):''}
+    ${isDeferred?`<button class="outline" data-action="reactivate-proposal" data-id="${attr(item.id)}" ${placeReady?'':'disabled'}>${tr('다시 검토하기','Reconsider this idea')}</button>${placeReady?`<button class="primary" data-action="confirm" data-id="${attr(item.id)}">${tr('지금 최종일정에 반영','Add to final plan now')}</button>`:''}`:''}
+    ${(isActive||isDeferred)&&item.status==='proposed'&&canDeleteWrittenBy(item.createdBy)?`<button class="danger" data-action="remove-proposal" data-id="${attr(item.id)}">${tr('제안 삭제','Remove idea')}</button>`:''}
+    ${isDeleted&&canDeleteWrittenBy(item.createdBy)?`<button class="outline" data-action="restore-proposal" data-id="${attr(item.id)}">${tr('미반영 목록으로 복구','Restore to not included')}</button>`:''}
     ${item.visitId?`<button data-action="open-visit" data-id="${attr(item.visitId)}">${T('showAlbum')} →</button>`:''}</div></section>`;
 }
 function plans(): string {
-  const items=activeProposals().sort((a,b)=>a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  const sortPlans=(items: Id<Proposal>[]): Id<Proposal>[]=>items.sort((a,b)=>a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  const items=sortPlans(activeProposals());
+  const deferred=sortPlans(state.proposals.filter(item=>!item.archived&&item.disposition==='deferred'));
+  const deleted=sortPlans(state.proposals.filter(item=>!item.archived&&item.disposition==='deleted'));
   return `<div class="page-head"><div><span class="kicker">PLAN TOGETHER</span><h1>${T('plans')}</h1><p>${tr('동의는 의견입니다. 가족 누구나 최종일정에 반영할 수 있어요.','Agreement is feedback. Any family member can confirm a plan.')}</p></div><button class="primary" data-action="new-proposal">＋ ${T('addProposal')}</button></div>
-    ${proposalDetail()}<div class="plan-grid">${items.length?items.map(planCard).join(''):`<div class="card empty-card">${T('empty')}</div>`}</div>`;
+    ${proposalDetail()}<div class="plan-grid">${items.length?items.map(planCard).join(''):`<div class="card empty-card">${T('empty')}</div>`}</div>
+    <section class="plan-archive"><button class="archive-toggle" data-action="toggle-deferred" aria-expanded="${state.showDeferred}"><span>${tr('이번에는 미반영한 의견','Ideas not included this time')} <strong>${deferred.length}</strong></span><span aria-hidden="true">${state.showDeferred?'▴':'▾'}</span></button>
+      ${state.showDeferred?`<p class="muted">${tr('필요할 때 날짜와 시간을 고치거나 바로 최종일정에 반영할 수 있습니다.','Adjust the date and time or add an idea to the final plan when needed.')}</p><div class="plan-grid">${deferred.length?deferred.map(planCard).join(''):`<div class="card empty-card">${tr('미반영한 의견이 없습니다.','No ideas are marked as not included.')}</div>`}</div>`:''}</section>
+    ${deleted.length?`<section class="plan-archive removed"><button class="archive-toggle" data-action="toggle-deleted" aria-expanded="${state.showDeleted}"><span>${tr('삭제된 제안 · 복구 가능','Removed ideas · recoverable')} <strong>${deleted.length}</strong></span><span aria-hidden="true">${state.showDeleted?'▴':'▾'}</span></button>
+      ${state.showDeleted?`<div class="plan-grid">${deleted.map(planCard).join('')}</div>`:''}</section>`:''}`;
 }
 function placeCard(item: Id<Place>): string {
   const saved=Boolean(state.user && state.interests.get(item.id)?.has(state.user.uid));
@@ -553,9 +580,26 @@ root.addEventListener('click',event=>{
     case 'open-place': selectPlace(id); break;
     case 'close-place': state.selectedPlaceId=null;state.selectedVisitId=null;watchDetails();break;
     case 'new-proposal': proposalModal(target.dataset.placeId); break;
-    case 'edit-proposal': proposalModal(undefined,proposal(id));break;
+    case 'edit-proposal': { const item=proposal(id);if(item && !item.archived && item.disposition!=='deleted' && item.status==='proposed' && place(item.placeId) && !place(item.placeId)?.archived) proposalModal(undefined,item);break; }
     case 'open-proposal': selectProposal(id);break;
     case 'close-proposal': state.selectedProposalId=null;watchDetails();break;
+    case 'toggle-deferred': state.showDeferred=!state.showDeferred;render();break;
+    case 'toggle-deleted': state.showDeleted=!state.showDeleted;render();break;
+    case 'defer-proposal': { const item=proposal(id);
+      if(item && !item.archived && !item.disposition && item.status==='proposed') void action(async()=>{
+        await setProposalDisposition(services.db,id,'deferred');state.showDeferred=true;state.selectedProposalId=null;watchDetails();
+      });break; }
+    case 'reactivate-proposal': { const item=proposal(id);
+      if(item?.disposition==='deferred' && !item.archived && place(item.placeId) && !place(item.placeId)?.archived)
+        void action(()=>setProposalDisposition(services.db,id,'active'));break; }
+    case 'remove-proposal': { const item=proposal(id);
+      if(item && !item.archived && item.status==='proposed' && item.disposition!=='deleted' && canDeleteWrittenBy(item.createdBy)
+        && window.confirm(tr('이 제안을 삭제된 제안으로 옮길까요? 댓글과 연결된 앨범은 보존되며 나중에 복구할 수 있습니다.','Move this idea to Removed ideas? Comments and any linked album remain and it can be restored later.')))
+        void action(async()=>{await setProposalDisposition(services.db,id,'deleted');state.showDeleted=true;state.selectedProposalId=null;watchDetails();});
+      break; }
+    case 'restore-proposal': { const item=proposal(id);
+      if(item?.disposition==='deleted' && !item.archived && canDeleteWrittenBy(item.createdBy))
+        void action(async()=>{await setProposalDisposition(services.db,id,'deferred');state.showDeferred=true;});break; }
     case 'open-visit': selectVisit(id);break;
     case 'new-past-visit': pastVisitModal(target.dataset.placeId||'');break;
     case 'edit-review': reviewModal();break;
@@ -579,9 +623,16 @@ root.addEventListener('click',event=>{
     case 'theme-filter': state.themeFilter=(target.dataset.theme||'all') as 'all'|PlaceTheme;state.foodFilter='all';render();break;
     case 'food-filter': state.foodFilter=(target.dataset.food||'all') as 'all'|FoodCategory;render();break;
     case 'interest': void action(()=>toggleInterest(services.db,id,state.user!.uid,Boolean(state.interests.get(id)?.has(state.user!.uid))));break;
-    case 'agree': void action(()=>toggleAgreement(services.db,id,state.user!.uid,Boolean(state.agreements.get(id)?.has(state.user!.uid))));break;
-    case 'confirm': void action(async()=>{ const visitId=await setProposalStatus(services.functions,id,'confirmed'); state.selectedProposalId=id; if (visitId) state.selectedVisitId=visitId;watchDetails(); });break;
-    case 'reconsider': void action(async()=>{ await setProposalStatus(services.functions,id,'proposed');state.selectedProposalId=id;watchDetails(); });break;
+    case 'agree': { const item=proposal(id);if(item && !item.archived && !item.disposition)
+      void action(()=>toggleAgreement(services.db,id,state.user!.uid,Boolean(state.agreements.get(id)?.has(state.user!.uid))));break; }
+    case 'confirm': { const item=proposal(id);if(item && !item.archived && item.disposition!=='deleted' && place(item.placeId) && !place(item.placeId)?.archived) {
+      const confirmedDate=tr(`${displayDate(item.date)} ${displayTime(item.time)}에 최종일정으로 반영할까요? 날짜가 다르면 먼저 제안을 수정해 주세요.`,
+        `Add this idea to the final plan for ${displayDate(item.date)} at ${displayTime(item.time)}? Edit it first if the date has changed.`);
+      if(item.disposition==='deferred' && !window.confirm(confirmedDate)) break;
+      void action(async()=>{ const visitId=await setProposalStatus(services.functions,id,'confirmed'); state.selectedProposalId=id; if (visitId) state.selectedVisitId=visitId;watchDetails(); });
+    }break; }
+    case 'reconsider': { const item=proposal(id);if(item && !item.archived && !item.disposition && item.status==='confirmed')
+      void action(async()=>{ await setProposalStatus(services.functions,id,'proposed');state.selectedProposalId=id;watchDetails(); });break; }
     case 'download-photo': { const photo=state.photos.find(x=>x.id===id);if(photo)void action(()=>downloadPhoto(services.storage,photo));break; }
     case 'delete-photo': { const photo=state.photos.find(x=>x.id===id);if(photo && photo.ownerUid===state.user.uid && window.confirm(T('deleteConfirm')))
       void action(()=>deleteOwnPhoto(services.functions,state.selectedVisitId!,id));break; }

@@ -25,6 +25,16 @@ test('proposed and confirmed plans never share the same home bucket',()=>{
   assert.deepEqual(scheduledForDate(plans,'2026-12-18','confirmed').map(x=>x.id),['p2']);
   assert.deepEqual(scheduledForDate(plans,'2026-12-18','proposed').map(x=>x.id),['p1']);
 });
+test('deferred, removed and legacy archived ideas stay off the home itinerary',()=>{
+  const plans=[
+    {id:'active',date:'2026-12-18',time:'',status:'proposed'},
+    {id:'deferred',date:'2026-12-18',time:'',status:'proposed',disposition:'deferred'},
+    {id:'deleted',date:'2026-12-18',time:'',status:'proposed',disposition:'deleted'},
+    {id:'legacy',date:'2026-12-18',time:'',status:'confirmed',archived:true},
+  ];
+  assert.deepEqual(scheduledForDate(plans,'2026-12-18','proposed').map(x=>x.id),['active']);
+  assert.deepEqual(scheduledForDate(plans,'2026-12-18','confirmed').map(x=>x.id),[]);
+});
 test('one proposal always names the same visit album',()=>{
   assert.equal(visitIdForProposal('abc'),visitIdForProposal('abc'));
   assert.notEqual(visitIdForProposal('abc'),visitIdForProposal('def'));

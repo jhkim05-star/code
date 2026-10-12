@@ -14,7 +14,8 @@ export function membersForDate(date: string, members: Id<Member>[]): Id<Member>[
   return members.filter(member => isTraveler(member) && (!leaving || !['jinhyeok','yeonhwa'].includes(member.nameKey)));
 }
 export function scheduledForDate(proposals: Id<Proposal>[], date: string, status: Proposal['status']): Id<Proposal>[] {
-  return proposals.filter(plan => plan.date === date && plan.status === status).sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+  return proposals.filter(plan => !plan.archived && !plan.disposition && plan.date === date && plan.status === status)
+    .sort((a,b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
 }
 export function visitsForPlace(visits: Id<Visit>[], placeId: string): Id<Visit>[] {
   return visits.filter(visit => visit.placeId === placeId).sort((a,b) => (b.year || '').localeCompare(a.year || ''));

@@ -56,6 +56,7 @@ export const setProposalStatus = onCall({ region: REGION }, async request => {
     if (!proposalSnap.exists) throw new HttpsError('not-found', 'Proposal not found');
     const proposal = proposalSnap.data()!;
     if (proposal.archived) throw new HttpsError('failed-precondition', 'Archived proposal cannot be confirmed');
+    if (proposal.disposition === 'deleted') throw new HttpsError('failed-precondition', 'Deleted proposal must be restored first');
     if (status === 'proposed') {
       if (proposal.status !== 'proposed') tx.update(proposalRef, { status, updatedAt: FieldValue.serverTimestamp() });
       return { status, visitId: proposal.visitId ?? null };
@@ -70,7 +71,7 @@ export const setProposalStatus = onCall({ region: REGION }, async request => {
       kind: 'trip', year: proposal.date.slice(0,4), proposalId, createdBy: uid,
       createdAt: FieldValue.serverTimestamp(),
     });
-    tx.update(proposalRef, { status, visitId, updatedAt: FieldValue.serverTimestamp() });
+    tx.update(proposalRef, { status, visitId, disposition: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
     return { status, visitId };
   });
 });
