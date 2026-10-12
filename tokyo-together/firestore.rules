@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function member() {
+      return request.auth != null && exists(/databases/$(database)/documents/members/$(request.auth.uid));
+    }
+    function smallText(value, max) { return value is string && value.size() <= max; }
+    function validPlace() {
+      return request.resource.data.keys().hasAll(['title','category','intro','mapUrl','officialUrl','visitNotes','reservationNotes','toConfirm','createdBy','createdAt','updatedAt'])
+        && request.resource.data.keys().hasOnly(['title','category','intro','mapUrl','officialUrl','visitNotes','reservationNotes','toConfirm','createdBy','createdAt','updatedAt'])
+        && smallText(request.resource.data.title, 120) && request.resource.data.title.size() > 0
+        && smallText(request.resource.data.category, 50) && smallText(request.resource.data.intro, 2000)
+        && smallText(request.resource.data.mapUrl, 600) && smallText(request.resource.data.officialUrl, 600)
+        && smallText(request.resource.data.visitNotes, 2000) && smallText(request.resource.data.reservationNotes, 2000)
+        && smallText(request.resource.data.toConfirm, 2000)
+        && request.resource.data.createdBy is string && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+    function validComment() {
+      return request.resource.data.keys().hasOnly(['authorUid','text','createdAt'])
+        && request.resource.data.keys().hasAll(['authorUid','text','createdAt'])
+        && request.resource.data.authorUid == request.auth.uid
+        && smallText(request.resource.data.text, 2000) && request.resource.data.text.size() > 0
+        && request.resource.data.createdAt is timestamp;
+    }
+    function validProposal() {
+      return request.resource.data.keys().hasOnly(['placeId','date','time','participantUids','status','visitId','createdBy','createdAt','updatedAt'])
+        && request.resource.data.keys().hasAll(['placeId','date','time','participantUids','status','visitId','createdBy','createdAt','updatedAt'])
+        && request.resource.data.placeId is string
+        && exists(/databases/$(database)/documents/places/$(request.resource.data.placeId))
+        && request.resource.data.date is string && request.resource.data.date >= '2026-12-17' && request.resource.data.date <= '2026-12-22'
+        && request.resource.data.time is string && (request.resource.data.time == '' || request.resource.data.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))
+        && request.resource.data.participantUids is list && request.resource.data.participantUids.size() >= 1 && request.resource.data.participantUids.size() <= 4
+        && request.resource.data.participantUids.toSet().size() == request.resource.data.participantUids.size()
+        && request.resource.data.createdBy is string && request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp;
+    }
+    match /members/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || member());
+      allow list: if member();
+      allow write: if false;
+    }
+    match /tripInfo/{docId} {
+      allow read: if member() && docId == 'summary';
+      allow create, update: if member() && docId == 'summary'
+        && request.resource.data.keys().hasAll(['arrivalFlight','coupleReturnFlight','youngerReturnFlight','mainStay','extraStay','updatedAt'])
+        && request.resource.data.keys().hasOnly(['arrivalFlight','coupleReturnFlight','youngerReturnFlight','mainStay','extraStay','updatedAt'])
+        && smallText(request.resource.data.arrivalFlight, 300)
+        && smallText(request.resource.data.coupleReturnFlight, 300)
+        && smallText(request.resource.data.youngerReturnFlight, 300)
+        && smallText(request.resource.data.mainStay, 300)
+        && smallText(request.resource.data.extraStay, 300)
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+    }
+    match /places/{placeId} {
+      allow read: if member();
+      allow create: if member() && validPlace() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if member() && validPlace()
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+      match /interests/{uid} {
+        allow read: if member();
+        allow create: if member() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['uid','createdAt'])
+          && request.resource.data.uid == uid && request.resource.data.createdAt is timestamp;
+        allow delete: if member() && request.auth.uid == uid;
+        allow update: if false;
+      }
+      match /comments/{commentId} {
+        allow read: if member();
+        allow create: if member() && validComment();
+        allow update: if member() && resource.data.authorUid == request.auth.uid && validComment()
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if member() && resource.data.authorUid == request.auth.uid;
+      }
+    }
+    match /proposals/{proposalId} {
+      allow read: if member();
+      allow create: if member() && validProposal() && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'proposed' && request.resource.data.visitId == null;
+      allow update: if member() && resource.data.status == 'proposed' && validProposal()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date','time','participantUids','updatedAt'])
+        && request.resource.data.placeId == resource.data.placeId;
+      allow delete: if false;
+      match /agreements/{uid} {
+        allow read: if member();
+        allow create: if member() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['uid','createdAt'])
+          && request.resource.data.uid == uid && request.resource.data.createdAt is timestamp;
+        allow delete: if member() && request.auth.uid == uid;
+        allow update: if false;
+      }
+      match /comments/{commentId} {
+        allow read: if member();
+        allow create: if member() && validComment();
+        allow update: if member() && resource.data.authorUid == request.auth.uid && validComment()
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if member() && resource.data.authorUid == request.auth.uid;
+      }
+    }
+    match /visits/{visitId} {
+      allow read: if member();
+      allow create: if member()
+        && request.resource.data.keys().hasOnly(['placeId','label','kind','year','proposalId','createdBy','createdAt'])
+        && request.resource.data.keys().hasAll(['placeId','label','kind','year','proposalId','createdBy','createdAt'])
+        && request.resource.data.kind == 'past' && request.resource.data.proposalId == null
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.placeId is string
+        && exists(/databases/$(database)/documents/places/$(request.resource.data.placeId))
+        && smallText(request.resource.data.label, 160) && request.resource.data.label.size() > 0
+        && request.resource.data.year is string && (request.resource.data.year == '' || request.resource.data.year.matches('^[0-9]{4}$'))
+        && request.resource.data.createdAt is timestamp;
+      allow update: if member() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['label','year'])
+        && smallText(request.resource.data.label, 160) && request.resource.data.label.size() > 0
+        && request.resource.data.year is string && (request.resource.data.year == '' || request.resource.data.year.matches('^[0-9]{4}$'));
+      allow delete: if false;
+      match /photos/{photoId} { allow read: if member(); allow write: if false; }
+      match /quotas/{uid} { allow read, write: if false; }
+      match /reviews/{uid} {
+        allow read: if member();
+        allow create, update: if member() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['authorUid','text','updatedAt'])
+          && request.resource.data.authorUid == uid
+          && smallText(request.resource.data.text, 3000)
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if member() && request.auth.uid == uid;
+      }
+      match /comments/{commentId} {
+        allow read: if member();
+        allow create: if member() && validComment();
+        allow update: if member() && resource.data.authorUid == request.auth.uid && validComment()
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if member() && resource.data.authorUid == request.auth.uid;
+      }
+    }
+    match /uploadTickets/{ticketId} { allow read, write: if false; }
+  }
+}

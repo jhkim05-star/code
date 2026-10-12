@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function member() {
+      return request.auth != null && firestore.exists(/databases/(default)/documents/members/$(request.auth.uid));
+    }
+    function ticket(photoId) {
+      return firestore.get(/databases/(default)/documents/uploadTickets/$(photoId)).data;
+    }
+    match /visits/{visitId}/{uid}/{photoId} {
+      allow read: if member();
+      allow create: if member() && request.auth.uid == uid
+        && firestore.exists(/databases/(default)/documents/uploadTickets/$(photoId))
+        && ticket(photoId).uid == uid && ticket(photoId).visitId == visitId
+        && request.time < ticket(photoId).expiresAt
+        && request.resource.size == ticket(photoId).size
+        && request.resource.size <= 25 * 1024 * 1024
+        && request.resource.contentType == ticket(photoId).contentType
+        && request.resource.contentType.matches('^image/(jpeg|png|webp|gif|avif|heic|heif)$');
+      allow update, delete: if false;
+    }
+  }
+}
