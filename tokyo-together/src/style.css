@@ -134,3 +134,14 @@ h1,h2,h3,.tokyo-hero h1{letter-spacing:-.045em}
 .cover-editor .remove-cover{display:flex;flex-direction:row;align-items:center;gap:8px}
 .remove-cover input{width:auto}
 @media(max-width:650px){.day-row{grid-template-columns:104px minmax(0,1fr)}.day-date small{font-size:.61rem}.place-visual{height:175px}.place-detail-cover{height:190px}}
+
+.place-tag-browser{margin:0 0 18px;padding:18px 20px;background:#fffdfa;border:1px solid #ece1d3;border-radius:16px;box-shadow:0 8px 22px #4935250a}
+.place-tag-browser h2{margin:0 0 13px;font-size:1rem;letter-spacing:-.025em}
+.place-tag-list{display:flex;flex-wrap:wrap;gap:8px}
+.place-tag{display:inline-flex;align-items:center;gap:8px;border:1px solid #ddd2c5;border-radius:100px;padding:9px 13px;background:#f7f2ea;color:#34465a;font-size:.8rem;font-weight:700;line-height:1.25}
+.place-tag:hover{background:#eee4d7}
+.place-tag.active{border-color:#172b43;background:#172b43;color:#fff}
+.place-tag:focus-visible{outline:3px solid #bf5842;outline-offset:2px}
+.tag-count{display:inline-grid;min-width:23px;height:23px;place-items:center;border-radius:100px;padding:0 5px;background:#e8dfd3;color:#576474;font-size:.7rem;font-variant-numeric:tabular-nums}
+.place-tag.active .tag-count{background:#ffffff2d;color:#fff}
+@media(max-width:650px){.place-tag-browser{padding:15px;margin-bottom:15px}.place-tag-list{gap:7px}.place-tag{padding:8px 10px;font-size:.75rem;gap:6px}.tag-count{min-width:20px;height:20px;font-size:.66rem}}

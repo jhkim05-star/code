@@ -23,7 +23,7 @@ const state = {
   placeComments: [] as Id<Comment>[], proposalComments: [] as Id<Comment>[], albumComments: [] as Id<Comment>[],
   photos: [] as Id<Photo>[], reviews: [] as Id<Review>[],
   agreements: new Map<string,Set<string>>(), interests: new Map<string,Set<string>>(),
-  placeFilter: 'all' as 'all'|'mine'|'archived', themeFilter: 'all' as 'all'|PlaceTheme,
+  placeFilter: 'all' as 'all'|'mine'|'archived', themeFilter: 'all' as 'all'|PlaceTheme|'uncategorized',
   foodFilter: 'all' as 'all'|FoodCategory, placeSearch: '', drafts: new Map<string,string>(),
   showDeferred: false, showDeleted: false,
   busy: false, notice: '', error: '', loading: true,
@@ -351,25 +351,31 @@ function places(): string {
   const archived=state.placeFilter==='archived';
   const initial=archived?state.places.filter(item=>item.archived):activePlaces();
   const needle=state.placeSearch.trim().toLocaleLowerCase();
-  const shown=initial.filter(item=>{
+  const scoped=initial.filter(item=>{
     if (!archived && state.placeFilter==='mine' && !state.interests.get(item.id)?.has(state.user?.uid||'')) return false;
-    if (!archived && state.themeFilter!=='all' && item.theme!==state.themeFilter) return false;
-    if (!archived && state.themeFilter==='food' && state.foodFilter!=='all' && item.subcategory!==state.foodFilter) return false;
     return !needle || [item.title,item.localName,item.area].some(value=>value?.toLocaleLowerCase().includes(needle));
   });
-  const themes:[string,'all'|PlaceTheme][]=[[tr('전체','All'),'all'],[tr('맛집','Food'),'food'],[tr('볼거리','Sights'),'sights'],
-    [tr('쇼핑','Shopping'),'shopping'],[tr('즐길거리','Activities'),'activities']];
-  const meals:[string,'all'|FoodCategory][]=[[tr('전체','All'),'all'],[tr('아침','Breakfast'),'breakfast'],[tr('점심','Lunch'),'lunch'],
-    [tr('저녁','Dinner'),'dinner'],[tr('카페·디저트','Cafe & dessert'),'cafe']];
+  const matchesTag=(item: Place, theme: 'all'|PlaceTheme|'uncategorized', food: 'all'|FoodCategory): boolean =>
+    theme==='all' || (theme==='uncategorized' ? !item.theme : item.theme===theme && (theme!=='food' || food==='all' || item.subcategory===food));
+  const shown=scoped.filter(item=>matchesTag(item,state.themeFilter,state.foodFilter));
+  const tags:{ label:string; theme:'all'|PlaceTheme|'uncategorized'; food:'all'|FoodCategory }[]=[
+    {label:tr('전체','All'),theme:'all',food:'all'},
+    {label:themeLabel('food'),theme:'food',food:'all'},
+    ...(['breakfast','lunch','dinner','cafe'] as FoodCategory[]).map(food=>({label:`${themeLabel('food')} / ${mealLabel(food)}`,theme:'food' as const,food})),
+    ...(['sights','shopping','activities'] as PlaceTheme[]).map(theme=>({label:themeLabel(theme),theme,food:'all' as const})),
+  ];
+  if (initial.some(item=>!item.theme) || state.themeFilter==='uncategorized') tags.push({label:tr('미분류','Uncategorized'),theme:'uncategorized',food:'all'});
   return `<div class="page-head"><div><span class="kicker">PLACES & POSSIBILITIES</span><h1>${T('places')}</h1><p>${T('seedNote')}</p></div><button class="primary" data-action="new-place">＋ ${T('addPlace')}</button></div>
+    <section class="place-tag-browser" aria-label="${attr(tr('장소 태그별 보기','Browse places by tag'))}"><h2>${tr('태그별 보기','Browse by tag')}</h2>
+      <div class="place-tag-list">${tags.map(({label,theme,food})=>{const selected=state.themeFilter===theme && state.foodFilter===food;
+        return `<button type="button" class="place-tag ${selected?'active':''}" data-action="tag-filter" data-theme="${theme}" data-food="${food}" aria-pressed="${selected}">${esc(label)} <span class="tag-count">${scoped.filter(item=>matchesTag(item,theme,food)).length}</span></button>`;
+      }).join('')}</div></section>
     ${placeDetail()}<div class="place-toolbar"><div class="filters"><button class="filter ${state.placeFilter==='all'?'active':''}" data-action="place-filter" data-filter="all">${T('filterAll')}</button>
       <button class="filter ${state.placeFilter==='mine'?'active':''}" data-action="place-filter" data-filter="mine">${T('filterMine')}</button>
       <button class="filter ${archived?'active':''}" data-action="place-filter" data-filter="archived">${tr('보관함','Archive')}</button></div>
       <label class="place-search">${tr('이름·지역 검색','Search name or area')}<input id="place-search" type="search" value="${attr(state.placeSearch)}" placeholder="${tr('장소명 또는 지역','Name or area')}" /></label></div>
-    ${archived?'':`<div class="filters theme-filters">${themes.map(([label,value])=>`<button class="filter ${state.themeFilter===value?'active':''}" data-action="theme-filter" data-theme="${value}">${label}</button>`).join('')}</div>
-      ${state.themeFilter==='food'?`<div class="filters meal-filters">${meals.map(([label,value])=>`<button class="filter ${state.foodFilter===value?'active':''}" data-action="food-filter" data-food="${value}">${label}</button>`).join('')}</div>`:''}`}
     <p class="result-count">${shown.length}${tr('곳',' places')}</p>
-    <div class="place-grid">${shown.length?shown.map(placeCard).join(''):`<div class="card empty-card">${archived?tr('보관된 장소가 없습니다.','No archived places.'):tr('조건에 맞는 장소가 없습니다.','No places match these filters.')}</div>`}</div>`;
+    <div class="place-grid">${shown.length?shown.map(placeCard).join(''):`<div class="card empty-card">${!initial.length && archived?tr('보관된 장소가 없습니다.','No archived places.'):tr('조건에 맞는 장소가 없습니다.','No places match these filters.')}</div>`}</div>`;
 }
 function albumRow(item: Id<Visit>): string {
   return `<button class="album-row ${state.selectedVisitId===item.id?'active':''}" data-action="open-visit" data-id="${attr(item.id)}"><span class="album-icon">${item.kind==='past'?'◌':'✦'}</span><span><strong>${esc(item.label)}</strong><small>${item.kind==='past'?T('past'):T('tripAlbum')} · ${esc(place(item.placeId)?.title || T('unknown'))}</small></span><span>→</span></button>`;
@@ -703,8 +709,13 @@ root.addEventListener('click',event=>{
     }
     case 'export-reviews': exportReviews();break;
     case 'place-filter': state.placeFilter=target.dataset.filter==='mine'?'mine':target.dataset.filter==='archived'?'archived':'all';render();break;
-    case 'theme-filter': state.themeFilter=(target.dataset.theme||'all') as 'all'|PlaceTheme;state.foodFilter='all';render();break;
-    case 'food-filter': state.foodFilter=(target.dataset.food||'all') as 'all'|FoodCategory;render();break;
+    case 'tag-filter': {
+      state.themeFilter=(target.dataset.theme||'all') as 'all'|PlaceTheme|'uncategorized';
+      state.foodFilter=(target.dataset.food||'all') as 'all'|FoodCategory;
+      if (state.selectedPlaceId) { state.selectedPlaceId=null;state.selectedVisitId=null;watchDetails(); }
+      else render();
+      break;
+    }
     case 'interest': void action(()=>toggleInterest(services.db,id,state.user!.uid,Boolean(state.interests.get(id)?.has(state.user!.uid))));break;
     case 'agree': { const item=proposal(id);if(item && !item.archived && !item.disposition)
       void action(()=>toggleAgreement(services.db,id,state.user!.uid,Boolean(state.agreements.get(id)?.has(state.user!.uid))));break; }
