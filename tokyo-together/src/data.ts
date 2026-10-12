@@ -95,6 +95,9 @@ export async function addComment(db: Firestore, path: string, uid: string, text:
   if (!clean) throw new Error('Comment is empty');
   await addDoc(collection(db, path), { authorUid: uid, text: clean, createdAt: serverTimestamp() });
 }
+export async function deleteComment(db: Firestore, path: string, commentId: string): Promise<void> {
+  await deleteDoc(doc(db, path, commentId));
+}
 export async function createPastVisit(db: Firestore, uid: string, placeId: string, label: string, year: string): Promise<string> {
   const clean = label.trim();
   if (!clean || (year && !/^\d{4}$/.test(year))) throw new Error('Album name or year is invalid');
@@ -106,6 +109,9 @@ export async function saveReview(db: Firestore, visitId: string, uid: string, te
   const target = doc(db, 'visits', visitId, 'reviews', uid);
   if (!text.trim()) { await deleteDoc(target); return; }
   await setDoc(target, { authorUid: uid, text: text.trim(), updatedAt: serverTimestamp() });
+}
+export async function deleteReview(db: Firestore, visitId: string, uid: string): Promise<void> {
+  await deleteDoc(doc(db, 'visits', visitId, 'reviews', uid));
 }
 function imageType(file: File): string {
   const known = file.type.toLowerCase();

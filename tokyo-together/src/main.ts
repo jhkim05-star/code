@@ -2,7 +2,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { doc, type Unsubscribe } from 'firebase/firestore';
 import { createServices } from './firebase';
 import {
-  addComment, createPastVisit, deleteOwnPhoto, downloadPhoto, getPhotoBlob, placeConnections, savePlace, saveProposal,
+  addComment, createPastVisit, deleteComment, deleteReview, deleteOwnPhoto, downloadPhoto, getPhotoBlob, placeConnections, savePlace, saveProposal,
   saveReview, saveTripInfo, setPlaceArchived, setProposalStatus, toggleAgreement, toggleInterest, uploadPhoto, watch, watchMember, watchTripInfo,
   MAX_PLACE_LINKS, type PlaceFields, type ProposalFields, type TripInfoFields,
 } from './data';
@@ -70,6 +70,7 @@ function mapLink(value: string): string | null {
 function activePlaces(): Id<Place>[] { return state.places.filter(item => !item.archived); }
 function activeProposals(): Id<Proposal>[] { return state.proposals.filter(item => !item.archived); }
 function name(uid: string): string { return state.members.find(item => item.id === uid)?.displayName || uid.slice(0,8); }
+function canDeleteWrittenBy(uid: string): boolean { return Boolean(state.user && (state.user.uid === uid || state.member?.nameKey === 'jinhyeok')); }
 function place(id: string): Id<Place> | undefined { return state.places.find(item => item.id === id); }
 function visit(id: string): Id<Visit> | undefined { return state.visits.find(item => item.id === id); }
 function proposal(id: string): Id<Proposal> | undefined { return state.proposals.find(item => item.id === id); }
@@ -221,7 +222,7 @@ function planCard(item: Id<Proposal>): string {
     ${item.status==='proposed'?`<button class="outline" data-action="confirm" data-id="${attr(item.id)}">${T('confirmPlan')}</button>`:`<button class="outline" data-action="reconsider" data-id="${attr(item.id)}">${T('reconsider')}</button>`}</div></article>`;
 }
 function comments(items: Id<Comment>[], key: string, editable = true): string {
-  return `<div class="comments">${items.length?items.map(item=>`<div class="comment"><div class="avatar">${esc(name(item.authorUid).slice(0,1))}</div><div><strong>${esc(name(item.authorUid))}</strong><p>${esc(item.text)}</p></div></div>`).join(''):`<p class="muted">${T('empty')}</p>`}
+  return `<div class="comments">${items.length?items.map(item=>`<div class="comment"><div class="avatar">${esc(name(item.authorUid).slice(0,1))}</div><div class="comment-content"><div class="comment-heading"><strong>${esc(name(item.authorUid))}</strong>${canDeleteWrittenBy(item.authorUid)?`<button type="button" class="comment-delete" data-action="delete-comment" data-path="${attr(key)}" data-id="${attr(item.id)}" aria-label="${attr(tr(`${name(item.authorUid)}의 댓글 삭제`,`Delete comment by ${name(item.authorUid)}`))}">${tr('삭제','Delete')}</button>`:''}</div><p>${esc(item.text)}</p></div></div>`).join(''):`<p class="muted">${T('empty')}</p>`}
     ${editable?`<form class="comment-form" data-comment-path="${attr(key)}"><input name="text" value="${attr(state.drafts.get(key) || '')}" placeholder="${T('commentPlaceholder')}" maxlength="2000" required /><button type="submit">${T('addComment')}</button></form>`:''}</div>`;
 }
 function proposalDetail(): string {
@@ -267,7 +268,7 @@ function placeDetail(): string {
       ${item.archived?pill(tr('보관됨','Archived'),'archived'):pill(tr('후보 · 일정 미정','Idea · not scheduled'),'proposed')} ${item.recommended?pill(tr('우선 추천','Recommended'),'recommended'):''}</div>
       <div class="inline-actions">${item.archived?'':`<button data-action="interest" data-id="${attr(item.id)}">${saved?'♥ '+T('removeInterest'):'♡ '+T('interest')} · ${state.interests.get(item.id)?.size||0}</button>`}
       <button data-action="edit-place" data-id="${attr(item.id)}">${T('editPlace')}</button>
-      <button class="${item.archived?'outline':'danger'}" data-action="${item.archived?'restore-place':'delete-place'}" data-id="${attr(item.id)}">${item.archived?tr('장소 복원','Restore place'):tr('장소 삭제','Delete place')}</button></div></div>
+      ${canDeleteWrittenBy(item.createdBy)?`<button class="${item.archived?'outline':'danger'}" data-action="${item.archived?'restore-place':'delete-place'}" data-id="${attr(item.id)}">${item.archived?tr('장소 복원','Restore place'):tr('장소 삭제','Delete place')}</button>`:''}</div></div>
     <div class="field-grid">${infoSection(tr('소개 및 추천 이유','Introduction & why visit'),item.intro)}
     ${item.recommendedMenu?infoSection(tr('추천 메뉴','Recommended menu'),item.recommendedMenu):''}
     ${infoSection(tr('방문 시 참고사항','Visit tips'),item.toConfirm)}
@@ -327,7 +328,7 @@ function albumDetail(): string {
       ${index<8 && previewUrls.has(photo.id) && !photo.contentType.includes('hei')?`<img src="${attr(previewUrls.get(photo.id))}" alt="${attr(photo.originalName)}" />`:`<span>📷<small>${index<8?T('loading'):T('pngUnavailable')}</small></span>`}</div>
       <div class="photo-caption"><strong>${esc(photo.originalName)}</strong><small>${esc(name(photo.ownerUid))} · ${(photo.size/1024/1024).toFixed(1)} MB</small></div>
       <div class="photo-actions"><button data-action="download-photo" data-id="${attr(photo.id)}">↓ ${T('download')}</button>${photo.ownerUid===state.user?.uid?`<button class="danger" data-action="delete-photo" data-id="${attr(photo.id)}">${T('deletePhoto')}</button>`:''}</div></div>`).join(''):`<p class="muted">${T('noPhoto')}</p>`}</div>
-    <h4>${T('review')}</h4><div class="review-list">${state.reviews.length?state.reviews.map(review=>`<div class="review"><strong>${esc(name(review.authorUid))}</strong><p>${esc(review.text)}</p></div>`).join(''):`<p class="muted">${T('empty')}</p>`}</div>
+    <h4>${T('review')}</h4><div class="review-list">${state.reviews.length?state.reviews.map(review=>`<div class="review"><div class="comment-heading"><strong>${esc(name(review.authorUid))}</strong>${canDeleteWrittenBy(review.authorUid)?`<button type="button" class="comment-delete" data-action="delete-review" data-id="${attr(review.id)}" aria-label="${attr(tr(`${name(review.authorUid)}의 후기 삭제`,`Delete review by ${name(review.authorUid)}`))}">${tr('삭제','Delete')}</button>`:''}</div><p>${esc(review.text)}</p></div>`).join(''):`<p class="muted">${T('empty')}</p>`}</div>
     <button data-action="edit-review">${myReview?tr('내 후기 수정','Edit my review'):tr('내 후기 작성','Write my review')}</button>
     <h4>${T('albumComments')}</h4>${comments(state.albumComments,`visits/${item.id}/comments`)}</section>`;
 }
@@ -533,7 +534,7 @@ root.addEventListener('click',event=>{
     case 'new-place': placeModal(); break;
     case 'edit-place': placeModal(place(id)); break;
     case 'delete-place': {
-      const item=place(id); if (!item || item.archived) break;
+      const item=place(id); if (!item || item.archived || !canDeleteWrittenBy(item.createdBy)) break;
       void action(async()=>{
         const related=await placeConnections(services.db,id,state.proposals,state.visits);
         const summary=tr(
@@ -547,7 +548,8 @@ root.addEventListener('click',event=>{
       });
       break;
     }
-    case 'restore-place': void action(async()=>{await setPlaceArchived(services.db,id,false);state.placeFilter='all';watchDetails();});break;
+    case 'restore-place': { const item=place(id);if(item?.archived && canDeleteWrittenBy(item.createdBy))
+      void action(async()=>{await setPlaceArchived(services.db,id,false);state.placeFilter='all';watchDetails();});break; }
     case 'open-place': selectPlace(id); break;
     case 'close-place': state.selectedPlaceId=null;state.selectedVisitId=null;watchDetails();break;
     case 'new-proposal': proposalModal(target.dataset.placeId); break;
@@ -557,6 +559,21 @@ root.addEventListener('click',event=>{
     case 'open-visit': selectVisit(id);break;
     case 'new-past-visit': pastVisitModal(target.dataset.placeId||'');break;
     case 'edit-review': reviewModal();break;
+    case 'delete-review': { const review=state.reviews.find(item=>item.id===id);
+      if (review && state.selectedVisitId && canDeleteWrittenBy(review.authorUid) && window.confirm(tr('이 후기를 삭제할까요?','Delete this review?')))
+        void action(()=>deleteReview(services.db,state.selectedVisitId!,review.authorUid));break; }
+    case 'delete-comment': {
+      const path=target.dataset.path||'';
+      const contexts: [string,Id<Comment>[]][] = [
+        [state.selectedPlaceId?`places/${state.selectedPlaceId}/comments`:'',state.placeComments],
+        [state.selectedProposalId?`proposals/${state.selectedProposalId}/comments`:'',state.proposalComments],
+        [state.selectedVisitId?`visits/${state.selectedVisitId}/comments`:'',state.albumComments],
+      ];
+      const comment=contexts.find(([current])=>current===path)?.[1].find(item=>item.id===id);
+      if (comment && canDeleteWrittenBy(comment.authorUid) && window.confirm(tr('이 댓글을 삭제할까요?','Delete this comment?')))
+        void action(()=>deleteComment(services.db,path,id));
+      break;
+    }
     case 'export-reviews': exportReviews();break;
     case 'place-filter': state.placeFilter=target.dataset.filter==='mine'?'mine':target.dataset.filter==='archived'?'archived':'all';render();break;
     case 'theme-filter': state.themeFilter=(target.dataset.theme||'all') as 'all'|PlaceTheme;state.foodFilter='all';render();break;
