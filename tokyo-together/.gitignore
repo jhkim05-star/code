@@ -10,3 +10,4 @@ functions/.env
 functions/.env.*
 !functions/.env.example
 *.log
+private-backups/

@@ -37,13 +37,17 @@ function client(user){
 const [jin,yeon,soeun,unknown]=[users[0],users[1],contributor,outsider].map(client);
 await Promise.all([jin,yeon,soeun,unknown].map(async actor=>signInWithEmailAndPassword(actor.auth,actor.user.email,'test-password-123')));
 const call=(actor,name,data)=>httpsCallable(actor.functions,name)(data).then(result=>result.data);
-const placeFields={title:'Tokyo Disneyland · 도쿄 디즈니랜드',category:'theme park',intro:'Family idea',
+const placeFields={title:'Tokyo Disneyland · 도쿄 디즈니랜드',category:'activities',theme:'activities',subcategory:'',
+  area:'Maihama',localName:'東京ディズニーランド',recommendedMenu:'',route:'',mapQuery:'東京ディズニーランド',
+  duration:'day',recommended:true,reviewedAt:'2026-10-12',archived:false,intro:'Family idea',
   toConfirm:'Check booking',additionalInfo:'Family travel story',infoUrls:[{label:'Trip notes',url:'https://example.com/story'}],
   visitNotes:'',createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 const placeDoc=await addDoc(collection(jin.db,'places'),placeFields);
 assert.equal((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().title,placeFields.title);
 assert.equal((await getDoc(doc(soeun.db,'places',placeDoc.id))).data().title,placeFields.title);
 assert.deepEqual((await getDoc(doc(yeon.db,'places',placeDoc.id))).data().infoUrls,placeFields.infoUrls);
+await updateDoc(doc(yeon.db,'places',placeDoc.id),{area:'Urayasu',updatedAt:serverTimestamp()});
+assert.equal((await getDoc(doc(jin.db,'places',placeDoc.id))).data().area,'Urayasu');
 await assert.rejects(updateDoc(doc(jin.db,'places',placeDoc.id),{infoUrls:[{label:'Bad',url:'javascript:alert(1)'}],updatedAt:serverTimestamp()}));
 await assert.rejects(getDoc(doc(unknown.db,'places',placeDoc.id)));
 await addDoc(collection(soeun.db,`places/${placeDoc.id}/comments`),{authorUid:soeun.user.uid,text:'I would like to help plan',createdAt:serverTimestamp()});
@@ -104,4 +108,15 @@ assert.equal((await getDoc(doc(jin.db,`visits/${tripVisitId}/photos/${ticket.pho
 const reused=await call(jin,'reservePhotoUpload',{visitId:tripVisitId,name:'replacement.jpg',contentType:'image/jpeg',size:bytes.length});
 await call(jin,'cancelPhotoUpload',{visitId:tripVisitId,photoId:reused.photoId});
 console.log('PASS: deleting own photo releases capacity');
+await updateDoc(doc(soeun.db,'places',placeDoc.id),{archived:true,updatedAt:serverTimestamp()});
+assert.equal((await getDoc(doc(jin.db,'places',placeDoc.id))).data().archived,true);
+await assert.rejects(addDoc(collection(jin.db,'proposals'),{placeId:placeDoc.id,date:'2026-12-19',time:'',participantUids:[jin.user.uid],status:'proposed',visitId:null,createdBy:jin.user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+await assert.rejects(addDoc(collection(jin.db,'visits'),{placeId:placeDoc.id,label:'hidden place',kind:'past',year:'2016',proposalId:null,createdBy:jin.user.uid,createdAt:serverTimestamp()}));
+await call(jin,'setProposalStatus',{proposalId:proposal.id,status:'proposed'});
+await assert.rejects(call(jin,'setProposalStatus',{proposalId:proposal.id,status:'confirmed'}));
+assert.equal((await getDoc(doc(jin.db,`visits/${past.id}`))).exists(),true);
+assert.equal((await getDocs(collection(jin.db,`places/${placeDoc.id}/comments`))).size,1);
+await updateDoc(doc(yeon.db,'places',placeDoc.id),{archived:false,updatedAt:serverTimestamp()});
+assert.equal((await getDoc(doc(jin.db,'places',placeDoc.id))).data().archived,false);
+console.log('PASS: shared edits persist; archive blocks new plans and visits but preserves existing records');
 await Promise.all([jin,yeon,soeun,unknown].map(actor=>deleteApp(actor.app)));

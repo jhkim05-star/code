@@ -55,6 +55,7 @@ export const setProposalStatus = onCall({ region: REGION }, async request => {
     const proposalSnap = await tx.get(proposalRef);
     if (!proposalSnap.exists) throw new HttpsError('not-found', 'Proposal not found');
     const proposal = proposalSnap.data()!;
+    if (proposal.archived) throw new HttpsError('failed-precondition', 'Archived proposal cannot be confirmed');
     if (status === 'proposed') {
       if (proposal.status !== 'proposed') tx.update(proposalRef, { status, updatedAt: FieldValue.serverTimestamp() });
       return { status, visitId: proposal.visitId ?? null };
@@ -62,6 +63,7 @@ export const setProposalStatus = onCall({ region: REGION }, async request => {
     const placeRef = db.doc(`places/${proposal.placeId}`);
     const [placeSnap, visitSnap] = await Promise.all([tx.get(placeRef), tx.get(visitRef)]);
     if (!placeSnap.exists) throw new HttpsError('failed-precondition', 'Place missing');
+    if (placeSnap.data()?.archived) throw new HttpsError('failed-precondition', 'Archived place cannot be confirmed');
     if (!visitSnap.exists) tx.create(visitRef, {
       placeId: proposal.placeId,
       label: `${proposal.date} · ${placeSnap.data()!.title}`,

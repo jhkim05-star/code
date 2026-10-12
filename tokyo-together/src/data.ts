@@ -1,11 +1,11 @@
 import {
-  addDoc, collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, runTransaction,
+  addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, onSnapshot,
   serverTimestamp, setDoc, updateDoc, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { httpsCallable, type Functions } from 'firebase/functions';
 import { getBlob, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import type { Services } from './firebase';
-import type { Comment, Id, Member, Photo, Place, PlaceLink, Proposal, Review, TripInfo, Visit } from './types';
+import type { Comment, FoodCategory, Id, Member, Photo, Place, PlaceLink, PlaceTheme, Proposal, Review, TripInfo, Visit } from './types';
 import { isTripDate } from './model';
 
 export type Listener<T> = (items: Id<T>[]) => void;
@@ -23,42 +23,50 @@ export async function saveTripInfo(db: Firestore, fields: TripInfoFields): Promi
   await setDoc(doc(db, 'tripInfo', 'summary'), { ...fields, updatedAt: serverTimestamp() });
 }
 export const MAX_PLACE_LINKS = 8;
-export interface PlaceFields { title: string; category: string; intro: string; toConfirm: string; additionalInfo: string; infoUrls: PlaceLink[]; visitNotes: string }
+export interface PlaceFields {
+  title: string; theme: PlaceTheme; subcategory: FoodCategory | ''; area: string; localName: string;
+  intro: string; recommendedMenu: string; toConfirm: string; route: string; mapQuery: string;
+  duration: string; recommended: boolean; additionalInfo: string; infoUrls: PlaceLink[]; visitNotes: string;
+}
 export async function savePlace(db: Firestore, uid: string, fields: PlaceFields, placeId?: string): Promise<string> {
   const infoUrls = fields.infoUrls.map(item => ({ label: item.label.trim(), url: item.url.trim() }));
   if (infoUrls.length > MAX_PLACE_LINKS || infoUrls.some(item => {
     try { const url = new URL(item.url); return !['http:', 'https:'].includes(url.protocol); }
     catch { return true; }
   })) throw new Error('Add up to 8 valid http:// or https:// URLs');
-  const clean = { ...fields, title: fields.title.trim(), category: fields.category.trim(), infoUrls };
+  const clean = { ...fields, title: fields.title.trim(), category: fields.theme, area: fields.area.trim(),
+    localName: fields.localName.trim(), mapQuery: fields.mapQuery.trim(), infoUrls };
   if (!clean.title) throw new Error('Place name is required');
+  if (!clean.area) throw new Error('Area is required');
+  if (!['food','sights','shopping','activities'].includes(clean.theme)) throw new Error('Choose a valid theme');
+  if (clean.theme !== 'food' && clean.subcategory) throw new Error('Only food places have a meal category');
+  if (clean.theme === 'food' && !['breakfast','lunch','dinner','cafe'].includes(clean.subcategory)) throw new Error('Choose a food category');
   if (placeId) {
     await updateDoc(doc(db, 'places', placeId), { ...clean, mapUrl: deleteField(), officialUrl: deleteField(),
       reservationNotes: deleteField(), updatedAt: serverTimestamp() });
     return placeId;
   }
-  const item = await addDoc(collection(db, 'places'), { ...clean, createdBy: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const item = await addDoc(collection(db, 'places'), { ...clean, reviewedAt: '', archived: false,
+    createdBy: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return item.id;
 }
-const starterPlaces: Array<{ id: string; title: string; category: string }> = [
-  { id: 'idea_disneyland', title: 'Tokyo Disneyland · 도쿄 디즈니랜드', category: 'theme park' },
-  { id: 'idea_odaiba', title: 'Odaiba · 오다이바', category: 'area' },
-  { id: 'idea_department_store', title: '도쿄 백화점 · Department store', category: 'shopping' },
-  { id: 'idea_museum', title: '도쿄 뮤지엄 · Museum', category: 'museum' },
-  { id: 'idea_heritage', title: '도쿄 문화재 · Heritage', category: 'heritage' },
-  { id: 'idea_yokohama', title: 'Yokohama · 요코하마', category: 'day trip' },
-  { id: 'idea_food', title: '음식·디저트·위스키 · Food & whisky', category: 'food' },
-];
-export async function seedPlaces(db: Firestore, uid: string): Promise<void> {
-  for (const item of starterPlaces) {
-    const placeRef = doc(db, 'places', item.id);
-    await runTransaction(db, async tx => {
-      if ((await tx.get(placeRef)).exists()) return;
-      tx.set(placeRef, { title: item.title, category: item.category, intro: '', toConfirm: '',
-        additionalInfo: '', infoUrls: [], visitNotes: '', createdBy: uid,
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-    });
-  }
+export async function setPlaceArchived(db: Firestore, placeId: string, archived: boolean): Promise<void> {
+  await updateDoc(doc(db, 'places', placeId), { archived, updatedAt: serverTimestamp() });
+}
+export async function placeConnections(db: Firestore, placeId: string, proposals: Id<Proposal>[], visits: Id<Visit>[]): Promise<{ proposals: number; visits: number; comments: number; photos: number; reviews: number }> {
+  const linkedProposals = proposals.filter(item => item.placeId === placeId);
+  const linkedVisits = visits.filter(item => item.placeId === placeId);
+  const commentPaths = [`places/${placeId}/comments`, ...linkedProposals.map(item => `proposals/${item.id}/comments`),
+    ...linkedVisits.map(item => `visits/${item.id}/comments`)];
+  const [commentLists, photoLists, reviewLists] = await Promise.all([
+    Promise.all(commentPaths.map(path => getDocs(collection(db, path)))),
+    Promise.all(linkedVisits.map(item => getDocs(collection(db, `visits/${item.id}/photos`)))),
+    Promise.all(linkedVisits.map(item => getDocs(collection(db, `visits/${item.id}/reviews`)))),
+  ]);
+  return { proposals: linkedProposals.length, visits: linkedVisits.length,
+    comments: commentLists.reduce((sum, items) => sum + items.size, 0),
+    photos: photoLists.reduce((sum, items) => sum + items.size, 0),
+    reviews: reviewLists.reduce((sum, items) => sum + items.size, 0) };
 }
 export async function toggleInterest(db: Firestore, placeId: string, uid: string, interested: boolean): Promise<void> {
   const target = doc(db, 'places', placeId, 'interests', uid);

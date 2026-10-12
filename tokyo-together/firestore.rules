@@ -25,7 +25,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasAll(['title','category','intro','visitNotes','toConfirm','createdBy','createdAt','updatedAt'])
         && (data.keys().hasAll(['additionalInfo','infoUrls']) || data.keys().hasAll(['mapUrl','officialUrl','reservationNotes']))
-        && data.keys().hasOnly(['title','category','intro','visitNotes','toConfirm','additionalInfo','infoUrls','mapUrl','officialUrl','reservationNotes','createdBy','createdAt','updatedAt'])
+        && data.keys().hasOnly(['title','category','intro','visitNotes','toConfirm','additionalInfo','infoUrls','mapUrl','officialUrl','reservationNotes','theme','subcategory','area','localName','recommendedMenu','route','mapQuery','duration','recommended','reviewedAt','archived','createdBy','createdAt','updatedAt'])
         && smallText(data.title, 120) && data.title.size() > 0
         && smallText(data.category, 50) && smallText(data.intro, 2000)
         && smallText(data.visitNotes, 2000) && smallText(data.toConfirm, 2000)
@@ -34,8 +34,24 @@ service cloud.firestore {
         && (!('mapUrl' in data) || smallText(data.mapUrl, 600))
         && (!('officialUrl' in data) || smallText(data.officialUrl, 600))
         && (!('reservationNotes' in data) || smallText(data.reservationNotes, 2000))
+        && (!('theme' in data) || data.theme in ['food','sights','shopping','activities'])
+        && (!('subcategory' in data) || data.subcategory in ['','breakfast','lunch','dinner','cafe'])
+        && (!('area' in data) || smallText(data.area, 120))
+        && (!('localName' in data) || smallText(data.localName, 120))
+        && (!('recommendedMenu' in data) || smallText(data.recommendedMenu, 500))
+        && (!('route' in data) || smallText(data.route, 500))
+        && (!('mapQuery' in data) || smallText(data.mapQuery, 1000))
+        && (!('duration' in data) || smallText(data.duration, 120))
+        && (!('recommended' in data) || data.recommended is bool)
+        && (!('reviewedAt' in data) || smallText(data.reviewedAt, 10))
+        && (!('archived' in data) || data.archived is bool)
         && data.createdBy is string && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+    function activePlace(placeId) {
+      return exists(/databases/$(database)/documents/places/$(placeId))
+        && (!('archived' in get(/databases/$(database)/documents/places/$(placeId)).data)
+          || get(/databases/$(database)/documents/places/$(placeId)).data.archived == false);
     }
     function validComment() {
       return request.resource.data.keys().hasOnly(['authorUid','text','createdAt'])
@@ -50,7 +66,7 @@ service cloud.firestore {
         && (date != '2026-12-22' || get(/databases/$(database)/documents/members/$(uid)).data.nameKey in ['minseong','sophie']);
     }
     function validProposal() {
-      return request.resource.data.keys().hasOnly(['placeId','date','time','participantUids','status','visitId','createdBy','createdAt','updatedAt'])
+      return request.resource.data.keys().hasOnly(['placeId','date','time','participantUids','status','visitId','archived','createdBy','createdAt','updatedAt'])
         && request.resource.data.keys().hasAll(['placeId','date','time','participantUids','status','visitId','createdBy','createdAt','updatedAt'])
         && request.resource.data.placeId is string
         && exists(/databases/$(database)/documents/places/$(request.resource.data.placeId))
@@ -62,6 +78,7 @@ service cloud.firestore {
         && (request.resource.data.participantUids.size() < 2 || validTraveler(request.resource.data.participantUids[1], request.resource.data.date))
         && (request.resource.data.participantUids.size() < 3 || validTraveler(request.resource.data.participantUids[2], request.resource.data.date))
         && (request.resource.data.participantUids.size() < 4 || validTraveler(request.resource.data.participantUids[3], request.resource.data.date))
+        && (!('archived' in request.resource.data) || request.resource.data.archived is bool)
         && request.resource.data.createdBy is string && request.resource.data.createdAt is timestamp && request.resource.data.updatedAt is timestamp;
     }
     match /members/{uid} {
@@ -107,7 +124,8 @@ service cloud.firestore {
     }
     match /proposals/{proposalId} {
       allow read: if member();
-      allow create: if member() && validProposal() && request.resource.data.createdBy == request.auth.uid
+      allow create: if member() && validProposal() && activePlace(request.resource.data.placeId) && request.resource.data.createdBy == request.auth.uid
+        && (!('archived' in request.resource.data) || request.resource.data.archived == false)
         && request.resource.data.status == 'proposed' && request.resource.data.visitId == null;
       allow update: if member() && resource.data.status == 'proposed' && validProposal()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date','time','participantUids','updatedAt'])
@@ -137,7 +155,7 @@ service cloud.firestore {
         && request.resource.data.kind == 'past' && request.resource.data.proposalId == null
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.placeId is string
-        && exists(/databases/$(database)/documents/places/$(request.resource.data.placeId))
+        && activePlace(request.resource.data.placeId)
         && smallText(request.resource.data.label, 160) && request.resource.data.label.size() > 0
         && request.resource.data.year is string && (request.resource.data.year == '' || request.resource.data.year.matches('^[0-9]{4}$'))
         && request.resource.data.createdAt is timestamp;
